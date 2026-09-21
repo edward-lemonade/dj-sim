@@ -28,6 +28,7 @@ type Track struct {
 	ObjectKey        string            `json:"-" gorm:"not null"`
 	FileName         string            `json:"fileName"`
 	WaveformOverview *WaveformOverview `json:"waveformOverview" gorm:"type:jsonb;serializer:json"`
+	Cues             []*float64        `json:"cues" gorm:"type:jsonb;serializer:json"`
 	CreatedAt        time.Time         `json:"createdAt"`
 	UpdatedAt        time.Time         `json:"updatedAt"`
 }
@@ -39,6 +40,7 @@ type UpdateFields struct {
 	BeatOffset       *float64
 	Key              *string
 	WaveformOverview *WaveformOverview
+	Cues             []*float64
 }
 
 func (t *Track) BeforeCreate(_ *gorm.DB) error {

@@ -1,6 +1,6 @@
 import API_ROUTES from '@/config/api';
 import { axiosClient } from '@/lib/clients/axios';
-import type { User } from '@/lib/types/user';
+import type { User } from '@/lib/types/User';
 
 type CreateUserRequest = Pick<User, 
   'username'

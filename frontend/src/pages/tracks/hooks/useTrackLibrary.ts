@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUser } from '@clerk/react';
-import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/audio/trackMetadata';
+import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/utils/trackMetadata';
 import { deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
 import { getCurrentUser, registerUser } from '@/lib/api/UserAPI';
 import { ApiError } from '@/lib/clients/axios';
-import type { TrackDTO, TrackUpdateFields } from '@/lib/types/track';
-import type { Track } from '@/lib/types/track';
+import type { TrackDTO, TrackUpdateFields } from '@/lib/types/Track';
+import type { Track } from '@/lib/types/Track';
 import { useTrackUpload } from '@/pages/tracks/hooks/useTrackUpload';
+import { normalizeCues } from '@/lib/types/Cues';
 
 export function trackToPool(track: TrackDTO): Track {
   return {
@@ -20,7 +21,8 @@ export function trackToPool(track: TrackDTO): Track {
     coverLabel: coverLabelFromTitle(track.title),
     coverUrl: track.cover && (track.cover.startsWith('data:image/') || track.cover.startsWith('http')) ? track.cover : null,
     waveformOverview: track.waveformOverview ?? null,
-    status: 'ready',
+    cues: normalizeCues(track.cues),
+    libraryStatus: 'ready',
   };
 }
 
@@ -73,16 +75,16 @@ export function useTrackLibrary() {
   }, []);
 
   const removeSong = useCallback(async (song: Track) => {
-    if (song.status === 'uploading') return;
+    if (song.libraryStatus === 'uploading') return;
 
-    if (song.status === 'ready') {
+    if (song.libraryStatus === 'ready') {
       try {
         await deleteTrack(song.id);
       } catch (error) {
         const message = error instanceof ApiError ? error.message : 'Could not delete track';
         setSongs((current) =>
           current.map((item) =>
-            item.id === song.id ? { ...item, status: 'error', errorMessage: message } : item,
+            item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
           ),
         );
         return;
@@ -100,7 +102,7 @@ export function useTrackLibrary() {
 
   const patchTrack = useCallback(async (id: string, fields: TrackUpdateFields) => {
     const previous = songsRef.current.find((song) => song.id === id);
-    if (!previous || previous.status !== 'ready') {
+    if (!previous || previous.libraryStatus !== 'ready') {
       throw new ApiError('Track is not ready', 400);
     }
 

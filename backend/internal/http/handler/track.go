@@ -32,6 +32,7 @@ type patchTrackRequest struct {
 	BeatOffset       *float64                `json:"beatOffset"`
 	Key              *string                 `json:"key"`
 	WaveformOverview *track.WaveformOverview `json:"waveformOverview"`
+	Cues             []*float64              `json:"cues"`
 }
 
 type TrackHandler struct {
@@ -147,6 +148,19 @@ func (h *TrackHandler) Update(c *gin.Context) {
 		return
 	}
 
+	if req.Cues != nil {
+		if len(req.Cues) > 8 {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "at most 8 cues"})
+			return
+		}
+		for _, cue := range req.Cues {
+			if cue != nil && (*cue < 0 || *cue > 36000) {
+				c.JSON(http.StatusBadRequest, gin.H{"message": "invalid cue time"})
+				return
+			}
+		}
+	}
+
 	fields := track.UpdateFields{
 		Title:            trimPointer(req.Title),
 		Artist:           trimPointer(req.Artist),
@@ -154,6 +168,7 @@ func (h *TrackHandler) Update(c *gin.Context) {
 		BeatOffset:       req.BeatOffset,
 		Key:              trimPointer(req.Key),
 		WaveformOverview: req.WaveformOverview,
+		Cues:             req.Cues,
 	}
 
 	updated, err := h.Tracks.Update(c.Request.Context(), id, u.ID, fields)

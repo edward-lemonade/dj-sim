@@ -2,6 +2,7 @@ package track
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"gorm.io/gorm"
@@ -64,6 +65,13 @@ func (r *Repository) Update(ctx context.Context, id, userID string, fields Updat
 	}
 	if fields.WaveformOverview != nil {
 		updates["waveform_overview"] = fields.WaveformOverview
+	}
+	if fields.Cues != nil {
+		b, err := json.Marshal(fields.Cues)
+		if err != nil {
+			return nil, err
+		}
+		updates["cues"] = gorm.Expr("?::jsonb", string(b))
 	}
 	if len(updates) == 0 {
 		return existing, nil

@@ -5,7 +5,7 @@ import {
   decodeToAudioBuffer,
   HIRES_COLUMNS,
   type ThreeBandPeaks,
-} from '@/lib/audio/threeBandWaveform';
+} from '@/lib/utils/threeBandWaveform';
 
 export type PlayerStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'error';
 

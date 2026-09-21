@@ -1,4 +1,4 @@
-import type { WaveformOverview } from '@/lib/types/track';
+import type { WaveformOverview } from '@/lib/types/Track';
 
 export const OVERVIEW_COLUMNS = 1600;
 export const HIRES_COLUMNS = 12000;

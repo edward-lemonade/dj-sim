@@ -1,3 +1,5 @@
+import type { Cues } from "./Cues";
+
 export type WaveformOverview = {
   lows: number[];
   mids: number[];
@@ -13,8 +15,10 @@ export type TrackMeta = {
   beatOffset: number; // seconds to the first measure line
   key: string;
   waveformOverview: WaveformOverview | null;
+  cues: Cues;
 };
 
+// what the server has
 export type TrackDTO = TrackMeta & {
   id: string;
   userId: string;
@@ -26,7 +30,6 @@ export type TrackDTO = TrackMeta & {
   updatedAt: string;
 };
 
-// PATCH body: every field optional, but null isn't a valid value to send
 export type TrackUpdateFields = Partial<{
   [K in keyof TrackMeta]: NonNullable<TrackMeta[K]>;
 }>;
@@ -41,6 +44,6 @@ export type Track = TrackMeta &
   {
     coverLabel: string;
     coverUrl: string | null;
-    status: TrackLibraryStatus;
+    libraryStatus: TrackLibraryStatus;
     errorMessage?: string;
   };

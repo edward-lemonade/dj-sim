@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { cn } from '@/lib/utils';
-import { drawMonoWaveform, drawRgbWaveform, type ThreeBandPeaks } from '@/lib/audio/threeBandWaveform';
+import { cn } from 'cn';
+import { drawMonoWaveform, drawRgbWaveform, type ThreeBandPeaks } from '@/lib/utils/threeBandWaveform';
 
 type WaveformCanvasProps = {
   peaks: ThreeBandPeaks | null;

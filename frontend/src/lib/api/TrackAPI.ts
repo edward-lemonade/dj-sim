@@ -1,6 +1,6 @@
 import API_ROUTES from '@/config/api';
 import { axiosClient } from '@/lib/clients/axios';
-import type { TrackDTO, TrackUpdateFields, WaveformOverview } from '@/lib/types/track';
+import type { TrackDTO, TrackUpdateFields, WaveformOverview } from '@/lib/types/Track';
 
 export type UploadTrackMetadata = {
   title: string;

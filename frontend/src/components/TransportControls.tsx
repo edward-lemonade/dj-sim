@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronsLeft, ChevronsRight, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TrackPlayer } from '../hooks/useTrackPlayer';
@@ -22,7 +22,11 @@ export function parsePlaybackTime(raw: string): number | null {
   return minutes * 60 + seconds + frac;
 }
 
-export function TransportControls({ player }: { player: TrackPlayer }) {
+export function TransportControls({
+  player,
+}: {
+  player: TrackPlayer;
+}) {
   const playing = player.status === 'playing';
   const disabled = player.status === 'idle' || player.status === 'loading' || player.status === 'error';
   const [draft, setDraft] = useState(formatPlaybackTime(player.currentTime));
@@ -41,21 +45,21 @@ export function TransportControls({ player }: { player: TrackPlayer }) {
   };
 
   return (
-    <div className="flex items-center justify-center gap-2 border-y border-zinc-800 bg-[#161a20] px-3 py-1.5">
+    <div className="flex gap-1 items-center justify-center">
       <Button variant="ghost" size="icon-xs" className="text-zinc-200 hover:bg-zinc-800" disabled={disabled} onClick={player.jumpStart}>
-        <ChevronsLeft />
-      </Button>
-      <Button variant="ghost" size="icon-xs" className="text-zinc-200 hover:bg-zinc-800" disabled={disabled} onClick={() => player.skip(-10)}>
         <SkipBack />
+      </Button>
+      <Button variant="ghost" size="icon-sm" className="text-zinc-200 hover:bg-zinc-800" disabled={disabled} onClick={() => player.skip(-10)}>
+        <ChevronsLeft />
       </Button>
       <Button variant="ghost" size="icon-sm" className="text-zinc-100 hover:bg-zinc-800" disabled={disabled} onClick={player.togglePlay}>
         {playing ? <Pause /> : <Play />}
       </Button>
-      <Button variant="ghost" size="icon-xs" className="text-zinc-200 hover:bg-zinc-800" disabled={disabled} onClick={() => player.skip(10)}>
-        <SkipForward />
+      <Button variant="ghost" size="icon-sm" className="text-zinc-200 hover:bg-zinc-800" disabled={disabled} onClick={() => player.skip(10)}>
+        <ChevronsRight />
       </Button>
       <Button variant="ghost" size="icon-xs" className="text-zinc-200 hover:bg-zinc-800" disabled={disabled} onClick={player.jumpEnd}>
-        <ChevronsRight />
+        <SkipForward />
       </Button>
       <input
         value={draft}

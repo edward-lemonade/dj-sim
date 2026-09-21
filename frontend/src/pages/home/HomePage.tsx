@@ -1,7 +1,7 @@
 import { Play } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn } from 'cn';
 
 function HomePage() {
   return (

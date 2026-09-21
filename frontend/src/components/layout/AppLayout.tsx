@@ -1,8 +1,7 @@
 import { UserButton, useAuth } from '@clerk/react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-
+import { cn } from 'cn';
 type NavItem = { to: string; label: string; end?: boolean };
 
 const navItems: NavItem[] = [

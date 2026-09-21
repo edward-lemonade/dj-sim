@@ -7,14 +7,16 @@ import {
   useRef,
   useState,
 } from 'react';
+import { cn } from 'cn';
 import { GripVertical, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { peaksFromOverview } from '@/lib/audio/threeBandWaveform';
+import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { SongCover } from '@/components/SongCover';
-import type { Track } from '@/lib/types/track';
-import { WaveformCanvas } from './WaveformCanvas';
-import { rowShift, useListItemMove } from '../hooks/useListItemMove'; // adjust path
+import type { Track } from '@/lib/types/Track';
+import { WaveformCanvas } from '../../../components/WaveformCanvas';
+import { rowShift, useListItemMove } from '../../../hooks/useListItemMove'; // adjust path
+import { CUE_COLORS, trackSeconds } from '@/lib/types/Cues';
+import { CueTicks } from '../../../components/CueTicks';
 
 const STORAGE_KEY = 'dj-sim.tracks.columnWidths';
 
@@ -67,7 +69,7 @@ function loadWidths(): Record<FlexColumnId, number> {
   }
 }
 
-export function TrackList({
+export function TrackLibrary({
   songs,
   setSongs,
   selectedId,
@@ -104,12 +106,13 @@ export function TrackList({
 
   // Row reordering. Rows are flush (no gap) and the sticky header occupies the
   // top of the scroll area, so it acts as the list's "padding".
-  const { drag, draggedSong, stride, onRowPointerDown } = useListItemMove({
-    songs,
-    setSongs,
+  const { drag, draggedItem, stride, onRowPointerDown } = useListItemMove({
+    items: songs,
+    setItems: setSongs,
     listRef: wrapperRef,
     rowGap: 0,
     listPadding: headerHeight,
+    canDrag: (song) => song.libraryStatus !== 'uploading',
   });
 
   useEffect(() => {
@@ -296,8 +299,8 @@ export function TrackList({
                   className={cn(
                     'cursor-default border-b border-zinc-800/80',
                     selected ? 'bg-[#2a3340]' : opened ? 'bg-[#1c242e]' : 'hover:bg-[#171c22]',
-                    song.status === 'error' && 'bg-red-950/40',
-                    song.status === 'uploading' && 'opacity-60',
+                    song.libraryStatus === 'error' && 'bg-red-950/40',
+                    song.libraryStatus === 'uploading' && 'opacity-60',
                     isDragged && 'opacity-30',
                   )}
                 >
@@ -305,7 +308,7 @@ export function TrackList({
                     <button
                       type="button"
                       aria-label={`Reorder ${song.title}`}
-                      disabled={song.status === 'uploading'}
+                      disabled={song.libraryStatus === 'uploading'}
                       onPointerDown={(event) => onRowPointerDown(event, song)}
                       className="flex h-6 w-full touch-none cursor-grab items-center justify-center text-zinc-600 hover:text-zinc-300 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -321,8 +324,9 @@ export function TrackList({
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.key || '—'}</td>
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.duration}</td>
                   <td className="px-1 py-0.5">
-                    <div className="h-6 overflow-hidden rounded-sm bg-[#15181d]">
+                    <div className="h-6 relative overflow-hidden rounded-sm bg-[#15181d]">
                       {peaks ? <WaveformCanvas variant="mini" peaks={peaks} /> : null}
+                      <CueTicks cues={song.cues} seconds={trackSeconds(song)} />
                     </div>
                   </td>
                   <td className="px-1 py-0.5" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
@@ -330,7 +334,7 @@ export function TrackList({
                       variant="ghost"
                       size="icon-xs"
                       className="text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
-                      disabled={song.status === 'uploading'}
+                      disabled={song.libraryStatus === 'uploading'}
                       onClick={(event) => {
                         event.stopPropagation();
                         void onDelete(song);
@@ -354,7 +358,7 @@ export function TrackList({
       </div>
 
       {/* Floating copy of the row that follows the pointer while dragging */}
-      {drag && draggedSong && (
+      {drag && draggedItem && (
         <div
           className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-sm border border-orange-400/60 bg-[#2a3340] px-2 text-xs shadow-xl"
           style={{
@@ -365,9 +369,9 @@ export function TrackList({
           }}
         >
           <GripVertical className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
-          <SongCover song={draggedSong} className="h-6 w-6 shrink-0 shadow-none" />
-          <span className="truncate font-medium text-zinc-100">{draggedSong.title}</span>
-          <span className="truncate text-zinc-400">{draggedSong.artist}</span>
+          <SongCover song={draggedItem} className="h-6 w-6 shrink-0 shadow-none" />
+          <span className="truncate font-medium text-zinc-100">{draggedItem.title}</span>
+          <span className="truncate text-zinc-400">{draggedItem.artist}</span>
         </div>
       )}
     </section>

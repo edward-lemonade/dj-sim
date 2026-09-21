@@ -1,11 +1,11 @@
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { Track } from '@/lib/types/track';
+import { cn } from 'cn';
+import type { Track } from '@/lib/types/Track';
 
 export function SongCover({ song, className }: { song: Track; className?: string }) {
   return (
     <div className={cn('relative h-12 w-12 shrink-0 overflow-hidden shadow-sm shadow-violet-500/20', className)}>
-      {song.status === 'error' ? (
+      {song.libraryStatus === 'error' ? (
         <div className="flex h-full w-full items-center justify-center bg-red-600 text-white" title={song.errorMessage || 'Upload failed'}>
           <TriangleAlert className="h-5 w-5" aria-hidden="true" />
         </div>
@@ -16,7 +16,7 @@ export function SongCover({ song, className }: { song: Track; className?: string
           {song.coverLabel}
         </div>
       )}
-      {song.status === 'uploading' && (
+      {song.libraryStatus === 'uploading' && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/45">
           <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
         </div>

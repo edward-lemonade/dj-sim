@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { Track } from '@/lib/types/track';
 
 export type DragState = {
   id: string;
@@ -25,29 +24,34 @@ export type DragState = {
 const DEFAULT_ROW_GAP = 8;
 const DEFAULT_LIST_PADDING = 8;
 
-export function useListItemMove({
-  songs,
-  setSongs,
+export function useListItemMove<T extends { id: string }>({
+  items,
+  setItems,
   listRef,
   rowGap = DEFAULT_ROW_GAP,
   listPadding = DEFAULT_LIST_PADDING,
+  canDrag,
 }: {
-  songs: Track[];
-  setSongs: Dispatch<SetStateAction<Track[]>>;
+  items: T[];
+  setItems: Dispatch<SetStateAction<T[]>>;
   listRef: RefObject<HTMLDivElement | null>;
   rowGap?: number;
   listPadding?: number;
+  /** Return false to make an item non-draggable (e.g. still uploading). Defaults to always true. */
+  canDrag?: (item: T) => boolean;
 }) {
   const [drag, setDrag] = useState<DragState | null>(null);
-  const songsRef = useRef<Track[]>(songs);
+  const itemsRef = useRef<T[]>(items);
   const dragRef = useRef<DragState | null>(null);
   const moveFrame = useRef<number | null>(null);
+  const canDragRef = useRef(canDrag);
   const listenersRef = useRef<{
     move: (event: PointerEvent) => void;
     up: (event: PointerEvent) => void;
   } | null>(null);
 
-  songsRef.current = songs;
+  itemsRef.current = items;
+  canDragRef.current = canDrag; // ref, so an inline arrow doesn't churn the callbacks below
 
   const stopListening = useCallback(() => {
     const listeners = listenersRef.current;
@@ -60,7 +64,7 @@ export function useListItemMove({
 
   const commitMove = useCallback((fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex) return;
-    setSongs((current) => {
+    setItems((current) => {
       if (
         fromIndex < 0 ||
         toIndex < 0 ||
@@ -75,11 +79,11 @@ export function useListItemMove({
       next.splice(toIndex, 0, moved);
       return next;
     });
-  }, [setSongs]);
+  }, [setItems]);
 
   const indexFromPointer = useCallback((clientY: number, height: number) => {
     const list = listRef.current;
-    const count = songsRef.current.length;
+    const count = itemsRef.current.length;
     if (!list || count === 0) return 0;
 
     const rect = list.getBoundingClientRect();
@@ -110,8 +114,9 @@ export function useListItemMove({
     });
   }, []);
 
-  const onRowPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, song: Track) => {
-    if (song.status === 'uploading' || event.button !== 0) return;
+  const onRowPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, item: T) => {
+    if (event.button !== 0) return;
+    if (canDragRef.current && !canDragRef.current(item)) return;
 
     const target = event.target;
     if (
@@ -121,7 +126,7 @@ export function useListItemMove({
       return;
     }
 
-    const row = event.currentTarget.closest<HTMLElement>('[data-song-row]');
+    const row = event.currentTarget.closest<HTMLElement>('[data-drag-row]');
     if (!row) return;
 
     event.preventDefault();
@@ -136,11 +141,11 @@ export function useListItemMove({
       const active = dragRef.current;
       if (!active) {
         if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 6) return;
-        const fromIndex = songsRef.current.findIndex((item) => item.id === song.id);
+        const fromIndex = itemsRef.current.findIndex((entry) => entry.id === item.id);
         if (fromIndex < 0) return;
 
         publishDrag({
-          id: song.id,
+          id: item.id,
           fromIndex,
           toIndex: fromIndex,
           width: rect.width,
@@ -210,12 +215,12 @@ export function useListItemMove({
     };
   }, [stopListening]);
 
-  const draggedSong = drag ? songs.find((song) => song.id === drag.id) ?? null : null;
+  const draggedItem = drag ? items.find((item) => item.id === drag.id) ?? null : null;
   const stride = drag ? drag.height + rowGap : 0;
 
   return {
     drag,
-    draggedSong,
+    draggedItem,
     stride,
     onRowPointerDown,
   };

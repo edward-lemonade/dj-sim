@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { SongCover } from '@/components/SongCover';
-import type { Track } from '@/lib/types/track';
-import type { TrackUpdateFields } from '@/lib/types/track';
-import { peaksFromOverview } from '@/lib/audio/threeBandWaveform';
-import { TransportControls, formatPlaybackTime } from './TransportControls';
-import type { TrackPlayer } from '../hooks/useTrackPlayer';
-import { WaveformCanvas } from './WaveformCanvas';
-import { BeatGrid } from './BeatGrid';
+import type { Track } from '@/lib/types/Track';
+import type { TrackUpdateFields } from '@/lib/types/Track';
+import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
+import { TransportControls, formatPlaybackTime } from '../../../components/TransportControls';
+import type { TrackPlayer } from '../../../hooks/useTrackPlayer';
+import { WaveformCanvas } from '../../../components/WaveformCanvas';
+import { BeatGrid } from '../../../components/BeatGrid';
+import { CueButtons } from '@/components/CueButtons';
+import { CueMarkers } from '../../../components/CueMarkers';
+import { normalizeCues, trackSeconds } from '@/lib/types/Cues';
+import { CueTicks } from '../../../components/CueTicks';
+import { GridControls } from '../../../components/GridControls';
+import { useGridNudge } from '../../../hooks/useGridNudge'; // adjust path
 
 // clicking zoom in multiplies zoom by 1 / ZOOM_STEP; zoom out multiplies by ZOOM_STEP.
 // bounds match WaveformCanvas's own wheel-zoom clamp (1x-48x) so buttons and any
@@ -39,6 +45,13 @@ export function TrackPreview({
     player.setView(newStart, newZoom);
   };
 
+  const { offset: beatOffset, nudge: nudgeGrid } = useGridNudge({
+    trackId: track?.id ?? null,
+    bpm: track?.bpm ?? 0,
+    savedOffset: track?.beatOffset ?? 0,
+    save: (id, beatOffset) => onPatch(id, { beatOffset }),
+  });
+
   if (!track || player.status === 'idle') {
     return (
       <section className="flex min-h-0 flex-1 items-center justify-center bg-[#101214]">
@@ -46,6 +59,11 @@ export function TrackPreview({
       </section>
     );
   }
+
+  const cues = normalizeCues(track.cues);
+  const setCues = (next: Array<number | null>) => {
+    void onPatch(track.id, { cues: next }).catch(console.error);
+  };
 
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-[#101214]">
@@ -69,13 +87,16 @@ export function TrackPreview({
 
           <BeatGrid
             bpm={track.bpm}
-            offset={track.beatOffset ?? 0}
+            offset={beatOffset}
             durationSeconds={player.durationSeconds}
             viewStart={player.viewStart}
             viewEnd={player.viewEnd}
-            onCommit={(beatOffset) => {
-              void onPatch(track.id, { beatOffset }).catch(() => {});
-            }}
+          />
+          <CueMarkers
+            cues={cues}
+            durationSeconds={player.durationSeconds}
+            viewStart={player.viewStart}
+            viewEnd={player.viewEnd}
           />
 
           <div className="absolute right-4 top-4 z-10 flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/80 backdrop-blur-sm">
@@ -102,9 +123,18 @@ export function TrackPreview({
         </div>
       )}
 
-      <TransportControls player={player} />
+      <div className="flex items-center justify-center gap-10 border-y border-zinc-800 bg-[#161a20] px-3 py-1.5">
+        <TransportControls player={player}/>
+        <CueButtons
+          cues={cues}
+          currentTime={player.currentTime}
+          disabled={track.libraryStatus !== 'ready'}
+          onChange={setCues}
+        />
+        <GridControls disabled={track.libraryStatus !== 'ready' || track.bpm <= 0} onNudge={nudgeGrid} />
+      </div>
 
-      <div className="h-16 px-2 py-1">
+      <div className="relative overflow-hidden h-16 px-2 py-1">
         <WaveformCanvas
           variant="overview"
           peaks={peaksFromOverview(track.waveformOverview) ?? peaks}
@@ -116,14 +146,15 @@ export function TrackPreview({
           onViewChange={player.setView}
           onInteractionChange={player.setInteracting}
         />
+        <CueTicks cues={track.cues} seconds={trackSeconds(track)} />
       </div>
 
       <div className="grid grid-cols-[40px_minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_70px] items-center gap-2 border-t border-zinc-800 bg-[#14181e] px-3 py-2 text-xs">
         <SongCover song={track} className="h-8 w-8 rounded-sm shadow-none" />
-        <MetaField label="Title" value={track.title} disabled={track.status !== 'ready'} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
-        <MetaField label="Artist" value={track.artist} disabled={track.status !== 'ready'} onCommit={(artist) => onPatch(track.id, { artist })} />
-        <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={track.status !== 'ready'} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />
-        <MetaField label="Key" value={track.key} disabled={track.status !== 'ready'} onCommit={(key) => onPatch(track.id, { key })} />
+        <MetaField label="Title" value={track.title} disabled={track.libraryStatus !== 'ready'} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
+        <MetaField label="Artist" value={track.artist} disabled={track.libraryStatus !== 'ready'} onCommit={(artist) => onPatch(track.id, { artist })} />
+        <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={track.libraryStatus !== 'ready'} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />
+        <MetaField label="Key" value={track.key} disabled={track.libraryStatus !== 'ready'} onCommit={(key) => onPatch(track.id, { key })} />
         <div>
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">Time</p>
           <p className="truncate text-zinc-200">{player.durationSeconds > 0 ? formatPlaybackTime(player.durationSeconds, false) : track.duration}</p>

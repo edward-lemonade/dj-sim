@@ -1,9 +1,10 @@
 import { type ChangeEvent, type Dispatch, type SetStateAction, useCallback, useRef } from 'react';
-import { coverLabelFromTitle, readTrackMetadata } from '@/lib/audio/trackMetadata';
-import { computeOverviewFromFile } from '@/lib/audio/threeBandWaveform';
+import { coverLabelFromTitle, readTrackMetadata } from '@/lib/utils/trackMetadata';
+import { computeOverviewFromFile } from '@/lib/utils/threeBandWaveform';
 import { uploadTrack } from '@/lib/api/TrackAPI';
 import { ApiError } from '@/lib/clients/axios';
-import type { Track } from '@/lib/types/track';
+import type { Track } from '@/lib/types/Track';
+import { emptyCues, normalizeCues } from '@/lib/types/Cues';
 
 export function useTrackUpload({
   setSongs,
@@ -28,7 +29,8 @@ export function useTrackUpload({
       coverLabel: metadata.coverLabel,
       coverUrl: metadata.coverUrl,
       waveformOverview: null,
-      status: 'uploading',
+      cues: emptyCues(),
+      libraryStatus: 'uploading',
     };
 
     setSongs((current) => [pending, ...current]);
@@ -65,7 +67,8 @@ export function useTrackUpload({
                 coverLabel: coverLabelFromTitle(saved.title || metadata.title),
                 coverUrl: finalCoverUrl,
                 waveformOverview: saved.waveformOverview ?? waveformOverview,
-                status: 'ready',
+                libraryStatus: 'ready',
+                cues: normalizeCues(saved.cues),
                 errorMessage: undefined,
               }
             : song,
@@ -76,7 +79,7 @@ export function useTrackUpload({
       setSongs((current) =>
         current.map((song) =>
           song.id === pendingId
-            ? { ...song, status: 'error', errorMessage: message }
+            ? { ...song, libraryStatus: 'error', errorMessage: message }
             : song,
         ),
       );
