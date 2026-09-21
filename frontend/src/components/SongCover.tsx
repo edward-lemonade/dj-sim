@@ -1,8 +1,8 @@
 import { LoaderCircle, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { PoolTrack } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 
-export function SongCover({ song, className }: { song: PoolTrack; className?: string }) {
+export function SongCover({ song, className }: { song: Track; className?: string }) {
   return (
     <div className={cn('relative h-12 w-12 shrink-0 overflow-hidden shadow-sm shadow-violet-500/20', className)}>
       {song.status === 'error' ? (

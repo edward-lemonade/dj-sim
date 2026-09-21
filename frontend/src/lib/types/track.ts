@@ -5,44 +5,42 @@ export type WaveformOverview = {
   durationSeconds?: number;
 };
 
-export interface Track {
-  id: string;
-  userId: string;
+// editable fields
+export type TrackMeta = {
   title: string;
   artist: string;
   bpm: number;
   beatOffset: number; // seconds to the first measure line
   key: string;
+  waveformOverview: WaveformOverview | null;
+};
+
+export type TrackDTO = TrackMeta & {
+  id: string;
+  userId: string;
   duration: string;
   cover: string;
   url: string;
   fileName: string;
-  waveformOverview?: WaveformOverview | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export type TrackUpdateFields = {
-  title?: string;
-  artist?: string;
-  bpm?: number;
-  beatOffset?: number;
-  key?: string;
-  waveformOverview?: WaveformOverview;
 };
 
-export type PoolStatus = 'ready' | 'uploading' | 'error';
-export type PoolTrack = {
-  id: string;
-  title: string;
-  artist: string;
-  bpm: number;
-  beatOffset: number;
-  key: string;
-  duration: string;
-  coverLabel: string;
-  coverUrl: string | null;
-  waveformOverview: WaveformOverview | null;
-  status: PoolStatus;
-  errorMessage?: string;
-};
+// PATCH body: every field optional, but null isn't a valid value to send
+export type TrackUpdateFields = Partial<{
+  [K in keyof TrackMeta]: NonNullable<TrackMeta[K]>;
+}>;
+
+// Client view model
+export type TrackLibraryStatus = 'ready' | 'uploading' | 'error';
+export type Track = TrackMeta &
+  Pick<TrackDTO, 
+    'id' | 
+    'duration'
+  > & 
+  {
+    coverLabel: string;
+    coverUrl: string | null;
+    status: TrackLibraryStatus;
+    errorMessage?: string;
+  };

@@ -3,13 +3,13 @@ import { coverLabelFromTitle, readTrackMetadata } from '@/lib/audio/trackMetadat
 import { computeOverviewFromFile } from '@/lib/audio/threeBandWaveform';
 import { uploadTrack } from '@/lib/api/TrackAPI';
 import { ApiError } from '@/lib/clients/axios';
-import type { PoolTrack } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 
 export function useTrackUpload({
   setSongs,
   isSignedIn,
 }: {
-  setSongs: Dispatch<SetStateAction<PoolTrack[]>>;
+  setSongs: Dispatch<SetStateAction<Track[]>>;
   isSignedIn: boolean | undefined;
 }) {
   const uploadRef = useRef<HTMLInputElement | null>(null);
@@ -17,7 +17,7 @@ export function useTrackUpload({
   const uploadOne = useCallback(async (file: File) => {
     const pendingId = `upload-${crypto.randomUUID()}`;
     const metadata = await readTrackMetadata(file);
-    const pending: PoolTrack = {
+    const pending: Track = {
       id: pendingId,
       title: metadata.title,
       artist: metadata.artist,

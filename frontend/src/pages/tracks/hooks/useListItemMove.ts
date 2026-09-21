@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { PoolTrack } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 
 export type DragState = {
   id: string;
@@ -32,14 +32,14 @@ export function useListItemMove({
   rowGap = DEFAULT_ROW_GAP,
   listPadding = DEFAULT_LIST_PADDING,
 }: {
-  songs: PoolTrack[];
-  setSongs: Dispatch<SetStateAction<PoolTrack[]>>;
+  songs: Track[];
+  setSongs: Dispatch<SetStateAction<Track[]>>;
   listRef: RefObject<HTMLDivElement | null>;
   rowGap?: number;
   listPadding?: number;
 }) {
   const [drag, setDrag] = useState<DragState | null>(null);
-  const songsRef = useRef<PoolTrack[]>(songs);
+  const songsRef = useRef<Track[]>(songs);
   const dragRef = useRef<DragState | null>(null);
   const moveFrame = useRef<number | null>(null);
   const listenersRef = useRef<{
@@ -110,7 +110,7 @@ export function useListItemMove({
     });
   }, []);
 
-  const onRowPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, song: PoolTrack) => {
+  const onRowPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, song: Track) => {
     if (song.status === 'uploading' || event.button !== 0) return;
 
     const target = event.target;

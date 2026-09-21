@@ -1,6 +1,6 @@
 import API_ROUTES from '@/config/api';
 import { axiosClient } from '@/lib/clients/axios';
-import type { Track, TrackUpdateFields, WaveformOverview } from '@/lib/types/track';
+import type { TrackDTO, TrackUpdateFields, WaveformOverview } from '@/lib/types/track';
 
 export type UploadTrackMetadata = {
   title: string;
@@ -12,12 +12,12 @@ export type UploadTrackMetadata = {
   waveformOverview?: WaveformOverview | null;
 };
 
-export async function listTracks(): Promise<Track[]> {
-  const { data } = await axiosClient.get<Track[]>(API_ROUTES.track.list);
+export async function listTracks(): Promise<TrackDTO[]> {
+  const { data } = await axiosClient.get<TrackDTO[]>(API_ROUTES.track.list);
   return data ?? [];
 }
 
-export async function uploadTrack(file: File, metadata: UploadTrackMetadata): Promise<Track> {
+export async function uploadTrack(file: File, metadata: UploadTrackMetadata): Promise<TrackDTO> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('title', metadata.title);
@@ -32,12 +32,12 @@ export async function uploadTrack(file: File, metadata: UploadTrackMetadata): Pr
     formData.append('waveformOverview', JSON.stringify(metadata.waveformOverview));
   }
 
-  const { data } = await axiosClient.post<Track>(API_ROUTES.track.upload, formData);
+  const { data } = await axiosClient.post<TrackDTO>(API_ROUTES.track.upload, formData);
   return data;
 }
 
-export async function updateTrack(id: string, fields: TrackUpdateFields): Promise<Track> {
-  const { data } = await axiosClient.patch<Track>(API_ROUTES.track.update(id), fields);
+export async function updateTrack(id: string, fields: TrackUpdateFields): Promise<TrackDTO> {
+  const { data } = await axiosClient.patch<TrackDTO>(API_ROUTES.track.update(id), fields);
   return data;
 }
 

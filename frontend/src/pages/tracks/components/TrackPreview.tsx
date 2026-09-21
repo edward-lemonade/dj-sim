@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { SongCover } from '@/components/SongCover';
-import type { PoolTrack } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 import type { TrackUpdateFields } from '@/lib/types/track';
 import { peaksFromOverview } from '@/lib/audio/threeBandWaveform';
 import { TransportControls, formatPlaybackTime } from './TransportControls';
@@ -21,7 +21,7 @@ export function TrackPreview({
   player,
   onPatch,
 }: {
-  track: PoolTrack | null;
+  track: Track | null;
   player: TrackPlayer;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
 }) {

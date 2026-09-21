@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { PoolTrack } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 import { TrackList } from './components/TrackList';
 import { TrackPreview } from './components/TrackPreview';
 import { useTrackLibrary } from './hooks/useTrackLibrary';
@@ -11,7 +11,7 @@ function TracksPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const opened = library.songs.find((song) => song.id === player.openedId) ?? null;
 
-  const openTrack = (song: PoolTrack) => {
+  const openTrack = (song: Track) => {
     if (song.status !== 'ready') return;
     setSelectedId(song.id);
     void player.open(song.id);

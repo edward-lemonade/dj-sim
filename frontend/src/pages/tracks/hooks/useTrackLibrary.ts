@@ -4,11 +4,11 @@ import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/audio/trackMetadata';
 import { deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
 import { getCurrentUser, registerUser } from '@/lib/api/UserAPI';
 import { ApiError } from '@/lib/clients/axios';
-import type { Track, TrackUpdateFields } from '@/lib/types/track';
-import type { PoolTrack } from '@/lib/types/track';
+import type { TrackDTO, TrackUpdateFields } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 import { useTrackUpload } from '@/pages/tracks/hooks/useTrackUpload';
 
-export function trackToPool(track: Track): PoolTrack {
+export function trackToPool(track: TrackDTO): Track {
   return {
     id: track.id,
     title: track.title,
@@ -26,8 +26,8 @@ export function trackToPool(track: Track): PoolTrack {
 
 export function useTrackLibrary() {
   const { user, isLoaded, isSignedIn } = useUser();
-  const [songs, setSongs] = useState<PoolTrack[]>([]);
-  const songsRef = useRef<PoolTrack[]>([]);
+  const [songs, setSongs] = useState<Track[]>([]);
+  const songsRef = useRef<Track[]>([]);
   const { uploadRef, handleUpload } = useTrackUpload({ setSongs, isSignedIn });
   songsRef.current = songs;
 
@@ -72,7 +72,7 @@ export function useTrackLibrary() {
     };
   }, []);
 
-  const removeSong = useCallback(async (song: PoolTrack) => {
+  const removeSong = useCallback(async (song: Track) => {
     if (song.status === 'uploading') return;
 
     if (song.status === 'ready') {

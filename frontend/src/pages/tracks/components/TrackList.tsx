@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { peaksFromOverview } from '@/lib/audio/threeBandWaveform';
 import { SongCover } from '@/components/SongCover';
-import type { PoolTrack } from '@/lib/types/track';
+import type { Track } from '@/lib/types/track';
 import { WaveformCanvas } from './WaveformCanvas';
 import { rowShift, useListItemMove } from '../hooks/useListItemMove'; // adjust path
 
@@ -78,15 +78,15 @@ export function TrackList({
   onOpen,
   onDelete,
 }: {
-  songs: PoolTrack[];
-  setSongs: Dispatch<SetStateAction<PoolTrack[]>>;
+  songs: Track[];
+  setSongs: Dispatch<SetStateAction<Track[]>>;
   selectedId: string | null;
   openedId: string | null;
   uploadRef: MutableRefObject<HTMLInputElement | null>;
   onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   onSelect: (id: string) => void;
-  onOpen: (song: PoolTrack) => void;
-  onDelete: (song: PoolTrack) => void;
+  onOpen: (song: Track) => void;
+  onDelete: (song: Track) => void;
 }) {
   const [widths, setWidths] = useState<Record<FlexColumnId, number>>(loadWidths);
   const dragCol = useRef<{
