@@ -1,6 +1,9 @@
 import { useAuth } from '@clerk/react';
 import { Navigate, Outlet, createBrowserRouter } from 'react-router-dom';
+import AppLayout from '@/components/layout/AppLayout';
 import HomePage from '@/pages/home/HomePage';
+import TracksPage from '@/pages/tracks/TracksPage';
+import SkillsPage from '@/pages/skills/SkillsPage';
 import StudioPage from '@/pages/Studio';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
@@ -22,7 +25,12 @@ function PublicAuthLayout() {
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <HomePage />,
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: 'tracks', element: <TracksPage /> },
+      { path: 'skills', element: <SkillsPage /> },
+    ],
   },
   {
     path: '/studio',

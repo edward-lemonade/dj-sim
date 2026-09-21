@@ -1,9 +1,10 @@
-import { LoaderCircle, TriangleAlert } from "lucide-react";
-import type { PoolTrack } from './types';
+import { LoaderCircle, TriangleAlert } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { PoolTrack } from '@/lib/types/track';
 
-export function SongCover({ song }: { song: PoolTrack }) {
+export function SongCover({ song, className }: { song: PoolTrack; className?: string }) {
   return (
-    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg shadow-sm shadow-violet-500/20">
+    <div className={cn('relative h-12 w-12 shrink-0 overflow-hidden shadow-sm shadow-violet-500/20', className)}>
       {song.status === 'error' ? (
         <div className="flex h-full w-full items-center justify-center bg-red-600 text-white" title={song.errorMessage || 'Upload failed'}>
           <TriangleAlert className="h-5 w-5" aria-hidden="true" />

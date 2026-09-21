@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -20,7 +21,16 @@ type TrackService interface {
 	ListByUserID(ctx context.Context, userID string) ([]track.Track, error)
 	Create(ctx context.Context, t *track.Track) error
 	GetByIDForUser(ctx context.Context, id, userID string) (*track.Track, error)
+	Update(ctx context.Context, id, userID string, fields track.UpdateFields) (*track.Track, error)
 	Delete(ctx context.Context, id, userID string) error
+}
+
+type patchTrackRequest struct {
+	Title            *string                 `json:"title"`
+	Artist           *string                 `json:"artist"`
+	BPM              *int                    `json:"bpm"`
+	Key              *string                 `json:"key"`
+	WaveformOverview *track.WaveformOverview `json:"waveformOverview"`
 }
 
 type TrackHandler struct {
@@ -63,8 +73,10 @@ func (h *TrackHandler) Upload(c *gin.Context) {
 	title := firstNonEmpty(c.PostForm("title"), meta.Title)
 	artist := firstNonEmpty(c.PostForm("artist"), meta.Artist)
 	duration := firstNonEmpty(c.PostForm("duration"), "--:--")
+	key := strings.TrimSpace(c.PostForm("key"))
 	bpm := parseBPM(c.PostForm("bpm"))
 	cover := firstNonEmpty(c.PostForm("cover"), coverFromTitle(title))
+	overview := parseWaveformOverview(c.PostForm("waveformOverview"))
 
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" || contentType == "application/octet-stream" {
@@ -78,15 +90,17 @@ func (h *TrackHandler) Upload(c *gin.Context) {
 	}
 
 	saved := &track.Track{
-		UserID:    u.ID,
-		Title:     title,
-		Artist:    artist,
-		BPM:       bpm,
-		Duration:  duration,
-		Cover:     cover,
-		URL:       uploaded.URL,
-		ObjectKey: uploaded.Key,
-		FileName:  filepath.Base(header.Filename),
+		UserID:           u.ID,
+		Title:            title,
+		Artist:           artist,
+		BPM:              bpm,
+		Key:              key,
+		Duration:         duration,
+		Cover:            cover,
+		URL:              uploaded.URL,
+		ObjectKey:        uploaded.Key,
+		FileName:         filepath.Base(header.Filename),
+		WaveformOverview: overview,
 	}
 	if err := h.Tracks.Create(c.Request.Context(), saved); err != nil {
 		_ = storage.DeleteTrackFromS3(c.Request.Context(), uploaded.Key)
@@ -114,6 +128,58 @@ func (h *TrackHandler) Delete(c *gin.Context) {
 
 	_ = storage.DeleteTrackFromS3(c.Request.Context(), existing.ObjectKey)
 	c.Status(http.StatusNoContent)
+}
+
+func (h *TrackHandler) Update(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	id := c.Param("id")
+
+	var req patchTrackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid JSON body"})
+		return
+	}
+
+	fields := track.UpdateFields{
+		Title:            trimPointer(req.Title),
+		Artist:           trimPointer(req.Artist),
+		BPM:              req.BPM,
+		Key:              trimPointer(req.Key),
+		WaveformOverview: req.WaveformOverview,
+	}
+
+	updated, err := h.Tracks.Update(c.Request.Context(), id, u.ID, fields)
+	if err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, updated)
+}
+
+func (h *TrackHandler) Audio(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	id := c.Param("id")
+
+	existing, err := h.Tracks.GetByIDForUser(c.Request.Context(), id, u.ID)
+	if err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+
+	obj, err := storage.GetTrackFromS3(c.Request.Context(), existing.ObjectKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+	defer obj.Body.Close()
+
+	contentType := obj.ContentType
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = mimeTypeForFile(existing.FileName)
+	}
+	c.Header("Accept-Ranges", "bytes")
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.DataFromReader(http.StatusOK, obj.ContentLength, contentType, obj.Body, nil)
 }
 
 func isAudioUpload(header *multipart.FileHeader) bool {
@@ -163,6 +229,29 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func parseWaveformOverview(raw string) *track.WaveformOverview {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var overview track.WaveformOverview
+	if err := json.Unmarshal([]byte(raw), &overview); err != nil {
+		return nil
+	}
+	if len(overview.Lows) == 0 && len(overview.Mids) == 0 && len(overview.Highs) == 0 {
+		return nil
+	}
+	return &overview
+}
+
+func trimPointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	return &trimmed
 }
 
 func parseBPM(raw string) int {

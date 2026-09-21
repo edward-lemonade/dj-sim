@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { PoolTrack } from './types';
+import type { PoolTrack } from '@/lib/types/track';
 
 export type DragState = {
   id: string;
@@ -22,17 +22,21 @@ export type DragState = {
   y: number;
 };
 
-const ROW_GAP = 8;
-const LIST_PADDING = 8;
+const DEFAULT_ROW_GAP = 8;
+const DEFAULT_LIST_PADDING = 8;
 
 export function useListItemMove({
   songs,
   setSongs,
   listRef,
+  rowGap = DEFAULT_ROW_GAP,
+  listPadding = DEFAULT_LIST_PADDING,
 }: {
   songs: PoolTrack[];
   setSongs: Dispatch<SetStateAction<PoolTrack[]>>;
   listRef: RefObject<HTMLDivElement | null>;
+  rowGap?: number;
+  listPadding?: number;
 }) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const songsRef = useRef<PoolTrack[]>(songs);
@@ -79,10 +83,10 @@ export function useListItemMove({
     if (!list || count === 0) return 0;
 
     const rect = list.getBoundingClientRect();
-    const y = clientY - rect.top + list.scrollTop - LIST_PADDING;
-    const stride = height + ROW_GAP;
+    const y = clientY - rect.top + list.scrollTop - listPadding;
+    const stride = height + rowGap;
     return Math.max(0, Math.min(count - 1, Math.round(y / stride)));
-  }, [listRef]);
+  }, [listRef, listPadding, rowGap]);
 
   const autoScrollList = useCallback((clientY: number) => {
     const list = listRef.current;
@@ -106,7 +110,7 @@ export function useListItemMove({
     });
   }, []);
 
-  const onRowPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>, song: PoolTrack) => {
+  const onRowPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>, song: PoolTrack) => {
     if (song.status === 'uploading' || event.button !== 0) return;
 
     const target = event.target;
@@ -207,7 +211,7 @@ export function useListItemMove({
   }, [stopListening]);
 
   const draggedSong = drag ? songs.find((song) => song.id === drag.id) ?? null : null;
-  const stride = drag ? drag.height + ROW_GAP : 0;
+  const stride = drag ? drag.height + rowGap : 0;
 
   return {
     drag,

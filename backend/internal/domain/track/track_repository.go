@@ -40,6 +40,38 @@ func (r *Repository) Create(ctx context.Context, track *Track) error {
 	return r.db.WithContext(ctx).Create(track).Error
 }
 
+func (r *Repository) Update(ctx context.Context, id, userID string, fields UpdateFields) (*Track, error) {
+	existing, err := r.FindByIDForUser(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]any{}
+	if fields.Title != nil {
+		updates["title"] = *fields.Title
+	}
+	if fields.Artist != nil {
+		updates["artist"] = *fields.Artist
+	}
+	if fields.BPM != nil {
+		updates["bpm"] = *fields.BPM
+	}
+	if fields.Key != nil {
+		updates["key"] = *fields.Key
+	}
+	if fields.WaveformOverview != nil {
+		updates["waveform_overview"] = fields.WaveformOverview
+	}
+	if len(updates) == 0 {
+		return existing, nil
+	}
+
+	if err := r.db.WithContext(ctx).Model(existing).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return r.FindByIDForUser(ctx, id, userID)
+}
+
 func (r *Repository) Delete(ctx context.Context, id, userID string) error {
 	res := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).Delete(&Track{})
 	if res.Error != nil {

@@ -4,6 +4,7 @@ export type ParsedTrackMetadata = {
   title: string;
   artist: string;
   bpm: number;
+  key: string;
   duration: string;
   coverUrl: string | null;
   coverDataUrl: string | null;
@@ -26,6 +27,7 @@ export async function readTrackMetadata(file: File): Promise<ParsedTrackMetadata
   let title = fromName.title;
   let artist = fromName.artist;
   let bpm = fromName.bpm;
+  let key = '';
   let duration = '--:--';
   let coverUrl: string | null = null;
   let coverDataUrl: string | null = null;
@@ -49,6 +51,7 @@ export async function readTrackMetadata(file: File): Promise<ParsedTrackMetadata
       bpmFromNative(metadata.native) ||
       bpmFromComments(metadata.common.comment) ||
       bpm;
+    key = parseKey(metadata.common.key) || keyFromNative(metadata.native);
     duration = formatDuration(metadata.format.duration);
 
     const cover = selectCover(metadata.common.picture) ?? metadata.common.picture?.[0];
@@ -66,6 +69,7 @@ export async function readTrackMetadata(file: File): Promise<ParsedTrackMetadata
     title,
     artist,
     bpm,
+    key,
     duration,
     coverUrl,
     coverDataUrl,
@@ -100,6 +104,37 @@ function firstText(value?: string | string[] | null) {
     return value.map((item) => item.trim()).find(Boolean) || '';
   }
   return value?.trim() || '';
+}
+
+function parseKey(value?: string | string[] | null) {
+  return firstText(value);
+}
+
+function keyFromNative(native?: Record<string, ITag[]>) {
+  if (!native) return '';
+  for (const tags of Object.values(native)) {
+    for (const tag of tags ?? []) {
+      const id = String(tag.id ?? '').toLowerCase();
+      if (
+        id === 'tkey' ||
+        id === 'initialkey' ||
+        id.endsWith(':tkey') ||
+        id.endsWith(':initialkey') ||
+        id.includes('initialkey')
+      ) {
+        const key = parseKey(typeof tag.value === 'string' ? tag.value : String(tag.value ?? ''));
+        if (key) return key;
+      }
+      if (id.includes('txxx') && typeof tag.value === 'object' && tag.value) {
+        const description = String((tag.value as { description?: string }).description ?? '').toLowerCase();
+        if (description === 'tkey' || description === 'initialkey' || description === 'key') {
+          const key = parseKey((tag.value as { text?: string }).text);
+          if (key) return key;
+        }
+      }
+    }
+  }
+  return '';
 }
 
 function parseBpm(value: unknown): number {

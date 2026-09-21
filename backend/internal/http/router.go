@@ -34,6 +34,8 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string) *gin.Engine {
 	auth.POST("user", userHandler.Register)
 	auth.GET("tracks", middleware.RequireUser(), trackHandler.List)
 	auth.POST("tracks/upload", middleware.RequireUser(), trackHandler.Upload)
+	auth.PATCH("tracks/:id", middleware.RequireUser(), trackHandler.Update)
+	auth.GET("tracks/:id/audio", middleware.RequireUser(), trackHandler.Audio)
 	auth.DELETE("tracks/:id", middleware.RequireUser(), trackHandler.Delete)
 
 	return r

@@ -22,6 +22,10 @@ func (s *Service) GetByIDForUser(ctx context.Context, id, userID string) (*Track
 	return s.tracksDB.FindByIDForUser(ctx, id, userID)
 }
 
+func (s *Service) Update(ctx context.Context, id, userID string, fields UpdateFields) (*Track, error) {
+	return s.tracksDB.Update(ctx, id, userID, fields)
+}
+
 func (s *Service) Delete(ctx context.Context, id, userID string) error {
 	return s.tracksDB.Delete(ctx, id, userID)
 }

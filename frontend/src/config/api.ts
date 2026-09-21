@@ -6,6 +6,8 @@ export const API_ROUTES = {
   track: {
     list: '/tracks',
     upload: '/tracks/upload',
+    update: (id: string) => `/tracks/${id}`,
+    audio: (id: string) => `/tracks/${id}/audio`,
     remove: (id: string) => `/tracks/${id}`,
   },
 }

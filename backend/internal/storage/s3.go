@@ -83,6 +83,67 @@ func UploadTrackToS3(ctx context.Context, reader io.Reader, fileName, contentTyp
 	}, nil
 }
 
+type TrackObject struct {
+	Body          io.ReadCloser
+	ContentType   string
+	ContentLength int64
+}
+
+func GetTrackFromS3(ctx context.Context, objectKey string) (*TrackObject, error) {
+	if strings.TrimSpace(objectKey) == "" {
+		return nil, fmt.Errorf("object key is required")
+	}
+
+	bucket := strings.TrimSpace(os.Getenv("AWS_S3_BUCKET"))
+	if bucket == "" {
+		return nil, fmt.Errorf("AWS_S3_BUCKET is not configured")
+	}
+
+	client, _, err := clientForBucket(ctx, bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	get := func(c *s3.Client) (*s3.GetObjectOutput, error) {
+		return c.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(objectKey),
+		})
+	}
+
+	out, err := get(client)
+	if err != nil {
+		if redirected := regionFromError(err); redirected != "" {
+			rememberBucketRegion(bucket, redirected)
+			retryClient, _, retryErr := clientForBucket(ctx, bucket)
+			if retryErr != nil {
+				return nil, fmt.Errorf("get from s3: %w", err)
+			}
+			out, err = get(retryClient)
+			if err != nil {
+				return nil, fmt.Errorf("get from s3: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("get from s3: %w", err)
+		}
+	}
+
+	contentType := "application/octet-stream"
+	if out.ContentType != nil && strings.TrimSpace(*out.ContentType) != "" {
+		contentType = *out.ContentType
+	}
+	var size int64
+	if out.ContentLength != nil {
+		size = *out.ContentLength
+	}
+
+	return &TrackObject{
+		Body:          out.Body,
+		ContentType:   contentType,
+		ContentLength: size,
+	}, nil
+}
+
 func DeleteTrackFromS3(ctx context.Context, objectKey string) error {
 	if strings.TrimSpace(objectKey) == "" {
 		return nil
