@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PoolTrack } from '@/lib/types/track';
-import { TrackExplorer } from './components/TrackExplorer';
+import { TrackList } from './components/TrackList';
 import { TrackPreview } from './components/TrackPreview';
 import { useTrackLibrary } from './hooks/useTrackLibrary';
 import { useTrackPlayer } from './hooks/useTrackPlayer';
@@ -20,7 +20,7 @@ function TracksPage() {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-zinc-800 bg-[#101214] text-zinc-200 shadow-lg">
       <TrackPreview track={opened} player={player} onPatch={library.patchTrack} />
-      <TrackExplorer
+      <TrackList
         songs={library.songs}
         setSongs={library.setSongs}
         selectedId={selectedId}

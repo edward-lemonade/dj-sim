@@ -7,6 +7,7 @@ import { peaksFromOverview } from '@/lib/audio/threeBandWaveform';
 import { TransportControls, formatPlaybackTime } from './TransportControls';
 import type { TrackPlayer } from '../hooks/useTrackPlayer';
 import { WaveformCanvas } from './WaveformCanvas';
+import { BeatGrid } from './BeatGrid';
 
 // clicking zoom in multiplies zoom by 1 / ZOOM_STEP; zoom out multiplies by ZOOM_STEP.
 // bounds match WaveformCanvas's own wheel-zoom clamp (1x-48x) so buttons and any
@@ -66,7 +67,18 @@ export function TrackPreview({
             onInteractionChange={player.setInteracting}
           />
 
-          <div className="absolute right-4 top-4 flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/80 backdrop-blur-sm">
+          <BeatGrid
+            bpm={track.bpm}
+            offset={track.beatOffset ?? 0}
+            durationSeconds={player.durationSeconds}
+            viewStart={player.viewStart}
+            viewEnd={player.viewEnd}
+            onCommit={(beatOffset) => {
+              void onPatch(track.id, { beatOffset }).catch(() => {});
+            }}
+          />
+
+          <div className="absolute right-4 top-4 z-10 flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/80 backdrop-blur-sm">
             <button
               type="button"
               onClick={() => zoomBy(ZOOM_STEP)}

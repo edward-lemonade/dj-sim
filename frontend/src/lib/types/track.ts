@@ -11,6 +11,7 @@ export interface Track {
   title: string;
   artist: string;
   bpm: number;
+  beatOffset: number; // seconds to the first measure line
   key: string;
   duration: string;
   cover: string;
@@ -25,6 +26,7 @@ export type TrackUpdateFields = {
   title?: string;
   artist?: string;
   bpm?: number;
+  beatOffset?: number;
   key?: string;
   waveformOverview?: WaveformOverview;
 };
@@ -35,6 +37,7 @@ export type PoolTrack = {
   title: string;
   artist: string;
   bpm: number;
+  beatOffset: number;
   key: string;
   duration: string;
   coverLabel: string;

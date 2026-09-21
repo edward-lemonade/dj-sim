@@ -67,7 +67,7 @@ function loadWidths(): Record<FlexColumnId, number> {
   }
 }
 
-export function TrackExplorer({
+export function TrackList({
   songs,
   setSongs,
   selectedId,

@@ -46,7 +46,7 @@ type BandLayer = {
 // from underneath it instead of being buried by it.
 const LOW_LAYER: BandLayer = { r: 59, g: 130, b: 246, alpha: 1, curve: 0.7, heightFraction: 0.46 };
 const HIGH_LAYER: BandLayer = { r: 255, g: 122, b: 24, alpha: 1, curve: 0.7, heightFraction: 0.4 };
-const MID_LAYER: BandLayer = { r: 244, g: 244, b: 244, alpha: 1, curve: 0.85, heightFraction: 0.26 };
+const MID_LAYER: BandLayer = { r: 200, g: 200, b: 200, alpha: 1, curve: 0.85, heightFraction: 0.26 };
 
 // Single flat tone used by the cheap one-band path (overview / mini). No band
 // colors to layer, so this is just a neutral, legible-on-dark fill.

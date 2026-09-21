@@ -14,6 +14,7 @@ export function trackToPool(track: Track): PoolTrack {
     title: track.title,
     artist: track.artist,
     bpm: track.bpm,
+    beatOffset: track.beatOffset ?? 0,
     key: track.key ?? '',
     duration: track.duration,
     coverLabel: coverLabelFromTitle(track.title),

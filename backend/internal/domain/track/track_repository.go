@@ -56,6 +56,9 @@ func (r *Repository) Update(ctx context.Context, id, userID string, fields Updat
 	if fields.BPM != nil {
 		updates["bpm"] = *fields.BPM
 	}
+	if fields.BeatOffset != nil {
+		updates["beat_offset"] = *fields.BeatOffset
+	}
 	if fields.Key != nil {
 		updates["key"] = *fields.Key
 	}

@@ -29,6 +29,7 @@ type patchTrackRequest struct {
 	Title            *string                 `json:"title"`
 	Artist           *string                 `json:"artist"`
 	BPM              *int                    `json:"bpm"`
+	BeatOffset       *float64                `json:"beatOffset"`
 	Key              *string                 `json:"key"`
 	WaveformOverview *track.WaveformOverview `json:"waveformOverview"`
 }
@@ -94,6 +95,7 @@ func (h *TrackHandler) Upload(c *gin.Context) {
 		Title:            title,
 		Artist:           artist,
 		BPM:              bpm,
+		BeatOffset:       0,
 		Key:              key,
 		Duration:         duration,
 		Cover:            cover,
@@ -140,10 +142,16 @@ func (h *TrackHandler) Update(c *gin.Context) {
 		return
 	}
 
+	if req.BeatOffset != nil && (*req.BeatOffset < 0 || *req.BeatOffset > 3600) {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid beat offset"})
+		return
+	}
+
 	fields := track.UpdateFields{
 		Title:            trimPointer(req.Title),
 		Artist:           trimPointer(req.Artist),
 		BPM:              req.BPM,
+		BeatOffset:       req.BeatOffset,
 		Key:              trimPointer(req.Key),
 		WaveformOverview: req.WaveformOverview,
 	}
