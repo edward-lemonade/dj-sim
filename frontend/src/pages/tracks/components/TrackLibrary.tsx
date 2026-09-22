@@ -15,7 +15,7 @@ import { SongCover } from '@/components/SongCover';
 import type { Track } from '@/lib/types/Track';
 import { WaveformCanvas } from '../../../components/WaveformCanvas';
 import { rowShift, useListItemMove } from '../../../hooks/useListItemMove'; // adjust path
-import { CUE_COLORS, trackSeconds } from '@/lib/types/Cues';
+import { trackSeconds } from '@/lib/types/Cues';
 import { CueTicks } from '../../../components/CueTicks';
 
 const STORAGE_KEY = 'dj-sim.tracks.columnWidths';
@@ -87,7 +87,7 @@ export function TrackLibrary({
   uploadRef: MutableRefObject<HTMLInputElement | null>;
   onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   onSelect: (id: string) => void;
-  onOpen: (song: Track) => void;
+  onOpen: (song: Track | null) => void;
   onDelete: (song: Track) => void;
 }) {
   const [widths, setWidths] = useState<Record<FlexColumnId, number>>(loadWidths);
@@ -291,7 +291,7 @@ export function TrackLibrary({
                   key={song.id}
                   data-song-row
                   onClick={() => onSelect(song.id)}
-                  onDoubleClick={() => onOpen(song)}
+                  onDoubleClick={() => onOpen(opened ? null : song)}
                   style={{
                     transform: shift ? `translateY(${shift}px)` : undefined,
                     transition: drag ? 'transform 150ms ease' : undefined,

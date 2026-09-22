@@ -6,7 +6,7 @@ import { getCurrentUser, registerUser } from '@/lib/api/UserAPI';
 import { ApiError } from '@/lib/clients/axios';
 import type { TrackDTO, TrackUpdateFields } from '@/lib/types/Track';
 import type { Track } from '@/lib/types/Track';
-import { useTrackUpload } from '@/pages/tracks/hooks/useTrackUpload';
+import { useTrackUpload } from './useTrackUpload';
 import { normalizeCues } from '@/lib/types/Cues';
 
 export function trackToPool(track: TrackDTO): Track {

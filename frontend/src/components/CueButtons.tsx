@@ -1,22 +1,26 @@
 import { CUE_COLORS, CUE_LABELS } from "@/lib/types/Cues";
 
-const SIZE = 18
-
 export function CueButtons({
   cues,
   currentTime,
   disabled,
+  mode = 'edit',
+  size = 18,
   onChange,
+  onCueClick,
 }: {
   cues: Array<number | null>;
   currentTime: number;
   disabled?: boolean;
-  onChange: (next: Array<number | null>) => void;
+  mode?: 'edit' | 'jump';
+  size?: number;
+  onChange?: (next: Array<number | null>) => void;
+  onCueClick?: (index: number) => void;
 }) {
   const toggle = (i: number) => {
     const next = [...cues];
     next[i] = next[i] === null ? Math.round(currentTime * 1000) / 1000 : null;
-    onChange(next);
+    onChange?.(next);
   };
 
   return (
@@ -24,19 +28,42 @@ export function CueButtons({
       {CUE_LABELS.map((label, i) => {
         const set = cues[i] !== null;
         const color = CUE_COLORS[i];
+        const jumpDisabled = mode === 'jump' && !set;
         return (
           <button
             key={label}
             type="button"
-            disabled={disabled}
-            onClick={() => toggle(i)}
-            title={set ? `Delete cue ${label}` : `Set cue ${label} at playhead`}
-            aria-label={set ? `Delete cue ${label}` : `Set cue ${label}`}
+            disabled={disabled || jumpDisabled}
+            onClick={() => {
+              if (mode === 'jump') {
+                if (set) onCueClick?.(i);
+                return;
+              }
+              toggle(i);
+            }}
+            title={
+              mode === 'jump'
+                ? set
+                  ? `Jump to cue ${label}`
+                  : `Cue ${label} unset`
+                : set
+                  ? `Delete cue ${label}`
+                  : `Set cue ${label} at playhead`
+            }
+            aria-label={
+              mode === 'jump'
+                ? set
+                  ? `Jump to cue ${label}`
+                  : `Cue ${label} unset`
+                : set
+                  ? `Delete cue ${label}`
+                  : `Set cue ${label}`
+            }
             style={{
-            width: SIZE,
-            height: SIZE,
-            minWidth: SIZE,
-            minHeight: SIZE,
+            width: size,
+            height: size,
+            minWidth: size,
+            minHeight: size,
             fontSize: 10,
             lineHeight: 1,
             ...(set

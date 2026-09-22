@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronsLeft, ChevronsRight, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { TrackPlayer } from '../hooks/useTrackPlayer';

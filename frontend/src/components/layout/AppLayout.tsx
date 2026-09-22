@@ -17,7 +17,7 @@ function AppLayout() {
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.16),_transparent_45%),linear-gradient(180deg,#05070d_0%,#0a0e17_45%,#0d1119_100%)] text-slate-100">
       {/* Flush top bar: fixed height, full width, identical on every route */}
-      <header className="grid h-16 w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-white/10 bg-[#05070d]/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+      <header className="grid h-16 w-full shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-slate/40 bg-[#05070d]/80 px-4 backdrop-blur-md sm:px-6 lg:px-8">
         <NavLink to="/" className="justify-self-start text-lg font-semibold tracking-tight text-white">
           Lemonade DJ Sim
         </NavLink>

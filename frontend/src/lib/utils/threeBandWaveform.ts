@@ -203,7 +203,6 @@ function drawOverlays(
   dpr: number,
   start: number,
   span: number,
-  playhead: number | undefined,
   options: WaveformDrawOptions,
 ) {
   if (options.showViewport && options.viewportStart != null && options.viewportEnd != null) {
@@ -215,14 +214,6 @@ function drawOverlays(
     ctx.lineWidth = Math.max(1, dpr);
     ctx.strokeRect(x0, 1, Math.max(2, x1 - x0), height - 2);
   }
-
-  if (playhead != null && Number.isFinite(playhead)) {
-    const x = ((playhead - start) / span) * width;
-    if (x >= 0 && x <= width) {
-      ctx.fillStyle = 'rgba(255,255,0,1)';
-      ctx.fillRect(x, 0, Math.max(1, dpr), height);
-    }
-  }
 }
 
 // Full 3-band draw, used for the zoomed/scrubbable waveform where the extra
@@ -232,7 +223,6 @@ export function drawRgbWaveform(
   peaks: ThreeBandPeaks | null,
   viewStart: number,
   viewEnd: number,
-  playhead: number | undefined,
   options: WaveformDrawOptions = {},
 ) {
   const frame = beginFrame(canvas, options.background);
@@ -254,7 +244,7 @@ export function drawRgbWaveform(
   drawBandLayer(ctx, peaks.highs, HIGH_LAYER, start, span, columns, width, height, midY);
   drawBandLayer(ctx, peaks.mids, MID_LAYER, start, span, columns, width, height, midY);
 
-  drawOverlays(ctx, width, height, dpr, start, span, playhead, options);
+  drawOverlays(ctx, width, height, dpr, start, span, options);
 }
 
 // Cheap single-band draw for the overview strip and per-row mini waveforms:
@@ -268,7 +258,6 @@ export function drawMonoWaveform(
   peaks: ThreeBandPeaks | null,
   viewStart: number,
   viewEnd: number,
-  playhead: number | undefined,
   options: WaveformDrawOptions = {},
 ) {
   const frame = beginFrame(canvas, options.background);
@@ -303,7 +292,7 @@ export function drawMonoWaveform(
     ctx.fillRect(x, midY - half, step, Math.max(1, half * 2));
   }
 
-  drawOverlays(ctx, width, height, dpr, start, span, playhead, options);
+  drawOverlays(ctx, width, height, dpr, start, span, options);
 }
 
 function drawBandLayer(

@@ -1,26 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { ZoomIn, ZoomOut } from 'lucide-react';
 import { SongCover } from '@/components/SongCover';
 import type { Track } from '@/lib/types/Track';
 import type { TrackUpdateFields } from '@/lib/types/Track';
-import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { TransportControls, formatPlaybackTime } from '../../../components/TransportControls';
 import type { TrackPlayer } from '../../../hooks/useTrackPlayer';
-import { WaveformCanvas } from '../../../components/WaveformCanvas';
-import { BeatGrid } from '../../../components/BeatGrid';
 import { CueButtons } from '@/components/CueButtons';
-import { CueMarkers } from '../../../components/CueMarkers';
-import { normalizeCues, trackSeconds } from '@/lib/types/Cues';
-import { CueTicks } from '../../../components/CueTicks';
+import { normalizeCues } from '@/lib/types/Cues';
 import { GridControls } from '../../../components/GridControls';
-import { useGridNudge } from '../../../hooks/useGridNudge'; // adjust path
-
-// clicking zoom in multiplies zoom by 1 / ZOOM_STEP; zoom out multiplies by ZOOM_STEP.
-// bounds match WaveformCanvas's own wheel-zoom clamp (1x-48x) so buttons and any
-// other zoom path stay consistent.
-const ZOOM_STEP = 0.7;
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 48;
+import { useGridNudge } from '../../../hooks/useGridNudge';
+import { WaveformDoubleDisplay } from '@/components/WaveformDoubleDisplay';
+import { BandOptions } from '@/components/WaveformCanvas';
 
 export function TrackPreview({
   track,
@@ -31,20 +20,6 @@ export function TrackPreview({
   player: TrackPlayer;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
 }) {
-  const playhead = player.durationSeconds > 0 ? player.currentTime / player.durationSeconds : undefined;
-  const peaks = player.hiResPeaks ?? peaksFromOverview(track?.waveformOverview);
-
-  const zoomBy = (factor: number) => {
-    const start = player.viewStart;
-    const end = player.viewEnd;
-    const center = playhead !== undefined && playhead >= start && playhead <= end ? playhead : (start + end) / 2;
-
-    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, player.zoom / factor));
-    const newWidth = 1 / newZoom;
-    const newStart = Math.max(0, Math.min(center - newWidth / 2, 1 - newWidth));
-    player.setView(newStart, newZoom);
-  };
-
   const { offset: beatOffset, nudge: nudgeGrid } = useGridNudge({
     trackId: track?.id ?? null,
     bpm: track?.bpm ?? 0,
@@ -54,7 +29,7 @@ export function TrackPreview({
 
   if (!track || player.status === 'idle') {
     return (
-      <section className="flex min-h-0 flex-1 items-center justify-center bg-[#101214]">
+      <section className="flex min-h-0 shrink-0 items-center justify-center bg-[#101214] border-b border-slate/40">
         <p className="text-sm tracking-wide text-zinc-400">No track opened</p>
       </section>
     );
@@ -66,64 +41,16 @@ export function TrackPreview({
   };
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-[#101214]">
+    <section className="flex min-h-0 shrink-0 flex-col bg-mist-900 border-b border-slate/40">
       {player.status === 'error' ? (
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-red-400">
           {player.errorMessage || 'Could not open track'}
         </div>
       ) : (
-        <div className="relative min-h-0 flex-1 px-2 pt-2">
-          <WaveformCanvas
-            variant="zoomed"
-            peaks={peaks}
-            viewStart={player.viewStart}
-            viewEnd={player.viewEnd}
-            playhead={playhead}
-            zoom={player.zoom}
-            onSeek={player.seekFraction}
-            onViewChange={player.setView}
-            onInteractionChange={player.setInteracting}
-          />
-
-          <BeatGrid
-            bpm={track.bpm}
-            offset={beatOffset}
-            durationSeconds={player.durationSeconds}
-            viewStart={player.viewStart}
-            viewEnd={player.viewEnd}
-          />
-          <CueMarkers
-            cues={cues}
-            durationSeconds={player.durationSeconds}
-            viewStart={player.viewStart}
-            viewEnd={player.viewEnd}
-          />
-
-          <div className="absolute right-4 top-4 z-10 flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/80 backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={() => zoomBy(ZOOM_STEP)}
-              className="flex h-8 w-8 items-center justify-center text-zinc-300 hover:bg-zinc-700 hover:text-white"
-              aria-label="Zoom in"
-              title="Zoom in"
-            >
-              <ZoomIn className="h-4 w-4" />
-            </button>
-            <div className="h-px bg-zinc-700" />
-            <button
-              type="button"
-              onClick={() => zoomBy(1 / ZOOM_STEP)}
-              className="flex h-8 w-8 items-center justify-center text-zinc-300 hover:bg-zinc-700 hover:text-white"
-              aria-label="Zoom out"
-              title="Zoom out"
-            >
-              <ZoomOut className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+        <WaveformDoubleDisplay track={track} player={player} bands={BandOptions.Triple} />
       )}
 
-      <div className="flex items-center justify-center gap-10 border-y border-zinc-800 bg-[#161a20] px-3 py-1.5">
+      <div className="flex items-center justify-center gap-10 border-y border-zinc-800 bg-mist-900 px-3 py-1.5">
         <TransportControls player={player}/>
         <CueButtons
           cues={cues}
@@ -134,23 +61,8 @@ export function TrackPreview({
         <GridControls disabled={track.libraryStatus !== 'ready' || track.bpm <= 0} onNudge={nudgeGrid} />
       </div>
 
-      <div className="relative overflow-hidden h-16 px-2 py-1">
-        <WaveformCanvas
-          variant="overview"
-          peaks={peaksFromOverview(track.waveformOverview) ?? peaks}
-          viewStart={player.viewStart}
-          viewEnd={player.viewEnd}
-          playhead={playhead}
-          zoom={player.zoom}
-          onSeek={player.seekFraction}
-          onViewChange={player.setView}
-          onInteractionChange={player.setInteracting}
-        />
-        <CueTicks cues={track.cues} seconds={trackSeconds(track)} />
-      </div>
-
-      <div className="grid grid-cols-[40px_minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_70px] items-center gap-2 border-t border-zinc-800 bg-[#14181e] px-3 py-2 text-xs">
-        <SongCover song={track} className="h-8 w-8 rounded-sm shadow-none" />
+      <div className="grid grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)] items-center gap-2 border-zinc-800 bg-mist-900 px-3 py-2 text-xs">
+        <SongCover song={track} className="h-8 w-8 shrink-0 rounded-sm shadow-none" />
         <MetaField label="Title" value={track.title} disabled={track.libraryStatus !== 'ready'} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
         <MetaField label="Artist" value={track.artist} disabled={track.libraryStatus !== 'ready'} onCommit={(artist) => onPatch(track.id, { artist })} />
         <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={track.libraryStatus !== 'ready'} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />

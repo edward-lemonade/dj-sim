@@ -4,7 +4,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import HomePage from '@/pages/home/HomePage';
 import TracksPage from '@/pages/tracks/TracksPage';
 import SkillsPage from '@/pages/skills/SkillsPage';
-import StudioPage from '@/pages/Studio';
+import StudioPage from '@/pages/studio/StudioPage';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 

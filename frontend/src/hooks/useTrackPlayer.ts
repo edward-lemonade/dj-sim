@@ -12,7 +12,8 @@ export type PlayerStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'error';
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 48;
 
-export function useTrackPlayer() {
+export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
+  const enableSpacebar = options?.enableSpacebar !== false;
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [status, setStatus] = useState<PlayerStatus>('idle');
   const [currentTime, setCurrentTime] = useState(0);
@@ -225,6 +226,7 @@ export function useTrackPlayer() {
   }, [durationSeconds, status, viewStart, zoom]);
 
   useEffect(() => {
+    if (!enableSpacebar) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== 'Space') return;
       const target = event.target as HTMLElement | null;
@@ -242,7 +244,7 @@ export function useTrackPlayer() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [enableSpacebar]);
 
   useEffect(() => {
     return () => {

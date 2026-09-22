@@ -166,6 +166,15 @@ button {
   }
 }
 
+@keyframes platter-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) auto;

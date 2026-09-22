@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { drawMonoWaveform, drawRgbWaveform, type ThreeBandPeaks } from '@/lib/utils/threeBandWaveform';
 
+export enum BandOptions {Triple, Single}
+
 type WaveformCanvasProps = {
   peaks: ThreeBandPeaks | null;
   variant: 'zoomed' | 'overview' | 'mini';
+  bands?: BandOptions;
   viewStart?: number;
   viewEnd?: number;
-  playhead?: number;
   className?: string;
   onSeek?: (fraction: number) => void;
   onViewChange?: (start: number, zoom: number) => void;
@@ -18,9 +20,9 @@ type WaveformCanvasProps = {
 export function WaveformCanvas({
   peaks,
   variant,
+  bands,
   viewStart = 0,
   viewEnd = 1,
-  playhead,
   className,
   onSeek,
   onViewChange,
@@ -44,15 +46,13 @@ export function WaveformCanvas({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const full = variant !== 'zoomed';
-    // Zoomed gets the full 3-band render (worth the extra draw cost for the
-    // detail); overview and mini use the cheap single-band path, since mini
-    // in particular can have many instances on screen at once.
-    const draw = variant === 'zoomed' ? drawRgbWaveform : drawMonoWaveform;
+    const useRgb = (bands ?? (variant === 'zoomed' ? BandOptions.Triple : BandOptions.Single)) === BandOptions.Triple;
+    const draw = useRgb ? drawRgbWaveform : drawMonoWaveform;
     // mini can have many instances on screen at once (one per library row), so
     // it gets the coarsest resolution; overview is a single canvas people
     // actually watch scroll, so it stays closer to full fidelity.
     const resolution = variant === 'mini' ? 3 : variant === 'overview' ? 2 : 1;
-    draw(canvas, peaks, full ? 0 : viewStart, full ? 1 : viewEnd, playhead, {
+    draw(canvas, peaks, full ? 0 : viewStart, full ? 1 : viewEnd, {
       showViewport: variant === 'overview',
       viewportStart: viewStart,
       viewportEnd: viewEnd,
@@ -63,7 +63,7 @@ export function WaveformCanvas({
 
   useEffect(() => {
     redraw();
-  }, [peaks, playhead, variant, viewEnd, viewStart]);
+  }, [peaks, variant, viewEnd, viewStart, bands]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -71,7 +71,7 @@ export function WaveformCanvas({
     const observer = new ResizeObserver(() => redraw());
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [peaks, playhead, variant, viewEnd, viewStart]);
+  }, [peaks, variant, viewEnd, viewStart, bands]);
 
   // Zoomed variant: keep the native scrollbar's scrollLeft in sync with viewStart/zoom.
   // Runs whenever those change externally (zoom buttons, programmatic seeks, resize) —
@@ -208,7 +208,7 @@ export function WaveformCanvas({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className={cn('relative h-full w-full overflow-x-auto overflow-y-hidden', className)}
+      className={cn('relative h-full w-full min-h-0 max-h-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden', className)}
     >
       <div className="sticky left-0 top-0 h-full w-full">{canvasEl}</div>
       <div aria-hidden className="h-px" style={{ width: `${containerWidth * zoom}px` }} />
