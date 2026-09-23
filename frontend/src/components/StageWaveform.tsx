@@ -27,13 +27,39 @@ export enum WaveformDisplayMode {EDIT, CDJ};
 // Width of the offscreen-rendered window, as a multiple of the visible span.
 const CDJ_WINDOW_SPAN_MULTIPLIER = 3;
 // Recompute (redraw) the window once the playhead is within this fraction of
-// the window's span from either edge.
-const CDJ_REDRAW_MARGIN = 0.15;
+// the window's span from either edge. Must stay >= (1 - CDJ_PLAYHEAD_FRACTION)
+// / CDJ_WINDOW_SPAN_MULTIPLIER (0.75/3 = 0.25 for the values below) — below
+// that threshold, the *visible* viewport (which extends (1-fraction) *
+// visibleSpan past the playhead) can run past the edge of the rendered
+// offscreen window before a redraw is triggered, at which point the CSS
+// transform is asked to reveal canvas content that was never painted: the
+// waveform appears frozen/stuck rather than sliding, most noticeable during
+// fast scrubbing (e.g. platter drag) where the playhead can move a large
+// distance between renders.
+const CDJ_REDRAW_MARGIN = 0.25;
 // Where the playhead sits, as a fraction of the visible width, in CDJ mode.
 const CDJ_PLAYHEAD_FRACTION = 0.25;
 
+// The rendered window is always exactly CDJ_WINDOW_SPAN_MULTIPLIER × the
+// visible span (computeCdjWindow guarantees this). Right after a redraw the
+// playhead sits at exactly CDJ_PLAYHEAD_FRACTION of the way into that
+// window — but the window then stays fixed while playback keeps advancing,
+// so that fraction drifts as time passes. The slide has to be recomputed
+// every render from the *live* playhead to track that drift; a constant
+// only happens to be correct in the instant right after a redraw. This is
+// still cheap: it's plain arithmetic on numbers already in hand (no DOM
+// measurement), driving a `transform` (compositor-only, not `left`, which
+// would force layout every frame).
 const CDJ_CANVAS_WIDTH_PERCENT = CDJ_WINDOW_SPAN_MULTIPLIER * 100;
 
+// The *visible* CDJ window (as opposed to cdjWindow/CdjWindow below, which is
+// the wider offscreen-rendered window for the big waveform canvas). This is
+// cheap plain arithmetic, safe to recompute every render, and is what
+// overlays (BeatGrid, CueMarkers, Playhead) are drawn against. Exported so
+// other display-only readouts of the CDJ view — e.g. MiniWaveform's viewport
+// indicator — can stay in sync with the same continuously-sliding window
+// instead of falling back to player.viewStart/viewEnd, which only updates in
+// occasional jumps (see useTrackPlayer's auto-follow effect).
 export function computeCdjVisibleWindow(
   playhead: number | undefined,
   playerViewStart: number,

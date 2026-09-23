@@ -37,8 +37,10 @@ export function CDJ({
   const player = useTrackPlayer({ enableSpacebar: false });
 
   // Whether the deck was playing when the current scratch drag started —
-  // gates whether scratchTo() makes any sound. Dragging the platter while
-  // paused still moves the playhead (via player.seek below), just silently.
+  // gates whether scratchTo() makes any sound, and whether handleScratchEnd
+  // resumes playback afterward. Dragging the platter while paused still
+  // moves the playhead (via player.seek below), just silently, and stays
+  // paused when released.
   const wasPlayingRef = useRef(false);
 
   // Wire this deck's <audio> element into the mixer engine's EQ/volume/tempo
@@ -75,6 +77,13 @@ export function CDJ({
     if (!player.audioBuffer || transportDisabled) return;
     wasPlayingRef.current = player.status === 'playing';
     player.setInteracting(true);
+    // Still paused during the drag itself: scratchTo() plays short grains
+    // straight from the decoded buffer as the audible output while
+    // scratching (see MixerAudioEngine's docstring — that's a separate
+    // audio path from normal <audio> element playback, not a mix of both),
+    // so the element is paused here to avoid the two overlapping. The
+    // permanent-pause bug was that this pause never got undone — see
+    // handleScratchEnd below, which now resumes if it was playing before.
     if (wasPlayingRef.current) player.pause();
   };
 
@@ -94,6 +103,14 @@ export function CDJ({
   const handleScratchEnd = () => {
     engine.stopScratch(deckId);
     player.setInteracting(false);
+    // Resume from wherever the drag left the playhead (already synced live
+    // by every handleScratchMove call above) if playback was running before
+    // the drag started. Without this, a scratch permanently pauses the deck
+    // — dragging the platter should nudge playback, not stop it.
+    if (wasPlayingRef.current) {
+      wasPlayingRef.current = false;
+      void player.play();
+    }
   };
 
   return (
