@@ -38,7 +38,6 @@ function ensureWorkletLoaded(context: AudioContext): Promise<void> {
 export async function createPitchCorrectNode(context: AudioContext): Promise<AudioWorkletNode> {
   await ensureWorkletLoaded(context);
   const node = new AudioWorkletNode(context, PROCESSOR_NAME);
-  console.log('SoundTouch params:', Array.from(node.parameters.keys()));
 
   // Lock tempo/rate at unity — see file docblock. `pitch` is a ratio
   // multiplier (1 = unshifted), not semitones.

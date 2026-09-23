@@ -200,7 +200,6 @@ export class MixerAudioEngine {
           return;
         }
         deck.pitchNode = node;
-        console.log(deck.pitchNode, node.parameters);
         source.disconnect(deck.input);
         source.connect(node);
         node.connect(deck.input);
