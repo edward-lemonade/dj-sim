@@ -16,6 +16,10 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) Migrate(ctx context.Context) error {
+	return r.db.AutoMigrate(&Track{})
+}
+
 func (r *Repository) ListByUserID(ctx context.Context, userID string) ([]Track, error) {
 	var tracks []Track
 	err := r.db.WithContext(ctx).

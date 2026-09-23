@@ -31,9 +31,18 @@ export function useTrackUpload({
       waveformOverview: null,
       cues: emptyCues(),
       libraryStatus: 'uploading',
+      uploadProgress: 0,
     };
 
     setSongs((current) => [pending, ...current]);
+
+    const setProgress = (percent: number) => {
+      setSongs((current) =>
+        current.map((song) =>
+          song.id === pendingId ? { ...song, uploadProgress: percent } : song,
+        ),
+      );
+    };
 
     try {
       if (!isSignedIn) {
@@ -47,7 +56,7 @@ export function useTrackUpload({
         console.warn('Could not compute waveform overview', error);
       }
 
-      const saved = await uploadTrack(file, { ...metadata, waveformOverview });
+      const saved = await uploadTrack(file, { ...metadata, waveformOverview }, setProgress);
       const finalCoverUrl = saved.cover && (saved.cover.startsWith('data:image/') || saved.cover.startsWith('http'))
         ? saved.cover
         : metadata.coverDataUrl ?? metadata.coverUrl ?? null;
@@ -68,6 +77,7 @@ export function useTrackUpload({
                 coverUrl: finalCoverUrl,
                 waveformOverview: saved.waveformOverview ?? waveformOverview,
                 libraryStatus: 'ready',
+                uploadProgress: undefined,
                 cues: normalizeCues(saved.cues),
                 errorMessage: undefined,
               }
@@ -79,7 +89,7 @@ export function useTrackUpload({
       setSongs((current) =>
         current.map((song) =>
           song.id === pendingId
-            ? { ...song, libraryStatus: 'error', errorMessage: message }
+            ? { ...song, libraryStatus: 'error', uploadProgress: undefined, errorMessage: message }
             : song,
         ),
       );

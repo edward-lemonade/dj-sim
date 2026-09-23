@@ -45,5 +45,6 @@ export type Track = TrackMeta &
     coverLabel: string;
     coverUrl: string | null;
     libraryStatus: TrackLibraryStatus;
+    uploadProgress?: number;
     errorMessage?: string;
   };

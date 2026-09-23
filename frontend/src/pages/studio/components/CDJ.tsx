@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
@@ -6,18 +6,42 @@ import { DeckControls } from '@/components/DeckControls';
 import { WaveformDoubleDisplay } from '@/components/WaveformDoubleDisplay';
 import { Platter } from '@/pages/studio/components/Platter';
 import { BandOptions } from '@/components/WaveformCanvas';
+import type { DeckId, MixerAudioEngine } from '../useAudioEngine';
 
 export type CDJProps = {
   track: Track | null;
-  label?: string;
+  /** Which mixer channel this deck feeds. Required — used to wire audio, not just to display. */
+  deckId: DeckId;
+  label?: DeckId;
+  /** Shared mixer engine (from useAudioEngine), so this deck's audio can be connected into it. */
+  engine: MixerAudioEngine;
   tracks?: Track[];
   onLoadTrack?: (id: string) => void;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
+  /** Tempo in percent (e.g. -8..8), lifted up so it lives in MixerState. */
+  tempo: number;
+  onTempoChange: (value: number) => void;
 };
 
-export function CDJ({ track, label, tracks, onLoadTrack, onPatch }: CDJProps) {
+export function CDJ({
+  track,
+  deckId,
+  label,
+  engine,
+  tracks,
+  onLoadTrack,
+  onPatch,
+  tempo,
+  onTempoChange,
+}: CDJProps) {
   const player = useTrackPlayer({ enableSpacebar: false });
-  const [tempo, setTempo] = useState(0);
+
+  // Wire this deck's <audio> element into the mixer engine's EQ/volume/tempo
+  // chain. connectMediaElement is idempotent, so re-running this (StrictMode
+  // double-invoke, re-renders before deps settle) is safe.
+  useEffect(() => {
+    engine.connectMediaElement(deckId, player.audioElement);
+  }, [engine, deckId, player.audioElement]);
 
   useEffect(() => {
     if (track?.id) {
@@ -89,7 +113,7 @@ export function CDJ({ track, label, tracks, onLoadTrack, onPatch }: CDJProps) {
             max={8}
             step={0.1}
             value={tempo}
-            onChange={(event) => setTempo(Number(event.target.value))}
+            onChange={(event) => onTempoChange(Number(event.target.value))}
             aria-label={label ? `Deck ${label} tempo` : 'Tempo'}
             className="h-56 w-8 cursor-pointer accent-zinc-200"
             style={{ writingMode: 'vertical-lr', direction: 'rtl' }}

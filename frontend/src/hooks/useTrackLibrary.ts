@@ -56,7 +56,10 @@ export function useTrackLibrary() {
 
         const tracks = await listTracks();
         if (cancelled) return;
-        setSongs(tracks.map(trackToPool));
+        setSongs((current) => {
+          const stillUploading = current.filter((song) => song.libraryStatus === 'uploading');
+          return [...stillUploading, ...tracks.map(trackToPool)];
+        });
       } catch {
         if (!cancelled) setSongs([]);
       }
@@ -66,7 +69,7 @@ export function useTrackLibrary() {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, user]);
+  }, [isLoaded, isSignedIn, user?.id]);
 
   useEffect(() => {
     return () => {

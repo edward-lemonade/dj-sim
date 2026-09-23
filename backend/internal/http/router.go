@@ -1,6 +1,9 @@
 package http
 
 import (
+	"context"
+	"log"
+
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/handler"
@@ -10,6 +13,8 @@ import (
 )
 
 func New(db *gorm.DB, corsOrigin string, clerkSecretKey string) *gin.Engine {
+	ctx := context.Background()
+
 	r := gin.Default()
 	r.MaxMultipartMemory = 100 << 20
 	if corsOrigin == "" {
@@ -20,9 +25,17 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string) *gin.Engine {
 	userRepo := user.NewRepository(db)
 	userSvc := user.NewService(userRepo)
 	userHandler := &handler.UserHandler{Users: userSvc}
+
 	trackRepo := track.NewRepository(db)
 	trackSvc := track.NewService(trackRepo)
 	trackHandler := &handler.TrackHandler{Tracks: trackSvc}
+
+	if err := trackRepo.Migrate(ctx); err != nil {
+		log.Fatalf("migration failed: %v", err)
+	}
+	if err := userRepo.Migrate(ctx); err != nil {
+		log.Fatalf("migration failed: %v", err)
+	}
 
 	r.GET("/health", handler.Health)
 

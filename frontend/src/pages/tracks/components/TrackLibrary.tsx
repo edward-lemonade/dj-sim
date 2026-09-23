@@ -17,6 +17,7 @@ import { WaveformCanvas } from '../../../components/WaveformCanvas';
 import { rowShift, useListItemMove } from '../../../hooks/useListItemMove'; // adjust path
 import { trackSeconds } from '@/lib/types/Cues';
 import { CueTicks } from '../../../components/CueTicks';
+import { CircularProgress } from '@/components/CircularProgress';
 
 const STORAGE_KEY = 'dj-sim.tracks.columnWidths';
 
@@ -324,9 +325,15 @@ export function TrackLibrary({
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.key || '—'}</td>
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.duration}</td>
                   <td className="px-1 py-0.5">
-                    <div className="h-6 relative overflow-hidden rounded-sm bg-[#15181d]">
-                      {peaks ? <WaveformCanvas variant="mini" peaks={peaks} /> : null}
-                      <CueTicks cues={song.cues} seconds={trackSeconds(song)} />
+                    <div className="h-6 relative overflow-hidden rounded-sm bg-[#15181d] text-zinc-400">
+                      {song.libraryStatus === 'uploading' ? (
+                        <CircularProgress percent={song.uploadProgress} />
+                      ) : (
+                        <>
+                          {peaks ? <WaveformCanvas variant="mini" peaks={peaks} /> : null}
+                          <CueTicks cues={song.cues} seconds={trackSeconds(song)} />
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="px-1 py-0.5" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>

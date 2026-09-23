@@ -17,7 +17,11 @@ export async function listTracks(): Promise<TrackDTO[]> {
   return data ?? [];
 }
 
-export async function uploadTrack(file: File, metadata: UploadTrackMetadata): Promise<TrackDTO> {
+export async function uploadTrack(
+  file: File, 
+  metadata: UploadTrackMetadata,
+  onProgress?: (percent: number) => void,
+): Promise<TrackDTO> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('title', metadata.title);
@@ -32,7 +36,13 @@ export async function uploadTrack(file: File, metadata: UploadTrackMetadata): Pr
     formData.append('waveformOverview', JSON.stringify(metadata.waveformOverview));
   }
 
-  const { data } = await axiosClient.post<TrackDTO>(API_ROUTES.track.upload, formData);
+  const { data } = await axiosClient.post<TrackDTO>('/tracks/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (!onProgress || !event.total) return;
+      onProgress(Math.round((event.loaded / event.total) * 100));
+    },
+  });
   return data;
 }
 

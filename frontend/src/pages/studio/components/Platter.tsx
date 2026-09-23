@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Track } from '@/lib/types/Track';
+import type { DeckId } from '../useAudioEngine';
 
 function isImageCover(cover: string | undefined | null): cover is string {
   return !!cover && (cover.startsWith('data:image/') || cover.startsWith('http'));
@@ -10,7 +11,7 @@ export function Platter({
   size,
   track,
 }: {
-  label?: string;
+  label?: DeckId;
   size?: number;
   track?: Track | null;
 }) {

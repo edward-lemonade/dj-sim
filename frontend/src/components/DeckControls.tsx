@@ -1,6 +1,7 @@
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { CueButtons } from '@/components/CueButtons';
 import type { TrackPlayer } from '@/hooks/useTrackPlayer';
+import type { DeckId } from '@/pages/studio/useAudioEngine';
 
 const BEAT_STEPS = [1, 2, 4] as const;
 
@@ -10,7 +11,7 @@ export type DeckControlsProps = {
   cues: Array<number | null>;
   disabled?: boolean;
   cueDisabled?: boolean;
-  label?: string;
+  label?: DeckId;
   onCue: () => void;
 };
 

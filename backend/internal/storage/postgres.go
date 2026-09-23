@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
-	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -17,9 +15,6 @@ func Connect(databaseURL string) (*gorm.DB, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
-	}
-	if err := gdb.AutoMigrate(&user.User{}, &track.Track{}); err != nil {
-		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
 	return gdb, nil
 }

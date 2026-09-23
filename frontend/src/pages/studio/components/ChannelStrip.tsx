@@ -1,12 +1,13 @@
 import { Knob } from '@/components/Knob';
-import type { ChannelState } from '@/hooks/useMixerState';
+import type { ChannelState } from '../useMixerState';
+import type { DeckId } from '../useAudioEngine';
 
 export function ChannelStrip({
   label,
   value,
   onChange,
 }: {
-  label: string;
+  label: DeckId;
   value: ChannelState;
   onChange: (patch: Partial<ChannelState>) => void;
 }) {

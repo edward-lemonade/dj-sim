@@ -1,4 +1,4 @@
-import { LoaderCircle, TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { cn } from 'cn';
 import type { Track } from '@/lib/types/Track';
 
@@ -14,11 +14,6 @@ export function SongCover({ song, className }: { song: Track; className?: string
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 via-fuchsia-500 to-pink-500 text-xs font-bold text-white">
           {song.coverLabel}
-        </div>
-      )}
-      {song.libraryStatus === 'uploading' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/45">
-          <LoaderCircle className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
         </div>
       )}
     </div>

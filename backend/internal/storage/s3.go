@@ -83,13 +83,13 @@ func UploadTrackToS3(ctx context.Context, reader io.Reader, fileName, contentTyp
 	}, nil
 }
 
-type TrackObject struct {
+type S3Object struct {
 	Body          io.ReadCloser
 	ContentType   string
 	ContentLength int64
 }
 
-func GetTrackFromS3(ctx context.Context, objectKey string) (*TrackObject, error) {
+func GetTrackFromS3(ctx context.Context, objectKey string) (*S3Object, error) {
 	if strings.TrimSpace(objectKey) == "" {
 		return nil, fmt.Errorf("object key is required")
 	}
@@ -137,7 +137,7 @@ func GetTrackFromS3(ctx context.Context, objectKey string) (*TrackObject, error)
 		size = *out.ContentLength
 	}
 
-	return &TrackObject{
+	return &S3Object{
 		Body:          out.Body,
 		ContentType:   contentType,
 		ContentLength: size,

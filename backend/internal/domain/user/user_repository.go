@@ -15,6 +15,10 @@ func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) Migrate(ctx context.Context) error {
+	return r.db.AutoMigrate(&User{})
+}
+
 func (r *Repository) FindByID(ctx context.Context, ID string) (*User, error) {
 	var u User
 	err := r.db.WithContext(ctx).Where("id = ?", ID).First(&u).Error
