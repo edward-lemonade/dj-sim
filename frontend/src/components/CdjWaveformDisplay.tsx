@@ -1,13 +1,15 @@
 import { BandOptions } from '@/components/WaveformCanvas';
-import { StageWaveform } from '@/components/StageWaveform';
+import { computeCdjVisibleWindow, StageWaveform, WaveformDisplayMode } from '@/components/StageWaveform';
 import type { TrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track } from '@/lib/types/Track';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
-import { snapToBeat } from '@/lib/utils/snapToBeat';
 import { MiniWaveform } from './MiniWaveform';
 
-export function WaveformDoubleDisplay({
+// CDJ-style readout: the big waveform is not seekable (playhead stays fixed
+// 1/4 from the left and the waveform slides underneath it), and the mini
+// waveform below it is not clickable either — both are display-only.
+export function CdjWaveformDisplay({
   track,
   player,
   bands = BandOptions.Triple,
@@ -35,12 +37,14 @@ export function WaveformDoubleDisplay({
   const playhead = player.durationSeconds > 0 ? player.currentTime / player.durationSeconds : undefined;
   const peaks = player.hiResPeaks ?? peaksFromOverview(track.waveformOverview);
   const cues = normalizeCues(track.cues);
-
-  const seekSnapped = (fraction: number) => {
-    const duration = player.durationSeconds;
-    const seconds = fraction * duration;
-    player.seek(snapToBeat(seconds, track.bpm, track.beatOffset, duration));
-  };
+  // Same continuously playhead-centered window StageWaveform positions the
+  // big CDJ waveform with, so the mini waveform's viewport indicator slides
+  // in lockstep with it every frame instead of only jumping occasionally.
+  const { start: miniViewStart, end: miniViewEnd } = computeCdjVisibleWindow(
+    playhead,
+    player.viewStart,
+    player.viewEnd,
+  );
 
   return (
     <div className="flex h-56 min-h-0 min-w-0 flex-col">
@@ -50,16 +54,18 @@ export function WaveformDoubleDisplay({
         playhead={playhead}
         bpm={track.bpm}
         beatOffset={track.beatOffset}
+        displayMode={WaveformDisplayMode.CDJ}
         cues={cues}
         bands={bands}
-        onSeek={seekSnapped}
       />
+      {/* No onSeek passed: the mini waveform is not clickable in CDJ mode. */}
       <MiniWaveform
         track={track}
         peaks={peaks}
         player={player}
         playhead={playhead}
-        onSeek={seekSnapped}
+        viewStart={miniViewStart}
+        viewEnd={miniViewEnd}
       />
     </div>
   );

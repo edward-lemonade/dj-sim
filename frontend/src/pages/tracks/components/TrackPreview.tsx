@@ -8,8 +8,8 @@ import { CueButtons } from '@/components/CueButtons';
 import { normalizeCues } from '@/lib/types/Cues';
 import { GridControls } from '../../../components/GridControls';
 import { useGridNudge } from '../../../hooks/useGridNudge';
-import { WaveformDoubleDisplay } from '@/components/WaveformDoubleDisplay';
 import { BandOptions } from '@/components/WaveformCanvas';
+import { EditWaveformDisplay } from '@/components/EditWaveformDisplay';
 
 export function TrackPreview({
   track,
@@ -47,7 +47,11 @@ export function TrackPreview({
           {player.errorMessage || 'Could not open track'}
         </div>
       ) : (
-        <WaveformDoubleDisplay track={track} player={player} bands={BandOptions.Triple} />
+        <EditWaveformDisplay 
+          track={track} 
+          player={player} 
+          bands={BandOptions.Triple}
+        />
       )}
 
       <div className="flex items-center justify-center gap-10 border-y border-zinc-800 bg-mist-900 px-3 py-1.5">

@@ -23,6 +23,12 @@
  *
  * All continuous params are ramped with setTargetAtTime to avoid zipper
  * noise / clicks when a knob updates every render.
+ *
+ * Scratching (see scratchTo/stopScratch) is a separate path: it plays
+ * short grains straight from the deck's decoded AudioBuffer into `input`,
+ * bypassing pitch correction entirely — the pitch bend IS the scratch
+ * sound. The caller is expected to pause the deck's media element first
+ * (this engine doesn't touch element playback state itself).
  */
 
 import { useEffect, useRef } from "react";
@@ -56,6 +62,9 @@ interface DeckNodes {
   pitchNode: AudioWorkletNode | null;
   /** Ratio to apply once pitchNode finishes loading, if set before it was ready. */
   pendingRatio: number | null;
+  /** In-flight scratch grain, if the platter is currently being dragged. */
+  scratchSource: AudioBufferSourceNode | null;
+  scratchGain: GainNode | null;
 }
 
 const DEFAULTS: Required<AudioEngineOptions> = {
@@ -63,8 +72,16 @@ const DEFAULTS: Required<AudioEngineOptions> = {
   eqBoostDb: 12,
   eqCutDb: 26, // steep enough to read as a "kill" at the extreme without being discontinuous
   maxGain: 1.25,
-  tempoRangePercent: 8,
+  tempoRangePercent: 50,
 };
+
+// Scratch grains: how much source material each pointermove grabs, the
+// drag-speed range that maps to grain playbackRate, and how long grains
+// crossfade into each other so back-to-back pointermoves don't click.
+const SCRATCH_GRAIN_SECONDS = 0.08;
+const SCRATCH_MIN_SPEED = 0.05;
+const SCRATCH_MAX_SPEED = 4;
+const SCRATCH_FADE_SECONDS = 0.005;
 
 export class MixerAudioEngine {
   readonly context: AudioContext;
@@ -125,6 +142,8 @@ export class MixerAudioEngine {
       mediaSource: null,
       pitchNode: null,
       pendingRatio: null,
+      scratchSource: null,
+      scratchGain: null,
     });
   }
 
@@ -240,6 +259,73 @@ export class MixerAudioEngine {
   }
 
   // ---------------------------------------------------------------------
+  // Scratch (platter drag)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Plays one scratch grain: a short slice of `buffer` taken at
+   * offsetSeconds, forward or reversed depending on drag direction, at a
+   * rate proportional to drag speed. This is the platter-drag audio path —
+   * it runs instead of (not alongside) the deck's normal media-element
+   * playback, which the caller is expected to have paused first.
+   *
+   * Reverse is done by manually reversing the sliced samples rather than a
+   * negative AudioBufferSourceNode.playbackRate: negative-rate reverse
+   * playback isn't reliably supported across browsers, whereas a reversed
+   * buffer plays back identically everywhere.
+   */
+  scratchTo(deckId: DeckId, buffer: AudioBuffer, offsetSeconds: number, deltaSeconds: number, deltaRealSeconds: number) {
+    const deck = this.deck(deckId);
+    const now = this.context.currentTime;
+
+    // Crossfade out whatever grain is already playing rather than cutting it.
+    if (deck.scratchGain) {
+      deck.scratchGain.gain.cancelScheduledValues(now);
+      deck.scratchGain.gain.setValueAtTime(deck.scratchGain.gain.value, now);
+      deck.scratchGain.gain.linearRampToValueAtTime(0, now + SCRATCH_FADE_SECONDS);
+      deck.scratchSource?.stop(now + SCRATCH_FADE_SECONDS);
+    }
+    deck.scratchSource = null;
+    deck.scratchGain = null;
+
+    if (deltaRealSeconds <= 0) return;
+
+    const reverse = deltaSeconds < 0;
+    const speed = clamp(Math.abs(deltaSeconds / deltaRealSeconds), SCRATCH_MIN_SPEED, SCRATCH_MAX_SPEED);
+    const grain = buildScratchGrain(this.context, buffer, offsetSeconds, reverse);
+    if (!grain) return;
+
+    const source = this.context.createBufferSource();
+    source.buffer = grain;
+    source.playbackRate.value = speed;
+
+    const gain = this.context.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1, now + SCRATCH_FADE_SECONDS);
+
+    source.connect(gain);
+    gain.connect(deck.input);
+    source.start(now);
+
+    deck.scratchSource = source;
+    deck.scratchGain = gain;
+  }
+
+  /** Stops any in-flight scratch grain. Call on pointerup, and defensively on unmount. */
+  stopScratch(deckId: DeckId) {
+    const deck = this.deck(deckId);
+    const now = this.context.currentTime;
+    if (deck.scratchGain) {
+      deck.scratchGain.gain.cancelScheduledValues(now);
+      deck.scratchGain.gain.setValueAtTime(deck.scratchGain.gain.value, now);
+      deck.scratchGain.gain.linearRampToValueAtTime(0, now + SCRATCH_FADE_SECONDS);
+    }
+    deck.scratchSource?.stop(now + SCRATCH_FADE_SECONDS);
+    deck.scratchSource = null;
+    deck.scratchGain = null;
+  }
+
+  // ---------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------
 
@@ -258,6 +344,9 @@ export class MixerAudioEngine {
       deck.high.disconnect();
       deck.volume.disconnect();
       deck.pitchNode?.disconnect();
+      deck.scratchSource?.stop();
+      deck.scratchSource?.disconnect();
+      deck.scratchGain?.disconnect();
     });
     this.decks.clear();
     this.master.disconnect();
@@ -265,8 +354,33 @@ export class MixerAudioEngine {
   }
 }
 
-function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * Slices SCRATCH_GRAIN_SECONDS of source material starting at offsetSeconds
+ * (forward), or the window just behind it, reversed (backward).
+ */
+function buildScratchGrain(ctx: AudioContext, buffer: AudioBuffer, offsetSeconds: number, reverse: boolean): AudioBuffer | null {
+  const sliceSeconds = Math.min(SCRATCH_GRAIN_SECONDS, reverse ? offsetSeconds : buffer.duration - offsetSeconds);
+  if (sliceSeconds <= 0) return null;
+
+  const startSeconds = reverse ? offsetSeconds - sliceSeconds : offsetSeconds;
+  const startFrame = Math.floor(startSeconds * buffer.sampleRate);
+  const frameCount = Math.floor(sliceSeconds * buffer.sampleRate);
+  const grain = ctx.createBuffer(buffer.numberOfChannels, frameCount, buffer.sampleRate);
+
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const src = buffer.getChannelData(ch);
+    const dst = grain.getChannelData(ch);
+    if (reverse) {
+      for (let i = 0; i < frameCount; i++) dst[i] = src[startFrame + frameCount - 1 - i];
+    } else {
+      dst.set(src.subarray(startFrame, startFrame + frameCount));
+    }
+  }
+  return grain;
 }
 
 // Session-lifetime singleton. Deliberately NOT created-and-disposed per

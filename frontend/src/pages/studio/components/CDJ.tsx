@@ -1,12 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
 import { DeckControls } from '@/components/DeckControls';
-import { WaveformDoubleDisplay } from '@/components/WaveformDoubleDisplay';
 import { Platter } from '@/pages/studio/components/Platter';
 import { BandOptions } from '@/components/WaveformCanvas';
-import type { DeckId, MixerAudioEngine } from '../useAudioEngine';
+import { clamp, type DeckId, type MixerAudioEngine } from '../useAudioEngine';
+import { CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
 
 export type CDJProps = {
   track: Track | null;
@@ -35,6 +35,11 @@ export function CDJ({
   onTempoChange,
 }: CDJProps) {
   const player = useTrackPlayer({ enableSpacebar: false });
+
+  // Whether the deck was playing when the current scratch drag started —
+  // gates whether scratchTo() makes any sound. Dragging the platter while
+  // paused still moves the playhead (via player.seek below), just silently.
+  const wasPlayingRef = useRef(false);
 
   // Wire this deck's <audio> element into the mixer engine's EQ/volume/tempo
   // chain. connectMediaElement is idempotent, so re-running this (StrictMode
@@ -66,6 +71,31 @@ export function CDJ({
     void onPatch(track.id, { cues: next }).catch(console.error);
   };
 
+  const handleScratchStart = () => {
+    if (!player.audioBuffer || transportDisabled) return;
+    wasPlayingRef.current = player.status === 'playing';
+    player.setInteracting(true);
+    if (wasPlayingRef.current) player.pause();
+  };
+
+  const handleScratchMove = (deltaSeconds: number, deltaRealSeconds: number) => {
+    if (!player.audioBuffer) return;
+    const base = player.currentTime;
+    const next = clamp(base + deltaSeconds, 0, player.durationSeconds || base);
+    if (wasPlayingRef.current) {
+      engine.scratchTo(deckId, player.audioBuffer, base, deltaSeconds, deltaRealSeconds);
+    }
+    // Moves the real playhead every move (not just on release) so the
+    // platter and waveform track the drag live. Silent on its own — the
+    // element is already paused — so this is safe even when not scratching audibly.
+    player.seek(next);
+  };
+
+  const handleScratchEnd = () => {
+    engine.stopScratch(deckId);
+    player.setInteracting(false);
+  };
+
   return (
     <section
       className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-[#101214]"
@@ -94,13 +124,22 @@ export function CDJ({
         </div>
       ) : null}
 
-      <WaveformDoubleDisplay track={track} player={player} bands={BandOptions.Single} />
+      <CdjWaveformDisplay 
+        track={track}
+        player={player}
+        bands={BandOptions.Single}
+      />
 
       <div className="flex flex-1 min-h-0 items-center justify-center gap-10 border-t border-slate/40 px-4 py-4">
-        <Platter 
-          label={label} 
-          size={180} 
+        <Platter
+          label={label}
+          size={180}
           track={track}
+          currentTime={player.currentTime}
+          disabled={transportDisabled}
+          onScratchStart={handleScratchStart}
+          onScratchMove={handleScratchMove}
+          onScratchEnd={handleScratchEnd}
         />
         <label className="flex flex-col items-center gap-1">
           <span className="text-[10px] uppercase tracking-wider text-zinc-500">
@@ -109,8 +148,8 @@ export function CDJ({
           </span>
           <input
             type="range"
-            min={-8}
-            max={8}
+            min={-50}
+            max={50}
             step={0.1}
             value={tempo}
             onChange={(event) => onTempoChange(Number(event.target.value))}

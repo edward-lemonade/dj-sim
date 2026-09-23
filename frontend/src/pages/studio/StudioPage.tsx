@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CDJ } from '@/pages/studio/components/CDJ';
+import { CDJ } from './components/CDJ';
 import { Mixer } from '@/pages/studio/components/Mixer';
 import { StudioTopbar } from '@/pages/studio/components/StudioTopbar';
 import { useAudioEngine } from './useAudioEngine';
@@ -75,7 +75,7 @@ function StudioPage() {
       engine={engine}
       track={library.songs.find((song) => song.id === loadedTrackIds[id]) ?? null}
       tracks={ready}
-      onLoadTrack={(trackId) => setLoadedTrackIds((current) => ({ ...current, [id]: trackId || null }))}
+      onLoadTrack={(trackId: string) => setLoadedTrackIds((current) => ({ ...current, [id]: trackId || null }))}
       onPatch={library.patchTrack}
       tempo={mixer.state.channelState[id].tempo}
       onTempoChange={(value) => mixer.setChannel(id, { tempo: value })}

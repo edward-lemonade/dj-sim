@@ -21,6 +21,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
   const [zoom, setZoom] = useState(1);
   const [viewStart, setViewStart] = useState(0);
   const [hiResPeaks, setHiResPeaks] = useState<ThreeBandPeaks | null>(null);
+  const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Stable for the component's lifetime (created once, via the useState
@@ -32,6 +33,12 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
 
   const blobUrlRef = useRef<string | null>(null);
   const peaksCacheRef = useRef<Map<string, ThreeBandPeaks>>(new Map());
+  // Same decode as peaksCacheRef, kept alongside it instead of discarded —
+  // scratch playback (see MixerAudioEngine.scratchTo) needs the actual
+  // samples, not just the peaks. Note this means every track opened this
+  // session keeps its full decoded PCM in memory for the component's
+  // lifetime, same tradeoff the peaks cache already made, just heavier.
+  const bufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
   const interactingRef = useRef(false);
   const openedIdRef = useRef<string | null>(null);
   openedIdRef.current = openedId;
@@ -62,6 +69,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
     setZoom(1);
     setViewStart(0);
     setHiResPeaks(null);
+    setAudioBuffer(null);
     setErrorMessage(null);
   }, [revokeBlob, stopAudio]);
 
@@ -79,6 +87,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
     setZoom(1);
     setViewStart(0);
     setHiResPeaks(peaksCacheRef.current.get(trackId) ?? null);
+    setAudioBuffer(bufferCacheRef.current.get(trackId) ?? null);
     setErrorMessage(null);
 
     try {
@@ -124,9 +133,12 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
         if (openedIdRef.current !== trackId) return;
         const peaks = computeThreeBandPeaks(buffer, HIRES_COLUMNS);
         peaksCacheRef.current.set(trackId, peaks);
+        bufferCacheRef.current.set(trackId, buffer);
         setHiResPeaks(peaks);
+        setAudioBuffer(buffer);
       } else {
         setHiResPeaks(peaksCacheRef.current.get(trackId) ?? null);
+        setAudioBuffer(bufferCacheRef.current.get(trackId) ?? null);
       }
     } catch (error) {
       if (openedIdRef.current !== trackId) return;
@@ -268,6 +280,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
     viewStart,
     viewEnd,
     hiResPeaks,
+    audioBuffer,
     errorMessage,
     audioElement,
     open,

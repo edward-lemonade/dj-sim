@@ -21,6 +21,14 @@ export type WaveformDrawOptions = {
   // fewer amplitude computations and fillRect calls, chunkier bars. Ignored
   // by drawRgbWaveform, which always draws at full pixel resolution.
   resolution?: number;
+  // When true, viewStart/viewEnd are used as-is (not clamped into [0,1]) to
+  // compute the x-axis mapping: pixels whose time falls outside the track's
+  // actual duration are left showing the background instead of the whole
+  // requested window being compressed to fit inside [0,1]. Used by the CDJ
+  // display, whose pre-rendered window intentionally extends past the start
+  // and end of the track so the playhead can sit off-center. Defaults to the
+  // old clamped/compressed behavior so existing callers are unaffected.
+  allowOutOfBoundsWindow?: boolean;
 };
 
 type BandLayer = {
@@ -231,8 +239,9 @@ export function drawRgbWaveform(
 
   if (!peaks) return;
 
-  const start = clamp01(Math.min(viewStart, viewEnd));
-  const end = clamp01(Math.max(viewStart, viewEnd));
+  const clip = options.allowOutOfBoundsWindow ?? false;
+  const start = clip ? Math.min(viewStart, viewEnd) : clamp01(Math.min(viewStart, viewEnd));
+  const end = clip ? Math.max(viewStart, viewEnd) : clamp01(Math.max(viewStart, viewEnd));
   const span = Math.max(1e-6, end - start);
   const midY = height / 2;
   const columns = peaks.lows.length;
@@ -240,9 +249,9 @@ export function drawRgbWaveform(
   // low (blue) first as the widest base layer, high (orange) next, mid (white)
   // last as the thin line riding on top — mid's curve/heightFraction keep it
   // the thinnest band by construction, so lows and highs read through it.
-  drawBandLayer(ctx, peaks.lows, LOW_LAYER, start, span, columns, width, height, midY);
-  drawBandLayer(ctx, peaks.highs, HIGH_LAYER, start, span, columns, width, height, midY);
-  drawBandLayer(ctx, peaks.mids, MID_LAYER, start, span, columns, width, height, midY);
+  drawBandLayer(ctx, peaks.lows, LOW_LAYER, start, span, columns, width, height, midY, clip);
+  drawBandLayer(ctx, peaks.highs, HIGH_LAYER, start, span, columns, width, height, midY, clip);
+  drawBandLayer(ctx, peaks.mids, MID_LAYER, start, span, columns, width, height, midY, clip);
 
   drawOverlays(ctx, width, height, dpr, start, span, options);
 }
@@ -266,8 +275,9 @@ export function drawMonoWaveform(
 
   if (!peaks) return;
 
-  const start = clamp01(Math.min(viewStart, viewEnd));
-  const end = clamp01(Math.max(viewStart, viewEnd));
+  const clip = options.allowOutOfBoundsWindow ?? false;
+  const start = clip ? Math.min(viewStart, viewEnd) : clamp01(Math.min(viewStart, viewEnd));
+  const end = clip ? Math.max(viewStart, viewEnd) : clamp01(Math.max(viewStart, viewEnd));
   const span = Math.max(1e-6, end - start);
   const midY = height / 2;
   const columns = peaks.lows.length;
@@ -276,6 +286,10 @@ export function drawMonoWaveform(
   const step = Math.max(1, Math.floor(options.resolution ?? 1));
   for (let x = 0; x < width; x += step) {
     const t = start + (x / width) * span;
+    // Outside the track's actual duration: leave the background showing
+    // (empty space) instead of clamping t and compressing the whole window
+    // into [0,1]. Matches drawBandLayer's handling in drawRgbWaveform.
+    if (clip && (t < 0 || t > 1)) continue;
     const index = Math.min(columns - 1, Math.max(0, t * columns));
     const left = Math.floor(index);
     const right = Math.min(columns - 1, left + 1);
@@ -305,10 +319,15 @@ function drawBandLayer(
   width: number,
   height: number,
   midY: number,
+  clip = false,
 ) {
   ctx.fillStyle = `rgba(${layer.r},${layer.g},${layer.b},${layer.alpha})`;
   for (let x = 0; x < width; x += 1) {
     const t = start + (x / width) * span;
+    // Outside the track's actual duration: leave the background showing
+    // (empty space) instead of clamping t and compressing the whole window
+    // into [0,1]. Only used by callers that opt into allowOutOfBoundsWindow.
+    if (clip && (t < 0 || t > 1)) continue;
     const index = Math.min(columns - 1, Math.max(0, t * columns));
     const left = Math.floor(index);
     const right = Math.min(columns - 1, left + 1);

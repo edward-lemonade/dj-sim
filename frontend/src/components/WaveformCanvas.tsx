@@ -15,6 +15,16 @@ type WaveformCanvasProps = {
   onViewChange?: (start: number, zoom: number) => void;
   onInteractionChange?: (active: boolean) => void;
   zoom?: number;
+  // When false, the canvas is a pure readout: no click-to-seek, no drag-to-pan,
+  // no wheel/scrollbar panning, no native scrollbar UI at all. Used for
+  // CDJ-style displays where the view window is driven externally (e.g.
+  // centered on the playhead every frame) rather than by user interaction.
+  interactive?: boolean;
+  // When true, viewStart/viewEnd past [0,1] are drawn as empty space instead
+  // of being clamped/compressed to fit inside the track's duration. Used by
+  // the CDJ display, whose pre-rendered window intentionally extends past
+  // the start/end of the track so the playhead can sit off-center.
+  allowOutOfBoundsWindow?: boolean;
 };
 
 export function WaveformCanvas({
@@ -28,6 +38,8 @@ export function WaveformCanvas({
   onViewChange,
   onInteractionChange,
   zoom = 1,
+  interactive = true,
+  allowOutOfBoundsWindow = false,
 }: WaveformCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -42,28 +54,34 @@ export function WaveformCanvas({
   const viewRef = useRef({ viewStart, viewEnd, zoom, variant, onViewChange, onSeek, onInteractionChange, peaks });
   viewRef.current = { viewStart, viewEnd, zoom, variant, onViewChange, onSeek, onInteractionChange, peaks };
 
+  // Only the zoomed variant ever gets the scrollable-wrapper UI (native scrollbar,
+  // wheel-pan, scroll-sync), and only while interactive. A non-interactive zoomed
+  // canvas (CDJ mode) renders as a plain <canvas>, sized by its parent, with its
+  // view window driven entirely by the viewStart/viewEnd props.
+  const showScrollUI = variant === 'zoomed' && interactive;
+
   const redraw = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const full = variant !== 'zoomed';
     const useRgb = (bands ?? (variant === 'zoomed' ? BandOptions.Triple : BandOptions.Single)) === BandOptions.Triple;
     const draw = useRgb ? drawRgbWaveform : drawMonoWaveform;
-    // mini can have many instances on screen at once (one per library row), so
-    // it gets the coarsest resolution; overview is a single canvas people
-    // actually watch scroll, so it stays closer to full fidelity.
     const resolution = variant === 'mini' ? 3 : variant === 'overview' ? 2 : 1;
-    draw(canvas, peaks, full ? 0 : viewStart, full ? 1 : viewEnd, {
+    const opts = {
       showViewport: variant === 'overview',
       viewportStart: viewStart,
       viewportEnd: viewEnd,
       background: variant === 'mini' ? '#15181d' : '#0b0d10',
       resolution,
-    });
+      allowOutOfBoundsWindow: full ? false : allowOutOfBoundsWindow,
+    };
+    console.log('redraw', { variant, full, useRgb, viewStart, viewEnd, drawnStart: full ? 0 : viewStart, drawnEnd: full ? 1 : viewEnd, opts });
+    draw(canvas, peaks, full ? 0 : viewStart, full ? 1 : viewEnd, opts);
   };
 
   useEffect(() => {
     redraw();
-  }, [peaks, variant, viewEnd, viewStart, bands]);
+  }, [peaks, variant, viewEnd, viewStart, bands, allowOutOfBoundsWindow]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -71,13 +89,14 @@ export function WaveformCanvas({
     const observer = new ResizeObserver(() => redraw());
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [peaks, variant, viewEnd, viewStart, bands]);
+  }, [peaks, variant, viewEnd, viewStart, bands, allowOutOfBoundsWindow]);
 
-  // Zoomed variant: keep the native scrollbar's scrollLeft in sync with viewStart/zoom.
-  // Runs whenever those change externally (zoom buttons, programmatic seeks, resize) —
-  // guarded so it doesn't fight with handleScroll below.
+  // Zoomed + interactive: keep the native scrollbar's scrollLeft in sync with
+  // viewStart/zoom. Runs whenever those change externally (zoom buttons,
+  // programmatic seeks, resize) — guarded so it doesn't fight with handleScroll
+  // below. Skipped entirely in CDJ (non-interactive) mode, which has no scrollbar.
   useEffect(() => {
-    if (variant !== 'zoomed') return;
+    if (!showScrollUI) return;
     const el = scrollRef.current;
     if (!el) return;
 
@@ -98,12 +117,12 @@ export function WaveformCanvas({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [variant, viewStart, zoom]);
+  }, [showScrollUI, viewStart, zoom]);
 
-  // Zoomed variant: wheel (vertical or trackpad-horizontal) pans instead of zooming.
+  // Zoomed + interactive: wheel (vertical or trackpad-horizontal) pans instead of zooming.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || variant !== 'zoomed') return;
+    if (!el || !showScrollUI) return;
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
@@ -113,10 +132,10 @@ export function WaveformCanvas({
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [variant]);
+  }, [showScrollUI]);
 
   const handleScroll = () => {
-    if (variant !== 'zoomed') return;
+    if (!showScrollUI) return;
     if (ignoreNextScroll.current) {
       ignoreNextScroll.current = false;
       return;
@@ -146,9 +165,9 @@ export function WaveformCanvas({
   const canvasEl = (
     <canvas
       ref={canvasRef}
-      className={cn('block h-full w-full touch-none', variant !== 'zoomed' && className)}
+      className={cn('block h-full w-full touch-none', !showScrollUI && className)}
       onPointerDown={(event) => {
-        if (!peaks) return;
+        if (!interactive || !peaks) return;
         (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
         onInteractionChange?.(true);
         const mode = variant === 'zoomed' ? 'pan' : variant === 'overview' ? 'viewport' : 'seek';
@@ -197,7 +216,7 @@ export function WaveformCanvas({
     />
   );
 
-  if (variant !== 'zoomed') {
+  if (!showScrollUI) {
     return canvasEl;
   }
 
