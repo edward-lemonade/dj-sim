@@ -33,6 +33,7 @@
 
 import { useEffect, useRef } from "react";
 import type { MixerState } from "./useMixerState";
+import { createPitchCorrectNode, setPitchRatio } from "@/lib/utils/pitchCorrectNode";
 
 export enum DeckId {A,B}
 export const DECK_IDS: DeckId[] = [DeckId.A, DeckId.B];
@@ -184,17 +185,35 @@ export class MixerAudioEngine {
     deck.mediaElement = element;
     deck.mediaSource = source;
 
-    // Vinyl-style: playbackRate changes pitch along with speed. The
-    // pitch-correct worklet (once loaded, below) cancels that shift back
-    // out, so leave the browser's own preservesPitch correction off —
-    // stacking both would double-correct.
     this.setPreservesPitch(element, false);
 
     // Connect unshifted immediately so audio isn't silent while the
-    // worklet loads; reroute through the pitch-correct node once it's
-    // ready (createPitchCorrectNode is cached/shared, so this resolves
-    // fast for every deck after the first).
+    // worklet loads.
     source.connect(deck.input);
+
+    createPitchCorrectNode(this.context)
+      .then((node) => {
+        // Stale if this deck was reconnected to a different element/source
+        // while the worklet was loading.
+        if (deck.mediaSource !== source) {
+          node.disconnect();
+          return;
+        }
+        deck.pitchNode = node;
+        console.log(deck.pitchNode, node.parameters);
+        source.disconnect(deck.input);
+        source.connect(node);
+        node.connect(deck.input);
+        if (deck.pendingRatio != null) {
+          setPitchRatio(node, deck.pendingRatio);
+          deck.pendingRatio = null;
+        }
+      })
+      .catch((err) => {
+        // Fall back to unshifted playback; tempo changes will drift pitch
+        // until this resolves, but audio keeps working.
+        console.error(`MixerAudioEngine: pitch-correct worklet failed to load for deck ${deckId}`, err);
+      });
 
     return source;
   }
@@ -239,22 +258,21 @@ export class MixerAudioEngine {
     this.ramp(this.master.gain, clamped * this.opts.maxGain);
   }
 
-  /**
-   * value in percent, e.g. -8..8 (matches a CDJ tempo slider directly).
-   * 0 = normal speed. Clamped to +/- tempoRangePercent.
-   *
-   * Also drives the deck's pitch-correct node with the inverse ratio, so
-   * the net effect is tempo change with pitch held constant. If the
-   * pitch-correct node hasn't finished loading yet, the ratio is queued
-   * (pendingRatio) and applied as soon as connectMediaElement's loader
-   * resolves.
-   */
   setTempo(deckId: DeckId, percent: number) {
     const clamped = clamp(percent, -this.opts.tempoRangePercent, this.opts.tempoRangePercent);
     const rate = 1 + clamped / 100;
     const deck = this.deck(deckId);
     if (deck.mediaElement) {
       deck.mediaElement.playbackRate = rate;
+    }
+
+    const correctionRatio = 1 / rate;
+    if (deck.pitchNode) {
+      setPitchRatio(deck.pitchNode, correctionRatio);
+    } else {
+      // Worklet not ready yet — queue it, applied in connectMediaElement's
+      // .then() once the node exists.
+      deck.pendingRatio = correctionRatio;
     }
   }
 

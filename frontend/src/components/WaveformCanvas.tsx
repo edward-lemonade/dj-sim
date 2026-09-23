@@ -75,7 +75,6 @@ export function WaveformCanvas({
       resolution,
       allowOutOfBoundsWindow: full ? false : allowOutOfBoundsWindow,
     };
-    console.log('redraw', { variant, full, useRgb, viewStart, viewEnd, drawnStart: full ? 0 : viewStart, drawnEnd: full ? 1 : viewEnd, opts });
     draw(canvas, peaks, full ? 0 : viewStart, full ? 1 : viewEnd, opts);
   };
 
