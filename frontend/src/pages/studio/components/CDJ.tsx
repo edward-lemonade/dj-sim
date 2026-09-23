@@ -127,7 +127,6 @@ export function CDJ({
       <CdjWaveformDisplay 
         track={track}
         player={player}
-        bands={BandOptions.Single}
       />
 
       <div className="flex flex-1 min-h-0 items-center justify-center gap-10 border-t border-slate/40 px-4 py-4">
