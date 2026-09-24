@@ -34,7 +34,7 @@ variable "function_name" {
 }
 
 variable "image_tag" {
-  description = "Tag of the image already pushed to ECR by deploy.sh"
+  description = "Tag of the image already pushed to ECR by build_and_push.sh"
   type        = string
   default     = "latest"
 }

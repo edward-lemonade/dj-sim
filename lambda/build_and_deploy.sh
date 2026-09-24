@@ -16,7 +16,12 @@ ECR_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME"
 aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
-docker build -t "$REPO_NAME:$IMAGE_TAG" .
+# --provenance=false --sbom=false: without these, current Docker/BuildKit
+# attaches attestation manifests on push, turning the image into an OCI
+# image index that Lambda's CreateFunction can't resolve ("image manifest,
+# config or layer media type ... is not supported"). Lambda needs a plain
+# single-manifest image.
+docker build --provenance=false --sbom=false -t "$REPO_NAME:$IMAGE_TAG" .
 docker tag "$REPO_NAME:$IMAGE_TAG" "$ECR_URI:$IMAGE_TAG"
 docker push "$ECR_URI:$IMAGE_TAG"
 

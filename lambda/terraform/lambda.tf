@@ -22,6 +22,8 @@ resource "aws_lambda_function" "track_analyzer" {
 
   # The image must already exist at image_uri before this can apply — see
   # README "bootstrap order". Terraform provisions AWS resources; it doesn't
-  # build/push the container image itself.
-  depends_on = [aws_ecr_repository.track_analyzer]
+  # build/push the container image itself. Also waits on the ECR repo
+  # policy (ecr_policy.tf) — without it, Lambda itself (not just your
+  # deploying user) lacks permission to pull the image.
+  depends_on = [aws_ecr_repository.track_analyzer, aws_ecr_repository_policy.track_analyzer]
 }

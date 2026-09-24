@@ -18,6 +18,7 @@ terraform/
   versions.tf                    # provider + AWS account lookup
   variables.tf                   # all inputs, incl. bucket_name
   ecr.tf                         # image repository
+  ecr_policy.tf                  # grants the Lambda *service* (not your IAM user) pull access
   iam.tf                         # execution role, least-privilege policy
   lambda.tf                      # the function itself
   s3.tf                          # permission + bucket notification (trigger)
@@ -28,6 +29,40 @@ terraform/
 `bucket_name` and everything else environment-specific live in
 `terraform.tfvars` / `.env`, both gitignored — only the `.example` files are
 committed.
+
+## Permissions for whoever runs `terraform apply`
+
+The deploying IAM user needs its own permissions — separate from, and
+broader than, the execution role in `iam.tf` (that one governs what the
+*running Lambda* can touch at invoke time; this governs what *you* can
+provision). `terraform-deploy-policy.json` at the repo root covers the
+IAM-role and S3 pieces, scoped tightly since unrestricted `iam:PassRole` or
+`s3:*` are real privilege-escalation / blast-radius risks. For ECR and
+Lambda and CloudWatch Logs — where broad access isn't a privilege-escalation
+vector — attach the AWS managed policies instead of hand-maintaining more
+custom JSON:
+
+```bash
+aws iam attach-user-policy --user-name YOUR_USER \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess
+aws iam attach-user-policy --user-name YOUR_USER \
+  --policy-arn arn:aws:iam::aws:policy/AWSLambda_FullAccess
+aws iam attach-user-policy --user-name YOUR_USER \
+  --policy-arn arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+
+aws iam create-policy --policy-name terraform-deploy \
+  --policy-document file://terraform-deploy-policy.json
+aws iam attach-user-policy --user-name YOUR_USER \
+  --policy-arn arn:aws:iam::ACCOUNT_ID:policy/terraform-deploy
+```
+
+Note: `AWSLambda_FullAccess` bundles its own `iam:PassRole` (any role, but
+only to `lambda.amazonaws.com`). Since IAM permissions are additive across
+attached policies, this makes `terraform-deploy-policy.json`'s
+role-scoped `PassRole` statement non-restrictive once both are attached —
+the user can pass any role to Lambda, not just `track-analyzer-role`. Skip
+`AWSLambda_FullAccess` and use a function-scoped `lambda:*` statement in
+the custom policy instead if that distinction matters to you.
 
 ## Bootstrap order
 
@@ -57,6 +92,13 @@ Every subsequent deploy (new image, same infra) is just:
 ./build_and_push.sh v2
 terraform apply -var image_tag=v2
 ```
+
+`build_and_push.sh` builds with `--provenance=false --sbom=false`. Without
+those, current Docker/BuildKit attaches attestation manifests on push,
+which turns the image into a multi-manifest OCI index that Lambda's
+`CreateFunction` can't resolve — it fails with "the image manifest, config
+or layer media type ... is not supported." Don't drop those flags if you
+ever hand-roll a build command outside the script.
 
 ## Manual invoke from your backend
 
