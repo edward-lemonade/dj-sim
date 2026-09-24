@@ -4,9 +4,9 @@ import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
 import { DeckControls } from '@/components/DeckControls';
 import { Platter } from '@/pages/studio/components/Platter';
-import { BandOptions } from '@/components/WaveformCanvas';
 import { clamp, type DeckId, type MixerAudioEngine } from '../useAudioEngine';
 import { CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
+import { MetaField } from '@/components/MetaField';
 
 export type CDJProps = {
   track: Track | null;
@@ -63,6 +63,9 @@ export function CDJ({
   const playing = player.status === 'playing';
   const transportDisabled = !track || player.status === 'idle' || player.status === 'loading' || player.status === 'error';
   const cueSlotsFull = cues.every((slot) => slot !== null);
+  // BPM after applying the tempo adjustment — this is what the MetaField
+  // below displays, not the raw tempo percentage.
+  const effectiveBpm = track?.bpm ? track.bpm * (1 + tempo / 100) : 0;
 
   const setCueAtPlayhead = () => {
     if (!track || cueSlotsFull) return;
@@ -157,11 +160,14 @@ export function CDJ({
           onScratchMove={handleScratchMove}
           onScratchEnd={handleScratchEnd}
         />
-        <label className="flex flex-col items-center gap-1">
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500">
-            Tempo {tempo > 0 ? '+' : ''}
-            {tempo}%
-          </span>
+        <div className="flex flex-col items-center gap-2">
+          <MetaField
+            label="Tempo:"
+            value={effectiveBpm.toFixed(2)}
+            align='center'
+            disabled
+            onCommit={async () => {}}
+          />
           <input
             type="range"
             min={-50}
@@ -173,7 +179,7 @@ export function CDJ({
             className="h-56 w-8 cursor-pointer accent-zinc-200"
             style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
           />
-        </label>
+        </div>
       </div>
 
       <DeckControls
