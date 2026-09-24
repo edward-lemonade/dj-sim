@@ -24,7 +24,12 @@ func main() {
 		log.Fatalf("db connect failed: %v", err)
 	}
 
-	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey)
+	store, err := storage.NewS3Store(cfg)
+	if err != nil {
+		log.Fatalf("s3 store init failed: %v", err)
+	}
+
+	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, store, cfg.S3TracksKey)
 
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("server failed: %v", err)

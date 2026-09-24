@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -17,7 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/google/uuid"
+
+	appconfig "github.com/edward-lemonade/dj-sim-backend/internal/config"
 )
 
 type UploadedObject struct {
@@ -25,35 +24,53 @@ type UploadedObject struct {
 	Key string
 }
 
-var (
-	s3Mu          sync.Mutex
-	s3Clients     = map[string]*s3.Client{}
-	bucketRegions = map[string]string{}
-)
+type S3Store struct {
+	bucket          string
+	defaultRegion   string
+	accessKeyID     string
+	secretAccessKey string
 
-func UploadTrackToS3(ctx context.Context, reader io.Reader, fileName, contentType string) (UploadedObject, error) {
-	bucket := strings.TrimSpace(os.Getenv("AWS_S3_BUCKET"))
+	mu            sync.RWMutex
+	clients       map[string]*s3.Client
+	bucketRegions map[string]string
+}
+
+func NewS3Store(cfg appconfig.Config) (*S3Store, error) {
+	bucket := strings.TrimSpace(cfg.S3Bucket)
 	if bucket == "" {
-		return UploadedObject{}, fmt.Errorf("AWS_S3_BUCKET is not configured")
+		return nil, fmt.Errorf("AWS_S3_BUCKET is not configured")
 	}
+	region := strings.TrimSpace(cfg.S3Region)
+	if region == "" {
+		region = "us-west-1"
+	}
+	return &S3Store{
+		bucket:          bucket,
+		defaultRegion:   region,
+		accessKeyID:     strings.TrimSpace(cfg.AWSAccessKeyID),
+		secretAccessKey: strings.TrimSpace(cfg.AWSSecretAccessKey),
+		clients:         make(map[string]*s3.Client),
+		bucketRegions:   make(map[string]string),
+	}, nil
+}
 
+func (s *S3Store) UploadObject(ctx context.Context, reader io.Reader, key, contentType string) (UploadedObject, error) {
 	body, err := asReadSeeker(reader)
 	if err != nil {
 		return UploadedObject{}, err
 	}
 
-	client, region, err := clientForBucket(ctx, bucket)
+	client, region, err := s.client(ctx)
 	if err != nil {
 		return UploadedObject{}, err
 	}
 
-	key := fmt.Sprintf("uploads/%s/%s-%s", time.Now().UTC().Format("2006/01/02"), uuid.NewString(), fileName)
 	put := func(c *s3.Client) error {
 		if seeker, ok := body.(io.Seeker); ok {
 			_, _ = seeker.Seek(0, io.SeekStart)
 		}
 		_, err := c.PutObject(ctx, &s3.PutObjectInput{
-			Bucket:      aws.String(bucket),
+			Bucket:      aws.String(s.bucket),
 			Key:         aws.String(key),
 			Body:        body,
 			ContentType: aws.String(contentType),
@@ -63,8 +80,8 @@ func UploadTrackToS3(ctx context.Context, reader io.Reader, fileName, contentTyp
 
 	if err := put(client); err != nil {
 		if redirected := regionFromError(err); redirected != "" && redirected != region {
-			rememberBucketRegion(bucket, redirected)
-			retryClient, retryRegion, retryErr := clientForBucket(ctx, bucket)
+			s.rememberBucketRegion(redirected)
+			retryClient, retryRegion, retryErr := s.client(ctx)
 			if retryErr != nil {
 				return UploadedObject{}, fmt.Errorf("upload to s3: %w", err)
 			}
@@ -78,7 +95,7 @@ func UploadTrackToS3(ctx context.Context, reader io.Reader, fileName, contentTyp
 	}
 
 	return UploadedObject{
-		URL: fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", bucket, region, key),
+		URL: fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.bucket, region, key),
 		Key: key,
 	}, nil
 }
@@ -89,24 +106,19 @@ type S3Object struct {
 	ContentLength int64
 }
 
-func GetTrackFromS3(ctx context.Context, objectKey string) (*S3Object, error) {
+func (s *S3Store) GetObject(ctx context.Context, objectKey string) (*S3Object, error) {
 	if strings.TrimSpace(objectKey) == "" {
 		return nil, fmt.Errorf("object key is required")
 	}
 
-	bucket := strings.TrimSpace(os.Getenv("AWS_S3_BUCKET"))
-	if bucket == "" {
-		return nil, fmt.Errorf("AWS_S3_BUCKET is not configured")
-	}
-
-	client, _, err := clientForBucket(ctx, bucket)
+	client, _, err := s.client(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	get := func(c *s3.Client) (*s3.GetObjectOutput, error) {
 		return c.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: aws.String(bucket),
+			Bucket: aws.String(s.bucket),
 			Key:    aws.String(objectKey),
 		})
 	}
@@ -114,8 +126,8 @@ func GetTrackFromS3(ctx context.Context, objectKey string) (*S3Object, error) {
 	out, err := get(client)
 	if err != nil {
 		if redirected := regionFromError(err); redirected != "" {
-			rememberBucketRegion(bucket, redirected)
-			retryClient, _, retryErr := clientForBucket(ctx, bucket)
+			s.rememberBucketRegion(redirected)
+			retryClient, _, retryErr := s.client(ctx)
 			if retryErr != nil {
 				return nil, fmt.Errorf("get from s3: %w", err)
 			}
@@ -144,34 +156,29 @@ func GetTrackFromS3(ctx context.Context, objectKey string) (*S3Object, error) {
 	}, nil
 }
 
-func DeleteTrackFromS3(ctx context.Context, objectKey string) error {
+func (s *S3Store) DeleteObject(ctx context.Context, objectKey string) error {
 	if strings.TrimSpace(objectKey) == "" {
 		return nil
 	}
 
-	bucket := strings.TrimSpace(os.Getenv("AWS_S3_BUCKET"))
-	if bucket == "" {
-		return fmt.Errorf("AWS_S3_BUCKET is not configured")
-	}
-
-	client, _, err := clientForBucket(ctx, bucket)
+	client, _, err := s.client(ctx)
 	if err != nil {
 		return err
 	}
 
 	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(bucket),
+		Bucket: aws.String(s.bucket),
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
 		if redirected := regionFromError(err); redirected != "" {
-			rememberBucketRegion(bucket, redirected)
-			client, _, retryErr := clientForBucket(ctx, bucket)
+			s.rememberBucketRegion(redirected)
+			retryClient, _, retryErr := s.client(ctx)
 			if retryErr != nil {
 				return fmt.Errorf("delete from s3: %w", err)
 			}
-			_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(bucket),
+			_, err = retryClient.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(s.bucket),
 				Key:    aws.String(objectKey),
 			})
 			if err != nil {
@@ -184,36 +191,32 @@ func DeleteTrackFromS3(ctx context.Context, objectKey string) error {
 	return nil
 }
 
-func clientForBucket(ctx context.Context, bucket string) (*s3.Client, string, error) {
-	region := rememberedBucketRegion(bucket)
+func (s *S3Store) client(ctx context.Context) (*s3.Client, string, error) {
+	region := s.rememberedBucketRegion()
 	if region == "" {
-		configured := strings.TrimSpace(os.Getenv("AWS_REGION"))
-		if configured == "" {
-			configured = "us-east-1"
-		}
-		resolved, err := lookupBucketRegion(ctx, bucket)
+		resolved, err := s.lookupBucketRegion(ctx)
 		if err != nil {
-			region = configured
+			region = s.defaultRegion
 		} else {
 			region = resolved
 		}
-		rememberBucketRegion(bucket, region)
+		s.rememberBucketRegion(region)
 	}
 
-	client, err := s3Client(ctx, region)
+	client, err := s.clientForRegion(ctx, region)
 	if err != nil {
 		return nil, "", err
 	}
 	return client, region, nil
 }
 
-func lookupBucketRegion(ctx context.Context, bucket string) (string, error) {
-	client, err := s3Client(ctx, "us-east-1")
+func (s *S3Store) lookupBucketRegion(ctx context.Context) (string, error) {
+	client, err := s.clientForRegion(ctx, s.defaultRegion)
 	if err != nil {
 		return "", err
 	}
 	out, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
-		Bucket: aws.String(bucket),
+		Bucket: aws.String(s.bucket),
 	})
 	if err != nil {
 		if redirected := regionFromError(err); redirected != "" {
@@ -222,7 +225,7 @@ func lookupBucketRegion(ctx context.Context, bucket string) (string, error) {
 		return "", err
 	}
 	if out == nil || out.LocationConstraint == "" {
-		return "us-east-1", nil
+		return s.defaultRegion, nil
 	}
 	if out.LocationConstraint == types.BucketLocationConstraintEu {
 		return "eu-west-1", nil
@@ -230,44 +233,49 @@ func lookupBucketRegion(ctx context.Context, bucket string) (string, error) {
 	return string(out.LocationConstraint), nil
 }
 
-func s3Client(ctx context.Context, region string) (*s3.Client, error) {
-	s3Mu.Lock()
-	defer s3Mu.Unlock()
-	if client, ok := s3Clients[region]; ok {
+func (s *S3Store) clientForRegion(ctx context.Context, region string) (*s3.Client, error) {
+	s.mu.RLock()
+	if client, ok := s.clients[region]; ok {
+		s.mu.RUnlock()
+		return client, nil
+	}
+	s.mu.RUnlock()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if client, ok := s.clients[region]; ok {
 		return client, nil
 	}
 
-	accessKey := strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID"))
-	secretKey := strings.TrimSpace(os.Getenv("AWS_SECRET_ACCESS_KEY"))
 	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-	if accessKey != "" && secretKey != "" {
-		awsCfg.Credentials = credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")
+	if s.accessKeyID != "" && s.secretAccessKey != "" {
+		awsCfg.Credentials = credentials.NewStaticCredentialsProvider(s.accessKeyID, s.secretAccessKey, "")
 	}
 
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.Region = region
 		o.UsePathStyle = false
 	})
-	s3Clients[region] = client
+	s.clients[region] = client
 	return client, nil
 }
 
-func rememberedBucketRegion(bucket string) string {
-	s3Mu.Lock()
-	defer s3Mu.Unlock()
-	return bucketRegions[bucket]
+func (s *S3Store) rememberedBucketRegion() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.bucketRegions[s.bucket]
 }
 
-func rememberBucketRegion(bucket, region string) {
-	if bucket == "" || region == "" {
+func (s *S3Store) rememberBucketRegion(region string) {
+	if region == "" {
 		return
 	}
-	s3Mu.Lock()
-	defer s3Mu.Unlock()
-	bucketRegions[bucket] = region
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bucketRegions[s.bucket] = region
 }
 
 func regionFromError(err error) string {

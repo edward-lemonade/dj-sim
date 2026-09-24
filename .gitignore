@@ -1,2 +1,10 @@
 .DS_Store
 .env
+.venv
+
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+.env

@@ -1,0 +1,7 @@
+aws_region   = "us-west-2"
+bucket_name  = "your-tracks-bucket"
+track_prefix = "tracks/"
+
+# results_bucket_name     = ""
+# backend_webhook_url     = ""
+# backend_webhook_api_key = ""

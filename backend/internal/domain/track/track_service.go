@@ -3,21 +3,31 @@ package track
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
+
+	"github.com/google/uuid"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/storage"
 )
 
 type Service struct {
-	tracksDB Repository
+	tracksDB     Repository
+	store        *storage.S3Store
+	tracksPrefix string
 }
 
-func NewService(tracks *Repository) *Service {
-	return &Service{tracksDB: *tracks}
+func NewService(tracks *Repository, store *storage.S3Store, tracksPrefix string) *Service {
+	return &Service{
+		tracksDB:     *tracks,
+		store:        store,
+		tracksPrefix: strings.Trim(strings.TrimSpace(tracksPrefix), "/"),
+	}
 }
 
 func (s *Service) ListByUserID(ctx context.Context, userID string) ([]Track, error) {
@@ -56,7 +66,12 @@ func (s *Service) Upload(ctx context.Context, userID string, input UploadInput) 
 		contentType = mimeTypeForFile(input.FileName)
 	}
 
-	uploaded, err := storage.UploadTrackToS3(ctx, input.File, sanitizeFileName(input.FileName), contentType)
+	objectKey, err := s.buildTrackObjectKey(input.FileName)
+	if err != nil {
+		return nil, err
+	}
+
+	uploaded, err := s.store.UploadObject(ctx, input.File, objectKey, contentType)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +92,7 @@ func (s *Service) Upload(ctx context.Context, userID string, input UploadInput) 
 	}
 
 	if err := s.tracksDB.Create(ctx, saved); err != nil {
-		_ = storage.DeleteTrackFromS3(ctx, uploaded.Key)
+		_ = s.store.DeleteObject(ctx, uploaded.Key)
 		return nil, err
 	}
 
@@ -121,7 +136,7 @@ func (s *Service) Delete(ctx context.Context, id, userID string) error {
 		return err
 	}
 
-	_ = storage.DeleteTrackFromS3(ctx, existing.ObjectKey)
+	_ = s.store.DeleteObject(ctx, existing.ObjectKey)
 	return nil
 }
 
@@ -131,7 +146,7 @@ func (s *Service) GetAudioForUser(ctx context.Context, id, userID string) (*stor
 		return nil, "", err
 	}
 
-	obj, err := storage.GetTrackFromS3(ctx, existing.ObjectKey)
+	obj, err := s.store.GetObject(ctx, existing.ObjectKey)
 	if err != nil {
 		return nil, "", err
 	}
@@ -145,6 +160,14 @@ func (s *Service) GetAudioForUser(ctx context.Context, id, userID string) (*stor
 }
 
 // --- internal helpers ---
+
+func (s *Service) buildTrackObjectKey(fileName string) (string, error) {
+	if s.tracksPrefix == "" {
+		return "", fmt.Errorf("AWS_S3_TRACKS_KEY is not configured")
+	}
+	datePath := time.Now().UTC().Format("2006/01/02")
+	return fmt.Sprintf("%s/%s/%s-%s", s.tracksPrefix, datePath, uuid.NewString(), sanitizeFileName(fileName)), nil
+}
 
 func isAudioUpload(fileName, contentTypeHeader string) bool {
 	if strings.HasPrefix(contentTypeHeader, "audio/") {

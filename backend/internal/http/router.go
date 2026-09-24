@@ -8,11 +8,12 @@ import (
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/handler"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/middleware"
+	"github.com/edward-lemonade/dj-sim-backend/internal/storage"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -27,7 +28,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string) *gin.Engine {
 	userHandler := &handler.UserHandler{Users: userSvc}
 
 	trackRepo := track.NewRepository(db)
-	trackSvc := track.NewService(trackRepo)
+	trackSvc := track.NewService(trackRepo, store, tracksPrefix)
 	trackHandler := &handler.TrackHandler{Tracks: trackSvc}
 
 	if err := trackRepo.Migrate(ctx); err != nil {
