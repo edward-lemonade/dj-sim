@@ -37,6 +37,7 @@ export function trackToPool(track: TrackDTO): Track {
 export function useTrackLibrary() {
   const { user, isLoaded, isSignedIn } = useUser();
   const [songs, setSongs] = useState<Track[]>([]);
+  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
   const songsRef = useRef<Track[]>([]);
   const { uploadRef, handleUpload } = useTrackUpload({ setSongs, isSignedIn });
   songsRef.current = songs;
@@ -73,7 +74,9 @@ export function useTrackLibrary() {
       }
     }
 
-    void loadPool();
+    void loadPool().finally(() => {
+      if (!cancelled) setIsLoadingTracks(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -205,5 +208,6 @@ export function useTrackLibrary() {
     analyzeSong,
     cancelAnalysis,
     patchTrack,
+    isLoadingTracks,
   };
 }

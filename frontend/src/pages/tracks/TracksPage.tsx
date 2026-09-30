@@ -28,6 +28,7 @@ function TracksPage() {
       <TrackLibrary
         songs={library.songs}
         setSongs={library.setSongs}
+        loading={library.isLoadingTracks}
         selectedId={selectedId}
         openedId={player.openedId}
         uploadRef={library.uploadRef}

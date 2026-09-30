@@ -83,6 +83,7 @@ export function TrackLibrary({
   onDelete,
   onAnalyze,
   onCancelAnalyze,
+  loading,
 }: {
   songs: Track[];
   setSongs: Dispatch<SetStateAction<Track[]>>;
@@ -95,6 +96,7 @@ export function TrackLibrary({
   onDelete: (song: Track) => void;
   onAnalyze: (song: Track) => void;
   onCancelAnalyze: (song: Track) => void;
+  loading: boolean;
 }) {
   const [widths, setWidths] = useState<Record<FlexColumnId, number>>(loadWidths);
   const dragCol = useRef<{
@@ -399,7 +401,11 @@ export function TrackLibrary({
             {songs.length === 0 && (
               <tr>
                 <td colSpan={columns.length} className="px-3 py-10 text-center text-zinc-500">
-                  No tracks yet. Upload an audio file to start your library.
+                  {loading ? (
+                    <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                  ) : (
+                    'No tracks yet. Upload an audio file to start your library.'
+                  )}
                 </td>
               </tr>
             )}
