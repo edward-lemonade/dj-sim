@@ -6,6 +6,7 @@ import { useAudioEngine } from './useAudioEngine';
 import { useMixerState } from './useMixerState';
 import { DECK_IDS, DeckId } from './useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
+import { ControlSelectionProvider } from '@/components/ControlSelection';
 
 function defaultLoadedTrackIds(): Record<DeckId, string | null> {
   return DECK_IDS.reduce(
@@ -83,14 +84,16 @@ function StudioPage() {
   );
 
   return (
-    <div className="flex h-svh min-h-0 flex-col bg-[#0b0d10] text-zinc-200">
-      <StudioTopbar />
-      <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns }}>
-        {leftIds.map(renderDeck)}
-        <Mixer state={mixer.state} onChannelChange={mixer.setChannel} onMasterChange={mixer.setMaster} />
-        {rightIds.map(renderDeck)}
+    <ControlSelectionProvider>
+      <div className="flex h-svh min-h-0 flex-col bg-[#0b0d10] text-zinc-200">
+        <StudioTopbar />
+        <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns }}>
+          {leftIds.map(renderDeck)}
+          <Mixer state={mixer.state} onChannelChange={mixer.setChannel} onMasterChange={mixer.setMaster} />
+          {rightIds.map(renderDeck)}
+        </div>
       </div>
-    </div>
+    </ControlSelectionProvider>
   );
 }
 

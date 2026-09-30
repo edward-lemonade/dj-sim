@@ -1,6 +1,7 @@
 import { Knob } from '@/components/Knob';
 import type { ChannelState } from '../useMixerState';
 import { DeckId } from '../useAudioEngine';
+import { VerticalSlider } from '@/components/VerticalSlider';
 
 export function ChannelStrip({
   label,
@@ -17,20 +18,12 @@ export function ChannelStrip({
       <Knob label="High" value={value.high} onChange={(high) => onChange({ high })} />
       <Knob label="Mid" value={value.mid} onChange={(mid) => onChange({ mid })} />
       <Knob label="Low" value={value.low} onChange={(low) => onChange({ low })} />
-      <label className="flex flex-col items-center gap-2">
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={value.volume}
-          onChange={(event) => onChange({ volume: Number(event.target.value) })}
-          aria-label={`${DeckId[label]} volume`}
-          className="h-28 w-6 cursor-pointer accent-zinc-200"
-          style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
-        />
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Vol</span>
-      </label>
+      <VerticalSlider
+        value={value.volume}
+        onChange={(volume) => onChange({ volume })}
+        label={`${DeckId[label]} volume`}
+        className="h-28 w-6 cursor-pointer accent-zinc-200"
+      />
     </div>
   );
 }

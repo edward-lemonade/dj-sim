@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { cn } from 'cn';
+import { useSyncedControl } from '@/components/ControlSelection';
 
 type KnobProps = {
   label: string;
@@ -26,18 +27,18 @@ export function Knob({
   defaultValue = 0,
   disabled,
 }: KnobProps) {
-  const dragRef = useRef<{ lastY: number; value: number } | null>(null);
+  const dragRef = useRef<{ lastY: number } | null>(null);
   const range = max - min;
   const t = range === 0 ? 0 : (clamp(value, min, max) - min) / range;
   const angle = -135 + t * 270;
+  const { selected, inverted, bind, move } = useSyncedControl({ value, min, max, onChange, disabled });
 
   const nudge = useCallback(
     (delta: number) => {
       if (disabled) return;
-      const next = clamp(Math.round((value + delta) / step) * step, min, max);
-      onChange(Number(next.toFixed(3)));
+      move(delta);
     },
-    [disabled, max, min, onChange, step, value],
+    [disabled, move],
   );
 
   return (
@@ -52,20 +53,22 @@ export function Knob({
         aria-disabled={disabled || undefined}
         className={cn(
           'relative size-12 cursor-ns-resize touch-none rounded-full border border-zinc-600 bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
+          selected && !inverted && 'ring-2 ring-sky-400 focus-visible:ring-sky-400',
+          inverted && 'ring-2 ring-red-400 focus-visible:ring-red-400',
           disabled && 'cursor-not-allowed opacity-40',
         )}
+        {...bind}
         onPointerDown={(event) => {
           if (disabled) return;
           event.currentTarget.setPointerCapture(event.pointerId);
-          dragRef.current = { lastY: event.clientY, value };
+          dragRef.current = { lastY: event.clientY };
         }}
         onPointerMove={(event) => {
           const drag = dragRef.current;
           if (!drag) return;
           const dy = drag.lastY - event.clientY;
           drag.lastY = event.clientY;
-          drag.value = clamp(drag.value + (dy / 120) * range, min, max);
-          onChange(Number(drag.value.toFixed(3)));
+          move((dy / 120) * range);
         }}
         onPointerUp={() => {
           dragRef.current = null;
