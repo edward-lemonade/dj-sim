@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUser } from '@clerk/react';
 import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/utils/trackMetadata';
-import { deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
+import { analyzeTrack, cancelTrackAnalysis, deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
 import { getCurrentUser, registerUser } from '@/lib/api/UserAPI';
 import { ApiError } from '@/lib/clients/axios';
 import type { TrackDTO, TrackUpdateFields } from '@/lib/types/Track';
@@ -10,6 +10,13 @@ import { useTrackUpload } from './useTrackUpload';
 import { normalizeCues } from '@/lib/types/Cues';
 
 export function trackToPool(track: TrackDTO): Track {
+  const libraryStatus =
+    track.analysisStatus === 'pending'
+      ? 'analyzing'
+      : track.analysisStatus === 'failed'
+        ? 'error'
+        : 'ready';
+
   return {
     id: track.id,
     title: track.title,
@@ -22,7 +29,8 @@ export function trackToPool(track: TrackDTO): Track {
     coverUrl: track.cover && (track.cover.startsWith('data:image/') || track.cover.startsWith('http')) ? track.cover : null,
     waveformOverview: track.waveformOverview ?? null,
     cues: normalizeCues(track.cues),
-    libraryStatus: 'ready',
+    libraryStatus,
+    errorMessage: track.analysisStatus === 'failed' ? 'Analysis failed — BPM and key were not detected' : undefined,
   };
 }
 
@@ -71,6 +79,32 @@ export function useTrackLibrary() {
     };
   }, [isLoaded, isSignedIn, user?.id]);
 
+  // Poll while anything is still being analyzed server-side. The effect
+  // re-runs whenever hasAnalyzing flips: React clears the previous
+  // interval on every re-run, so once nothing is 'analyzing' anymore the
+  // cleanup fires and no new interval is set — this stops on its own
+  // rather than needing separate start/stop plumbing.
+  const hasAnalyzing = songs.some((song) => song.libraryStatus === 'analyzing');
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !hasAnalyzing) return;
+
+    const interval = window.setInterval(async () => {
+      try {
+        const tracks = await listTracks();
+        setSongs((current) => {
+          const stillUploading = current.filter((song) => song.libraryStatus === 'uploading');
+          return [...stillUploading, ...tracks.map(trackToPool)];
+        });
+      } catch {
+        // Transient poll failure — just try again on the next tick rather
+        // than surfacing an error for a background refresh.
+      }
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [isLoaded, isSignedIn, hasAnalyzing]);
+
   useEffect(() => {
     return () => {
       songsRef.current.forEach((song) => revokeCoverUrl(song.coverUrl));
@@ -80,18 +114,20 @@ export function useTrackLibrary() {
   const removeSong = useCallback(async (song: Track) => {
     if (song.libraryStatus === 'uploading') return;
 
-    if (song.libraryStatus === 'ready') {
-      try {
-        await deleteTrack(song.id);
-      } catch (error) {
-        const message = error instanceof ApiError ? error.message : 'Could not delete track';
-        setSongs((current) =>
-          current.map((item) =>
-            item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
-          ),
-        );
-        return;
-      }
+    // Was previously gated on libraryStatus === 'ready' — 'error' tracks
+    // were only removed locally, leaving a ghost row server-side. Any
+    // non-'uploading' status means a real server row exists (including
+    // the new 'analyzing' status), so it should always be deleted there.
+    try {
+      await deleteTrack(song.id);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Could not delete track';
+      setSongs((current) =>
+        current.map((item) =>
+          item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
+        ),
+      );
+      return;
     }
 
     setSongs((current) => {
@@ -101,6 +137,41 @@ export function useTrackLibrary() {
       }
       return next;
     });
+  }, []);
+
+  const analyzeSong = useCallback(async (song: Track) => {
+    if (song.libraryStatus === 'uploading' || song.libraryStatus === 'analyzing') return;
+
+    setSongs((current) =>
+      current.map((item) =>
+        item.id === song.id ? { ...item, libraryStatus: 'analyzing', errorMessage: undefined } : item,
+      ),
+    );
+
+    try {
+      await analyzeTrack(song.id);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : 'Could not start analysis';
+      setSongs((current) =>
+        current.map((item) =>
+          item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
+        ),
+      );
+    }
+  }, []);
+
+  const cancelAnalysis = useCallback(async (song: Track) => {
+    if (song.libraryStatus !== 'analyzing') return;
+
+    try {
+      await cancelTrackAnalysis(song.id);
+    } catch {
+      return;
+    }
+
+    setSongs((current) =>
+      current.map((item) => (item.id === song.id ? { ...item, libraryStatus: 'ready' } : item)),
+    );
   }, []);
 
   const patchTrack = useCallback(async (id: string, fields: TrackUpdateFields) => {
@@ -131,6 +202,8 @@ export function useTrackLibrary() {
     uploadRef,
     handleUpload,
     removeSong,
+    analyzeSong,
+    cancelAnalysis,
     patchTrack,
   };
 }

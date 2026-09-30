@@ -9,6 +9,8 @@ export const API_ROUTES = {
     update: (id: string) => `/tracks/${id}`,
     audio: (id: string) => `/tracks/${id}/audio`,
     remove: (id: string) => `/tracks/${id}`,
+    analyze: (id: string) => `/tracks/${id}/analyze`,
+    cancelAnalysis: (id: string) => `/tracks/${id}/analyze/cancel`,
   },
 }
 

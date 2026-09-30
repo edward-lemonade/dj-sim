@@ -29,6 +29,7 @@ type Track struct {
 	FileName         string            `json:"fileName"`
 	WaveformOverview *WaveformOverview `json:"waveformOverview" gorm:"type:jsonb;serializer:json"`
 	Cues             []*float64        `json:"cues" gorm:"type:jsonb;serializer:json"`
+	AnalysisStatus   string            `json:"analysisStatus" gorm:"not null;default:pending"`
 	CreatedAt        time.Time         `json:"createdAt"`
 	UpdatedAt        time.Time         `json:"updatedAt"`
 }

@@ -76,7 +76,7 @@ export function useTrackUpload({
                 coverLabel: coverLabelFromTitle(saved.title || metadata.title),
                 coverUrl: finalCoverUrl,
                 waveformOverview: saved.waveformOverview ?? waveformOverview,
-                libraryStatus: 'ready',
+                libraryStatus: saved.analysisStatus === 'pending' ? 'analyzing' : 'ready',
                 uploadProgress: undefined,
                 cues: normalizeCues(saved.cues),
                 errorMessage: undefined,

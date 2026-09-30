@@ -17,6 +17,13 @@ resource "aws_lambda_function" "track_analyzer" {
       RESULTS_BUCKET          = var.results_bucket_name
       BACKEND_WEBHOOK_URL     = var.backend_webhook_url
       BACKEND_WEBHOOK_API_KEY = var.backend_webhook_api_key
+      # librosa pulls in numba for JIT-compiled DSP functions. numba's
+      # @jit(cache=True) tries to write its compiled-function cache next
+      # to the source file in site-packages, which is read-only in
+      # Lambda — fails with "cannot cache function ...: no locator
+      # available" the first time librosa.load() triggers the lazy
+      # import. /tmp is the one writable directory Lambda provides.
+      NUMBA_CACHE_DIR = "/tmp"
     }
   }
 

@@ -17,7 +17,7 @@ function TracksPage() {
       void player.close();
       return;
     }
-    if (song.libraryStatus !== 'ready') return;
+    if (song.libraryStatus !== 'ready' && song.libraryStatus !== 'analyzing') return;
     setSelectedId(song.id);
     void player.open(song.id);
   };
@@ -38,6 +38,8 @@ function TracksPage() {
           if (player.openedId === song.id) player.close();
           void library.removeSong(song);
         }}
+        onAnalyze={(song) => void library.analyzeSong(song)}
+        onCancelAnalyze={(song) => void library.cancelAnalysis(song)}
       />
     </div>
   );

@@ -8,8 +8,9 @@ import {
   useState,
 } from 'react';
 import { cn } from 'cn';
-import { GripVertical, Trash2, Upload } from 'lucide-react';
+import { GripVertical, Loader2, Search, Square, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { SongCover } from '@/components/SongCover';
 import type { Track } from '@/lib/types/Track';
@@ -28,7 +29,7 @@ const STORAGE_KEY = 'dj-sim.tracks.columnWidths';
 // horizontal scroll or trailing dead space.
 const GRIP_WIDTH = 24;
 const COVER_WIDTH = 40;
-const ACTIONS_WIDTH = 40;
+const ACTIONS_WIDTH = 64;
 const FIXED_TOTAL = GRIP_WIDTH + COVER_WIDTH + ACTIONS_WIDTH;
 
 type FixedColumnId = 'grip' | 'cover' | 'actions';
@@ -80,6 +81,8 @@ export function TrackLibrary({
   onSelect,
   onOpen,
   onDelete,
+  onAnalyze,
+  onCancelAnalyze,
 }: {
   songs: Track[];
   setSongs: Dispatch<SetStateAction<Track[]>>;
@@ -90,6 +93,8 @@ export function TrackLibrary({
   onSelect: (id: string) => void;
   onOpen: (song: Track | null) => void;
   onDelete: (song: Track) => void;
+  onAnalyze: (song: Track) => void;
+  onCancelAnalyze: (song: Track) => void;
 }) {
   const [widths, setWidths] = useState<Record<FlexColumnId, number>>(loadWidths);
   const dragCol = useRef<{
@@ -276,6 +281,7 @@ export function TrackLibrary({
             {songs.map((song, index) => {
               const selected = selectedId === song.id;
               const opened = openedId === song.id;
+              const analyzing = song.libraryStatus === 'analyzing';
               const peaks = peaksFromOverview(song.waveformOverview);
 
               const isDragged = drag?.id === song.id;
@@ -337,18 +343,55 @@ export function TrackLibrary({
                     </div>
                   </td>
                   <td className="px-1 py-0.5" onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      className="text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
-                      disabled={song.libraryStatus === 'uploading'}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void onDelete(song);
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
+                    <div className="flex items-center">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              aria-label="Delete track"
+                              className="text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
+                              disabled={song.libraryStatus === 'uploading'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void onDelete(song);
+                              }}
+                            />
+                          }
+                        >
+                          <Trash2 />
+                        </TooltipTrigger>
+                        <TooltipContent>Delete track</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              aria-label={analyzing ? 'Stop analysis' : 'Analyze track'}
+                              className="group text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-100"
+                              disabled={song.libraryStatus === 'uploading'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                analyzing ? onCancelAnalyze(song) : onAnalyze(song);
+                              }}
+                            />
+                          }
+                        >
+                          {analyzing ? (
+                            <>
+                              <Loader2 className="animate-spin group-hover:hidden" />
+                              <Square className="hidden fill-current group-hover:block" />
+                            </>
+                          ) : (
+                            <Search />
+                          )}
+                        </TooltipTrigger>
+                        <TooltipContent>{analyzing ? 'Stop analysis' : 'Analyze track'}</TooltipContent>
+                      </Tooltip>
+                    </div>
                   </td>
                 </tr>
               );

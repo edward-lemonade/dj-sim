@@ -18,6 +18,9 @@ type TrackService interface {
 	Update(ctx context.Context, id, userID string, fields track.UpdateFields) (*track.Track, error)
 	Delete(ctx context.Context, id, userID string) error
 	GetAudioForUser(ctx context.Context, id, userID string) (*storage.S3Object, string, error)
+	ApplyAnalysisResult(ctx context.Context, result track.AnalysisResult) (*track.Track, error)
+	StartAnalysis(ctx context.Context, id, userID string) error
+	CancelAnalysis(ctx context.Context, id, userID string) error
 }
 
 type patchTrackRequest struct {
@@ -136,4 +139,26 @@ func (h *TrackHandler) Audio(c *gin.Context) {
 	c.Header("Accept-Ranges", "bytes")
 	c.Header("Cache-Control", "private, max-age=3600")
 	c.DataFromReader(http.StatusOK, obj.ContentLength, contentType, obj.Body, nil)
+}
+
+func (h *TrackHandler) Analyze(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	id := c.Param("id")
+
+	if err := h.Tracks.StartAnalysis(c.Request.Context(), id, u.ID); err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+	c.Status(http.StatusAccepted)
+}
+
+func (h *TrackHandler) CancelAnalysis(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	id := c.Param("id")
+
+	if err := h.Tracks.CancelAnalysis(c.Request.Context(), id, u.ID); err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

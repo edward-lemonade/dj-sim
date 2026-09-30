@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState } from 'react';
 import { SongCover } from '@/components/SongCover';
 import type { Track } from '@/lib/types/Track';
 import type { TrackUpdateFields } from '@/lib/types/Track';

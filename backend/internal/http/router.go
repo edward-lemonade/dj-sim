@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
@@ -13,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, analysisWebhookSecret string) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -28,7 +29,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	userHandler := &handler.UserHandler{Users: userSvc}
 
 	trackRepo := track.NewRepository(db)
-	trackSvc := track.NewService(trackRepo, store, tracksPrefix)
+	trackSvc := track.NewService(trackRepo, store, tracksPrefix, analysisPrefix)
 	trackHandler := &handler.TrackHandler{Tracks: trackSvc}
 
 	if err := trackRepo.Migrate(ctx); err != nil {
@@ -38,19 +39,44 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 		log.Fatalf("migration failed: %v", err)
 	}
 
+	// Fallback (and, for local dev with no reachable BACKEND_WEBHOOK_URL,
+	// the only) path to pick up analysis results: poll S3 directly for
+	// any track still pending. Safe to run alongside the webhook — see
+	// PollPendingAnalyses' doc comment on why they can't double-apply.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			applied, err := trackSvc.PollPendingAnalyses(context.Background())
+			if err != nil {
+				log.Printf("analysis poll failed: %v", err)
+				continue
+			}
+			if applied > 0 {
+				log.Printf("analysis poll: applied %d result(s)", applied)
+			}
+		}
+	}()
+
 	r.GET("/health", handler.Health)
 
-	sessions := middleware.NewSessionVerifier(clerkSecretKey)
-	auth := r.Group("/")
-	auth.Use(middleware.Auth(userRepo, sessions))
+	internal := r.Group("/internal", middleware.WebhookAuth(analysisWebhookSecret))
+	internal.POST("/tracks/analysis", trackHandler.AnalysisWebhook)
 
-	auth.GET("user/me", userHandler.Me)
-	auth.POST("user", userHandler.Register)
-	auth.GET("tracks", middleware.RequireUser(), trackHandler.List)
-	auth.POST("tracks/upload", middleware.RequireUser(), trackHandler.Upload)
-	auth.PATCH("tracks/:id", middleware.RequireUser(), trackHandler.Update)
-	auth.GET("tracks/:id/audio", middleware.RequireUser(), trackHandler.Audio)
-	auth.DELETE("tracks/:id", middleware.RequireUser(), trackHandler.Delete)
+	sessions := middleware.NewSessionVerifier(clerkSecretKey)
+	auth := r.Group("/", middleware.Auth(userRepo, sessions))
+
+	auth.GET("/user/me", userHandler.Me)
+	auth.POST("/user", userHandler.Register)
+
+	tracks := auth.Group("/tracks", middleware.RequireUser())
+	tracks.GET("", trackHandler.List)
+	tracks.POST("/upload", trackHandler.Upload)
+	tracks.PATCH("/:id", trackHandler.Update)
+	tracks.DELETE("/:id", trackHandler.Delete)
+	tracks.GET("/:id/audio", trackHandler.Audio)
+	tracks.POST("/:id/analyze", trackHandler.Analyze)
+	tracks.POST("/:id/analyze/cancel", trackHandler.CancelAnalysis)
 
 	return r
 }

@@ -61,3 +61,11 @@ export async function fetchTrackAudioBlob(id: string): Promise<Blob> {
 export async function deleteTrack(id: string): Promise<void> {
   await axiosClient.delete(API_ROUTES.track.remove(id));
 }
+
+export async function analyzeTrack(id: string): Promise<void> {
+  await axiosClient.post(API_ROUTES.track.analyze(id));
+}
+
+export async function cancelTrackAnalysis(id: string): Promise<void> {
+  await axiosClient.post(API_ROUTES.track.cancelAnalysis(id));
+}

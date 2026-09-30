@@ -62,7 +62,7 @@ export function CircularProgress({ percent }: { percent: number | undefined }) {
         />
       </svg>
       <span className="font-mono text-[10px] tabular-nums text-zinc-300">
-        {isIndeterminate ? 'Analyzing...' : `Uploading... ${Math.round(displayPercent)}%`}
+        {isIndeterminate ? 'Finishing touches...' : `Uploading... ${Math.round(displayPercent)}%`}
       </span>
       <style>{`
         @keyframes circular-progress-spin {

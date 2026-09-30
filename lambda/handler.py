@@ -38,7 +38,7 @@ logger.setLevel(logging.INFO)
 s3 = boto3.client("s3")
 
 RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")  # defaults to source bucket if unset
-RESULTS_PREFIX = os.environ.get("RESULTS_PREFIX", "analysis")
+RESULTS_PREFIX = os.environ.get("RESULTS_PREFIX").strip("/")
 BACKEND_WEBHOOK_URL = os.environ.get("BACKEND_WEBHOOK_URL")  # optional
 BACKEND_WEBHOOK_API_KEY = os.environ.get("BACKEND_WEBHOOK_API_KEY")  # optional
 
@@ -138,7 +138,8 @@ def handler(event, context):
         try:
             local_path = _download(bucket, key)
             analysis = analyze_track(local_path)
-            analysis.update({"bucket": bucket, "key": key})
+            analysis.update({"bucket": bucket, "s3_key": key})
+            analysis["status"] = "complete"
             # echo through any extra fields a manual caller sent (e.g. trackId)
             if "Records" not in event:
                 for k, v in event.items():
@@ -151,7 +152,9 @@ def handler(event, context):
             results.append(analysis)
         except Exception as exc:
             logger.exception("Analysis failed for s3://%s/%s", bucket, key)
-            results.append({"bucket": bucket, "key": key, "error": str(exc)})
+            error_result = {"bucket": bucket, "s3_key": key, "status": "failed", "error": str(exc)}
+            _persist_result(bucket, key, error_result)
+            results.append(error_result)
         finally:
             if local_path and os.path.exists(local_path):
                 os.remove(local_path)

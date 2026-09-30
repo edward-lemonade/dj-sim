@@ -23,7 +23,7 @@ data "aws_iam_policy_document" "permissions" {
   statement {
     sid       = "WriteResults"
     actions   = ["s3:PutObject"]
-    resources = ["arn:aws:s3:::${local.results_bucket_name}/${var.results_prefix}/*"]
+    resources = ["arn:aws:s3:::${local.results_bucket_name}/*"]
   }
 
   statement {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -191,6 +192,54 @@ func (s *S3Store) DeleteObject(ctx context.Context, objectKey string) error {
 	return nil
 }
 
+func (s *S3Store) RetriggerObject(ctx context.Context, objectKey string) error {
+	if strings.TrimSpace(objectKey) == "" {
+		return fmt.Errorf("object key is required")
+	}
+
+	client, _, err := s.client(ctx)
+	if err != nil {
+		return err
+	}
+
+	touch := func(c *s3.Client) error {
+		head, err := c.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(objectKey),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = c.CopyObject(ctx, &s3.CopyObjectInput{
+			Bucket:            aws.String(s.bucket),
+			Key:               aws.String(objectKey),
+			CopySource:        aws.String(copySource(s.bucket, objectKey)),
+			ContentType:       head.ContentType,
+			Metadata:          head.Metadata,
+			MetadataDirective: types.MetadataDirectiveReplace,
+		})
+		return err
+	}
+
+	if err := touch(client); err != nil {
+		redirected := regionFromError(err)
+		if redirected == "" {
+			return fmt.Errorf("retrigger s3 object: %w", err)
+		}
+		s.rememberBucketRegion(redirected)
+		retryClient, _, retryErr := s.client(ctx)
+		if retryErr != nil {
+			return fmt.Errorf("retrigger s3 object: %w", err)
+		}
+		if err := touch(retryClient); err != nil {
+			return fmt.Errorf("retrigger s3 object: %w", err)
+		}
+	}
+	return nil
+}
+
+// Helpers
+
 func (s *S3Store) client(ctx context.Context) (*s3.Client, string, error) {
 	region := s.rememberedBucketRegion()
 	if region == "" {
@@ -297,4 +346,12 @@ func asReadSeeker(reader io.Reader) (io.ReadSeeker, error) {
 		return nil, fmt.Errorf("read upload body: %w", err)
 	}
 	return bytes.NewReader(data), nil
+}
+
+func copySource(bucket, key string) string {
+	parts := strings.Split(key, "/")
+	for i, p := range parts {
+		parts[i] = strings.ReplaceAll(url.QueryEscape(p), "+", "%20")
+	}
+	return bucket + "/" + strings.Join(parts, "/")
 }
