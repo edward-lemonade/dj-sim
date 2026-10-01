@@ -15,7 +15,7 @@ export function CueMarkers({
   const span = viewEnd - viewStart;
 
   return (
-    <div className="pointer-events-none absolute inset-x-2 top-2 bottom-0 z-[6] overflow-hidden">
+    <div className="pointer-events-none absolute inset-x-0 top-2 bottom-0 z-6 overflow-hidden">
       {cues.map((t, i) => {
         if (t === null) return null;
         const x = ((t / durationSeconds - viewStart) / span) * 100;
