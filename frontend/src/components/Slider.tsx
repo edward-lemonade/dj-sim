@@ -10,9 +10,10 @@ type VerticalSliderProps = {
   step?: number;
   disabled?: boolean;
   className?: string;
+  orientation?: 'vertical' | 'horizontal';
 };
 
-export function VerticalSlider({
+export function Slider({
   label,
   value,
   onChange,
@@ -21,6 +22,7 @@ export function VerticalSlider({
   step = 0.01,
   disabled,
   className,
+  orientation = 'vertical',
 }: VerticalSliderProps) {
   const { selected, inverted, bind, move } = useSyncedControl({ value, min, max, onChange, disabled });
 
@@ -43,7 +45,7 @@ export function VerticalSlider({
         inverted && 'rounded ring-2 ring-red-400',
         className,
       )}
-      style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+      style={orientation === 'vertical' ? { writingMode: 'vertical-lr', direction: 'rtl' } : undefined}
       {...bind}
     />
   );

@@ -6,7 +6,11 @@
  * Signal path per deck:
  *   source -> pitchCorrect (WASM AudioWorkletNode, once loaded)
  *          -> input (gain, unity) -> low shelf -> mid peaking -> high shelf
+ *          -> filter (low/high-pass sweep)
  *          -> channel volume (gain) -> master (gain) -> destination
+ *
+ * The filter output also feeds a pre-fader send into the shared FxRack
+ * (see fxRack.ts), whose return sums into master.
  *
  * Tempo is applied as HTMLMediaElement.playbackRate (vinyl-style: this
  * alone shifts pitch along with speed). The pitchCorrect node then shifts
@@ -34,6 +38,7 @@
 import { useEffect, useRef } from "react";
 import type { MixerState } from "./useMixerState";
 import { createPitchCorrectNode, setPitchRatio } from "@/lib/utils/pitchCorrectNode";
+import { FxRack, type FxDivision, type FxState } from "./fxRack";
 
 export enum DeckId {A,B}
 export const DECK_IDS: DeckId[] = [DeckId.A, DeckId.B];
@@ -57,7 +62,14 @@ interface DeckNodes {
   low: BiquadFilterNode;
   mid: BiquadFilterNode;
   high: BiquadFilterNode;
+  filter: BiquadFilterNode;
+  fxSend: GainNode;
   volume: GainNode;
+  /** Last channel volume knob value, used to pick the louder deck for fx tempo. */
+  volumeValue: number;
+  /** Effective BPM (track BPM with tempo applied), 0 when no track is loaded. */
+  bpm: number;
+  fxAssigned: boolean;
   mediaElement: HTMLMediaElement | null;
   mediaSource: MediaElementAudioSourceNode | null;
   pitchNode: AudioWorkletNode | null;
@@ -76,6 +88,14 @@ const DEFAULTS: Required<AudioEngineOptions> = {
   tempoRangePercent: 50,
 };
 
+// Filter knob: negative sweeps a low-pass down, positive sweeps a high-pass
+// up, and the dead zone around 0 snaps to fully open (inaudible).
+const FILTER_LP_MAX = 20000;
+const FILTER_LP_MIN = 150;
+const FILTER_HP_MIN = 20;
+const FILTER_HP_MAX = 8000;
+const FILTER_DEADZONE = 0.03;
+
 // Scratch grains: how much source material each pointermove grabs, the
 // drag-speed range that maps to grain playbackRate, and how long grains
 // crossfade into each other so back-to-back pointermoves don't click.
@@ -87,9 +107,11 @@ const SCRATCH_FADE_SECONDS = 0.005;
 export class MixerAudioEngine {
   readonly context: AudioContext;
   readonly master: GainNode;
+  readonly fx: FxRack;
 
   private readonly opts: Required<AudioEngineOptions>;
   private readonly decks = new Map<DeckId, DeckNodes>();
+  private fxDivision: FxDivision = 1;
 
   constructor(options: AudioEngineOptions = {}) {
     this.opts = { ...DEFAULTS, ...options };
@@ -100,6 +122,9 @@ export class MixerAudioEngine {
     this.master = this.context.createGain();
     this.master.gain.value = 1;
     this.master.connect(this.context.destination);
+
+    this.fx = new FxRack(this.context);
+    this.fx.output.connect(this.master);
 
     this.createDeck(DeckId.A);
     this.createDeck(DeckId.B);
@@ -128,17 +153,30 @@ export class MixerAudioEngine {
     high.type = 'highshelf';
     high.frequency.value = 4000;
 
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = FILTER_LP_MAX;
+
+    const fxSend = ctx.createGain();
+    fxSend.gain.value = 0;
+
     const volume = ctx.createGain();
     volume.gain.value = 1;
 
     input.connect(low);
     low.connect(mid);
     mid.connect(high);
-    high.connect(volume);
+    high.connect(filter);
+    filter.connect(volume);
+    filter.connect(fxSend);
+    fxSend.connect(this.fx.input);
     volume.connect(this.master);
 
     this.decks.set(id, {
-      input, low, mid, high, volume,
+      input, low, mid, high, filter, fxSend, volume,
+      volumeValue: 1,
+      bpm: 0,
+      fxAssigned: false,
       mediaElement: null,
       mediaSource: null,
       pitchNode: null,
@@ -245,10 +283,33 @@ export class MixerAudioEngine {
     this.ramp(this.deck(deckId)[band].gain, db);
   }
 
+  /** knob value in [-1, 1]; 0 = off, negative = low-pass, positive = high-pass */
+  setFilter(deckId: DeckId, value: number) {
+    const clamped = clamp(value, -1, 1);
+    const v = Math.abs(clamped) < FILTER_DEADZONE ? 0 : clamped;
+    const { filter } = this.deck(deckId);
+    const highpass = v > 0;
+    const type = highpass ? 'highpass' : 'lowpass';
+    const hz = highpass
+      ? FILTER_HP_MIN * Math.pow(FILTER_HP_MAX / FILTER_HP_MIN, v)
+      : FILTER_LP_MAX * Math.pow(FILTER_LP_MIN / FILTER_LP_MAX, -v);
+
+    if (filter.type !== type) {
+      // Park at the new type's open position first so the swap is inaudible
+      filter.frequency.cancelScheduledValues(this.context.currentTime);
+      filter.frequency.value = highpass ? FILTER_HP_MIN : FILTER_LP_MAX;
+      filter.type = type;
+    }
+    this.ramp(filter.frequency, hz);
+  }
+
   /** knob value in [0, 1] (matches ChannelState.volume) */
   setChannelVolume(deckId: DeckId, value: number) {
     const clamped = clamp(value, 0, 1);
-    this.ramp(this.deck(deckId).volume.gain, clamped * this.opts.maxGain);
+    const deck = this.deck(deckId);
+    deck.volumeValue = clamped;
+    this.ramp(deck.volume.gain, clamped * this.opts.maxGain);
+    this.refreshFxTempo();
   }
 
   /** fader value in [0, 1] */
@@ -273,6 +334,44 @@ export class MixerAudioEngine {
       // .then() once the node exists.
       deck.pendingRatio = correctionRatio;
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Effects
+  // ---------------------------------------------------------------------
+
+  setFx(fx: FxState) {
+    this.fxDivision = fx.division;
+    this.fx.setType(fx.type);
+    this.fx.setWet(fx.wet);
+    for (const id of DECK_IDS) {
+      const deck = this.deck(id);
+      deck.fxAssigned = fx.assign[id];
+      this.ramp(deck.fxSend.gain, deck.fxAssigned ? 1 : 0);
+    }
+    this.refreshFxTempo();
+  }
+
+  /** Effective BPM of the track on this deck (0 if none). Drives beat-synced effects. */
+  setDeckBpm(deckId: DeckId, bpm: number) {
+    this.deck(deckId).bpm = bpm;
+    this.refreshFxTempo();
+  }
+
+  // Syncs to the louder of the assigned decks, falling back to any deck
+  // with a known BPM so echo tails keep their timing when nothing is assigned.
+  private refreshFxTempo() {
+    const pick = (assignedOnly: boolean): DeckNodes | null => {
+      let best: DeckNodes | null = null;
+      for (const id of DECK_IDS) {
+        const deck = this.deck(id);
+        if (deck.bpm <= 0 || (assignedOnly && !deck.fxAssigned)) continue;
+        if (!best || deck.volumeValue > best.volumeValue) best = deck;
+      }
+      return best;
+    };
+    const deck = pick(true) ?? pick(false);
+    if (deck) this.fx.setTiming(deck.bpm, this.fxDivision);
   }
 
   // ---------------------------------------------------------------------
@@ -359,6 +458,8 @@ export class MixerAudioEngine {
       deck.low.disconnect();
       deck.mid.disconnect();
       deck.high.disconnect();
+      deck.filter.disconnect();
+      deck.fxSend.disconnect();
       deck.volume.disconnect();
       deck.pitchNode?.disconnect();
       deck.scratchSource?.stop();
@@ -366,6 +467,7 @@ export class MixerAudioEngine {
       deck.scratchGain?.disconnect();
     });
     this.decks.clear();
+    this.fx.dispose();
     this.master.disconnect();
     void this.context.close();
   }
@@ -429,6 +531,7 @@ export function useAudioEngine(state: MixerState): MixerAudioEngine {
       engine.setEQ(id, 'low', channel.low);
       engine.setEQ(id, 'mid', channel.mid);
       engine.setEQ(id, 'high', channel.high);
+      engine.setFilter(id, channel.filter);
       engine.setChannelVolume(id, channel.volume);
       engine.setTempo(id, channel.tempo);
     }
@@ -439,6 +542,10 @@ export function useAudioEngine(state: MixerState): MixerAudioEngine {
   useEffect(() => {
     engine.setMasterVolume(state.master);
   }, [engine, state.master]);
+
+  useEffect(() => {
+    engine.setFx(state.fx);
+  }, [engine, state.fx]);
 
   return engine;
 }

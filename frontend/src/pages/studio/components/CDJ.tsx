@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { cn } from 'cn';
 import { useTrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
@@ -8,6 +9,12 @@ import { clamp, type DeckId, type MixerAudioEngine } from '../useAudioEngine';
 import { CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
 import { TrackPicker } from './TrackPicker';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/Slider';
+
+const PLATTER_MIN_SIZE = 120;
+// Tempo column plus gap on each side, so the platter stays centered without crowding it
+const TEMPO_COLUMN_RESERVE = 140;
 
 export type CDJProps = {
   track: Track | null;
@@ -20,6 +27,11 @@ export type CDJProps = {
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
   tempo: number;
   onTempoChange: (value: number) => void;
+  /** This deck is the tempo master; the other decks follow its BPM. */
+  syncMaster: boolean;
+  onSyncMasterChange: (on: boolean) => void;
+  /** Another deck is the master and this deck's tempo is being driven by it. */
+  tempoFollowing: boolean;
 };
 
 export function CDJ({
@@ -33,6 +45,9 @@ export function CDJ({
   onPatch,
   tempo,
   onTempoChange,
+  syncMaster,
+  onSyncMasterChange,
+  tempoFollowing,
 }: CDJProps) {
   const player = useTrackPlayer({ enableSpacebar: false });
 
@@ -42,6 +57,21 @@ export function CDJ({
   // moves the playhead (via player.seek below), just silently, and stays
   // paused when released.
   const wasPlayingRef = useRef(false);
+
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [platterSize, setPlatterSize] = useState(PLATTER_MIN_SIZE);
+
+  // Grow the platter to the space this row is given
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setPlatterSize(Math.max(PLATTER_MIN_SIZE, Math.floor(Math.min(height, width - 2 * TEMPO_COLUMN_RESERVE))));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Wire this deck's <audio> element into the mixer engine's EQ/volume/tempo
   // chain. connectMediaElement is idempotent, so re-running this (StrictMode
@@ -66,6 +96,11 @@ export function CDJ({
   // BPM after applying the tempo adjustment — this is what the MetaField
   // below displays, not the raw tempo percentage.
   const effectiveBpm = track?.bpm ? track.bpm * (1 + tempo / 100) : 0;
+
+  // Lets the shared effects unit sync to this deck's tempo
+  useEffect(() => {
+    engine.setDeckBpm(deckId, effectiveBpm);
+  }, [engine, deckId, effectiveBpm]);
 
   const setCueAtPlayhead = () => {
     if (!track || cueSlotsFull) return;
@@ -141,10 +176,14 @@ export function CDJ({
         player={player}
       />
 
-      <div className="flex flex-1 min-h-0 items-center justify-center gap-10 border-t border-slate/40 px-4 py-4">
+      <div
+        ref={stageRef}
+        className="grid flex-1 min-h-0 grid-cols-[1fr_auto_1fr] grid-rows-[minmax(0,1fr)] items-center gap-10 border-t border-slate/40 px-4 py-4"
+      >
+        <div />
         <Platter
           label={label}
-          size={180}
+          size={platterSize}
           track={track}
           currentTime={player.currentTime}
           disabled={transportDisabled}
@@ -152,7 +191,7 @@ export function CDJ({
           onScratchMove={handleScratchMove}
           onScratchEnd={handleScratchEnd}
         />
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex min-h-0 flex-col items-center justify-center gap-2 self-stretch justify-self-center">
           <MetaField
             label="Tempo:"
             value={effectiveBpm.toFixed(2)}
@@ -160,17 +199,42 @@ export function CDJ({
             disabled
             onCommit={async () => {}}
           />
-          <input
-            type="range"
+          <Slider
             min={-50}
             max={50}
             step={0.1}
             value={tempo}
-            onChange={(event) => onTempoChange(Number(event.target.value))}
-            aria-label={label ? `Deck ${label} tempo` : 'Tempo'}
-            className="h-56 w-8 cursor-pointer accent-zinc-200"
-            style={{ writingMode: 'vertical-lr', direction: 'rtl' }}
+            onChange={onTempoChange}
+            disabled={tempoFollowing}
+            label={label ? `Deck ${label} tempo` : 'Tempo'}
+            className="max-h-72 min-h-0 w-8 flex-1 cursor-pointer accent-zinc-200"
           />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-zinc-400 hover:text-zinc-100"
+            disabled={tempo === 0 || tempoFollowing}
+            onClick={() => onTempoChange(0)}
+            aria-label={label ? `Reset deck ${label} tempo` : 'Reset tempo'}
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Reset</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={cn(
+              'h-6 border px-2',
+              syncMaster ? 'border-orange-400/70 bg-orange-400/15 text-orange-200' : 'border-transparent text-zinc-400 hover:text-zinc-100',
+            )}
+            aria-pressed={syncMaster}
+            disabled={!syncMaster && !track?.bpm}
+            onClick={() => onSyncMasterChange(!syncMaster)}
+            aria-label={label ? `Make deck ${label} the tempo master` : 'Tempo master'}
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Master</span>
+          </Button>
         </div>
       </div>
 

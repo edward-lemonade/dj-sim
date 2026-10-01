@@ -1,14 +1,18 @@
 import { ChannelStrip } from '@/pages/studio/components/ChannelStrip';
+import { EffectsUnit } from '@/pages/studio/components/EffectsUnit';
 import { DECK_IDS, DeckId } from '../useAudioEngine';
+import type { FxState } from '../fxRack';
 import type { ChannelState, MixerState } from '../useMixerState';
 
 export function Mixer({
   state,
   onChannelChange,
+  onFxChange,
   onMasterChange,
 }: {
   state: MixerState;
   onChannelChange: (id: DeckId, patch: Partial<ChannelState>) => void;
+  onFxChange: (patch: Partial<FxState>) => void;
   onMasterChange: (value: number) => void;
 }) {
   return (
@@ -24,6 +28,7 @@ export function Mixer({
           />
         ))}
       </div>
+      <EffectsUnit value={state.fx} onChange={onFxChange} />
       <div className="flex flex-col items-center gap-2 border-t border-zinc-800 px-4 py-3">
         <span className="text-xs uppercase tracking-wide text-zinc-500">Master</span>
         <input

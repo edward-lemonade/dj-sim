@@ -11,6 +11,7 @@ type KnobProps = {
   step?: number;
   defaultValue?: number;
   disabled?: boolean;
+  size?: 'sm' | 'md';
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -26,6 +27,7 @@ export function Knob({
   step = 0.02,
   defaultValue = 0,
   disabled,
+  size = 'md',
 }: KnobProps) {
   const dragRef = useRef<{ lastY: number } | null>(null);
   const range = max - min;
@@ -52,7 +54,8 @@ export function Knob({
         aria-valuenow={Number(value.toFixed(3))}
         aria-disabled={disabled || undefined}
         className={cn(
-          'relative size-12 cursor-ns-resize touch-none rounded-full border border-zinc-600 bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
+          'relative cursor-ns-resize touch-none rounded-full border border-zinc-600 bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
+          size === 'sm' ? 'size-9' : 'size-12',
           selected && !inverted && 'ring-2 ring-sky-400 focus-visible:ring-sky-400',
           inverted && 'ring-2 ring-red-400 focus-visible:ring-red-400',
           disabled && 'cursor-not-allowed opacity-40',

@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CDJ } from './components/CDJ';
 import { Mixer } from '@/pages/studio/components/Mixer';
 import { StudioTopbar } from '@/pages/studio/components/StudioTopbar';
 import { useAudioEngine } from './useAudioEngine';
 import { useMixerState } from './useMixerState';
-import { DECK_IDS, DeckId } from './useAudioEngine';
+import { clamp, DECK_IDS, DeckId } from './useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
+
+// Matches the tempo slider's range in CDJ
+const TEMPO_RANGE_PERCENT = 50;
 
 function defaultLoadedTrackIds(): Record<DeckId, string | null> {
   return DECK_IDS.reduce(
@@ -23,6 +26,7 @@ function StudioPage() {
   const mixer = useMixerState();
   const engine = useAudioEngine(mixer.state);
   const [loadedTrackIds, setLoadedTrackIds] = useState<Record<DeckId, string | null>>(defaultLoadedTrackIds);
+  const { setChannel, setTempoMaster } = mixer;
 
   // Auto-load the first N ready tracks into the N decks, in DECK_IDS order.
   useEffect(() => {
@@ -39,6 +43,28 @@ function StudioPage() {
       return changed ? updated : current;
     });
   }, [library.songs]);
+
+  const trackBpm = useCallback(
+    (id: DeckId) => library.songs.find((song) => song.id === loadedTrackIds[id])?.bpm ?? 0,
+    [library.songs, loadedTrackIds],
+  );
+
+  const masterId = mixer.state.tempoMaster;
+  const masterBpm = masterId === null ? 0 : trackBpm(masterId) * (1 + mixer.state.channelState[masterId].tempo / 100);
+  const isFollowing = (id: DeckId) => masterId !== null && id !== masterId && masterBpm > 0 && trackBpm(id) > 0;
+
+  // Followers match the master's effective BPM (track BPM with its tempo applied)
+  useEffect(() => {
+    if (masterId === null || masterBpm <= 0) return;
+    DECK_IDS.forEach((id) => {
+      const bpm = trackBpm(id);
+      if (id === masterId || bpm <= 0) return;
+      const target = clamp((masterBpm / bpm - 1) * 100, -TEMPO_RANGE_PERCENT, TEMPO_RANGE_PERCENT);
+      if (Math.abs(target - mixer.state.channelState[id].tempo) > 0.001) {
+        setChannel(id, { tempo: target });
+      }
+    });
+  }, [masterId, masterBpm, trackBpm, mixer.state.channelState, setChannel]);
 
   // Web Audio requires a user gesture before it will actually produce sound.
   // Resume on the first pointerdown anywhere in the studio, once.
@@ -79,7 +105,10 @@ function StudioPage() {
       onLoadTrack={(trackId: string) => setLoadedTrackIds((current) => ({ ...current, [id]: trackId || null }))}
       onPatch={library.patchTrack}
       tempo={mixer.state.channelState[id].tempo}
-      onTempoChange={(value) => mixer.setChannel(id, { tempo: value })}
+      onTempoChange={(value) => setChannel(id, { tempo: value })}
+      syncMaster={masterId === id}
+      onSyncMasterChange={(on) => setTempoMaster(on ? id : null)}
+      tempoFollowing={isFollowing(id)}
     />
   );
 
@@ -89,7 +118,12 @@ function StudioPage() {
         <StudioTopbar />
         <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns }}>
           {leftIds.map(renderDeck)}
-          <Mixer state={mixer.state} onChannelChange={mixer.setChannel} onMasterChange={mixer.setMaster} />
+          <Mixer
+            state={mixer.state}
+            onChannelChange={setChannel}
+            onFxChange={mixer.setFx}
+            onMasterChange={mixer.setMaster}
+          />
           {rightIds.map(renderDeck)}
         </div>
       </div>
