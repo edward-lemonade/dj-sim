@@ -3,12 +3,25 @@ import {
   type Dispatch,
   type MutableRefObject,
   type SetStateAction,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { cn } from 'cn';
-import { ArrowLeftRight, GripVertical, Loader2, Search, Square, Trash2, Upload } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowLeftRight,
+  ArrowUp,
+  ChevronDown,
+  GripVertical,
+  Loader2,
+  Search,
+  Square,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
@@ -62,6 +75,40 @@ const DEFAULT_WIDTHS: Record<FlexColumnId, number> = {
   waveform: 200,
 };
 
+// 'custom' is the manual order, i.e. the order of the `songs` array itself.
+// Every other field is a derived view of it.
+type SortField = 'custom' | 'added' | 'title' | 'artist' | 'bpm' | 'key' | 'duration';
+type SortDirection = 'asc' | 'desc';
+
+const SORT_LABELS: Record<SortField, string> = {
+  custom: 'Custom',
+  added: 'Date added',
+  title: 'Title',
+  artist: 'Artist',
+  bpm: 'BPM',
+  key: 'Key',
+  duration: 'Duration',
+};
+
+// null = no value, always sorted to the end
+function sortValue(song: Track, field: Exclude<SortField, 'custom'>): string | number | null {
+  switch (field) {
+    case 'added':
+      // NOTE: assumes Track carries a timestamp. Point this at whatever field you have.
+      return song.addedAt ?? null;
+    case 'title':
+      return song.title;
+    case 'artist':
+      return song.artist;
+    case 'bpm':
+      return song.bpm > 0 ? song.bpm : null;
+    case 'key':
+      return song.key ? formatKey(song.key, KeyNotationType.Camelot) : null;
+    case 'duration':
+      return trackSeconds(song);
+  }
+}
+
 function loadWidths(): Record<FlexColumnId, number> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -114,16 +161,68 @@ export function TrackLibrary({
   const [containerWidth, setContainerWidth] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(24);
   const [keyNotation, setKeyNotation] = useState<KeyNotationType>(KeyNotationType.Camelot);
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const [sortField, setSortField] = useState<SortField>('custom');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  // Memoized so the list handed to useListItemMove keeps the same identity
+  // between renders (the hook re-renders this component on every pointer move
+  // during a drag).
+  const visibleSongs = useMemo(() => {
+    const filtered = normalizedQuery
+      ? songs.filter(
+          (song) =>
+            song.title.toLowerCase().includes(normalizedQuery) ||
+            song.artist.toLowerCase().includes(normalizedQuery),
+        )
+      : songs;
+    if (sortField === 'custom') return filtered;
+    return [...filtered].sort((a, b) => {
+      const av = sortValue(a, sortField);
+      const bv = sortValue(b, sortField);
+      if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1;
+      const result =
+        typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
+      return sortDirection === 'asc' ? result : -result;
+    });
+  }, [songs, normalizedQuery, sortField, sortDirection]);
+
+  // With a search active, the visible rows are a subset, so there's no
+  // unambiguous place to write a reorder back to. Drag works in every sort
+  // mode otherwise.
+  const canReorder = !normalizedQuery;
+
+  // The hook reorders what's on screen. Whatever order the user ends up with
+  // becomes the new custom order, and the sort switches to custom (ascending,
+  // since custom is stored in display order) so the list doesn't jump back.
+  // Stable identity (reads the latest list through a ref) so the hook doesn't
+  // see a new setItems on every render.
+  const visibleRef = useRef(visibleSongs);
+  visibleRef.current = visibleSongs;
+  const commitReorder = useCallback<Dispatch<SetStateAction<Track[]>>>(
+    (action) => {
+      const current = visibleRef.current;
+      const next = typeof action === 'function' ? action(current) : action;
+      const unchanged = next.length === current.length && next.every((song, i) => song.id === current[i].id);
+      if (unchanged) return;
+      setSongs(next);
+      setSortField('custom');
+      setSortDirection('asc');
+    },
+    [setSongs],
+  );
 
   // Row reordering. Rows are flush (no gap) and the sticky header occupies the
   // top of the scroll area, so it acts as the list's "padding".
   const { drag, draggedItem, stride, onRowPointerDown } = useListItemMove({
-    items: songs,
-    setItems: setSongs,
+    items: visibleSongs,
+    setItems: commitReorder,
     listRef: wrapperRef,
     rowGap: 0,
     listPadding: headerHeight,
-    canDrag: (song) => song.libraryStatus !== 'uploading',
+    canDrag: (song) => canReorder && song.libraryStatus !== 'uploading',
   });
 
   useEffect(() => {
@@ -209,7 +308,7 @@ export function TrackLibrary({
     ['artist', 'Artist'],
     ['bpm', 'BPM'],
     ['key', 'Key'],
-    ['duration', 'Time'],
+    ['duration', 'Duration'],
     ['waveform', 'Waveform'],
     ['actions', ''],
   ];
@@ -221,9 +320,53 @@ export function TrackLibrary({
       <div className="flex items-center justify-between border-b px-3 py-1.5">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">Library</p>
-          <span className="rounded border px-1.5 py-0.5 text-[11px] text-zinc-400">{songs.length} tracks</span>
+          <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{songs.length} tracks</p>
         </div>
         <div className="flex items-center gap-2">
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search title or artist"
+            className="h-7 w-52 rounded-md border bg-transparent px-2 text-xs text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-zinc-500"
+          />
+          {/* Sort field and direction share one bordered control. The native
+              arrow is replaced so it can sit inside the padding. */}
+          <div className="flex h-7 items-center rounded-md border focus-within:border-zinc-500">
+            <div className="relative h-full">
+              <select
+                aria-label="Sort by"
+                value={sortField}
+                onChange={(event) => setSortField(event.target.value as SortField)}
+                className="h-full appearance-none rounded-l-md bg-transparent pl-2 pr-7 text-xs text-zinc-200 outline-none"
+              >
+                {Object.entries(SORT_LABELS).map(([value, label]) => (
+                  <option key={value} value={value} className="bg-[#1b2027]">
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-zinc-500" />
+            </div>
+            <span aria-hidden className="h-full w-px shrink-0 bg-border" />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                    disabled={sortField === 'custom'}
+                    className="h-full w-7 rounded-l-none rounded-r-md text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-100 disabled:opacity-30"
+                    onClick={() => setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                  />
+                }
+              >
+                {sortDirection === 'asc' ? <ArrowUp /> : <ArrowDown />}
+              </TooltipTrigger>
+              <TooltipContent>{sortDirection === 'asc' ? 'Ascending' : 'Descending'}</TooltipContent>
+            </Tooltip>
+          </div>
           <input
             ref={uploadRef}
             type="file"
@@ -301,7 +444,7 @@ export function TrackLibrary({
             </tr>
           </thead>
           <tbody>
-            {songs.map((song, index) => {
+            {visibleSongs.map((song, index) => {
               const selected = selectedId === song.id;
               const opened = openedId === song.id;
               const analyzing = song.libraryStatus === 'analyzing';
@@ -320,6 +463,7 @@ export function TrackLibrary({
                 <tr
                   key={song.id}
                   data-song-row
+                  data-drag-row
                   onClick={() => onSelect(song.id)}
                   onDoubleClick={() => onOpen(opened ? null : song)}
                   style={{
@@ -338,7 +482,7 @@ export function TrackLibrary({
                     <button
                       type="button"
                       aria-label={`Reorder ${song.title}`}
-                      disabled={song.libraryStatus === 'uploading'}
+                      disabled={song.libraryStatus === 'uploading' || !canReorder}
                       onPointerDown={(event) => onRowPointerDown(event, song)}
                       className="flex h-6 w-full touch-none cursor-grab items-center justify-center text-zinc-600 hover:text-zinc-300 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -424,13 +568,15 @@ export function TrackLibrary({
                 </tr>
               );
             })}
-            {songs.length === 0 && (
+            {visibleSongs.length === 0 && (
               <tr>
                 <td colSpan={columns.length} className="px-3 py-10 text-center text-zinc-500">
                   {loading ? (
                     <Loader2 className="mx-auto h-5 w-5 animate-spin" />
-                  ) : (
+                  ) : songs.length === 0 ? (
                     'No tracks yet. Upload an audio file to start your library.'
+                  ) : (
+                    'No tracks match your search.'
                   )}
                 </td>
               </tr>
