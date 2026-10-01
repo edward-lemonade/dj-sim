@@ -71,7 +71,7 @@ export function TransportControls({
             event.currentTarget.blur();
           }
         }}
-        className="h-6 w-[5.5rem] rounded border border-zinc-700 bg-[#0d1014] px-1.5 font-mono text-xs text-zinc-100 outline-none focus:border-zinc-500 disabled:opacity-50"
+        className="h-6 w-[5.5rem] rounded border bg-[#0d1014] px-1.5 font-mono text-xs text-zinc-100 outline-none focus:border-zinc-500 disabled:opacity-50"
         aria-label="Current time"
       />
       <span className="font-mono text-[11px] text-zinc-500">

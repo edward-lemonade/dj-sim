@@ -16,7 +16,7 @@ export function Mixer({
   onMasterChange: (value: number) => void;
 }) {
   return (
-    <section className="flex min-h-0 flex-col border-x border-zinc-800 bg-mist-900">
+    <section className="flex min-h-0 flex-col border-x bg-mist-900">
       {/* Column count follows DECK_IDS — add a deck in deckId.ts and a strip appears here automatically. */}
       <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: `repeat(${DECK_IDS.length}, minmax(0, 1fr))` }}>
         {DECK_IDS.map((id) => (
@@ -29,7 +29,7 @@ export function Mixer({
         ))}
       </div>
       <EffectsUnit value={state.fx} onChange={onFxChange} />
-      <div className="flex flex-col items-center gap-2 border-t border-zinc-800 px-4 py-3">
+      <div className="flex flex-col items-center gap-2 border-t px-4 py-3">
         <span className="text-xs uppercase tracking-wide text-zinc-500">Master</span>
         <input
           type="range"

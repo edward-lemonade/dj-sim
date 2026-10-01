@@ -41,7 +41,7 @@ function FxButton({
       onClick={onClick}
       className={cn(
         'flex h-6 min-w-0 flex-1 items-center justify-center rounded-sm border px-1 disabled:cursor-not-allowed disabled:opacity-40',
-        active ? 'border-orange-400/70 bg-orange-400/15 text-orange-200' : 'border-zinc-700 text-zinc-400 hover:text-zinc-100',
+        active ? 'border-orange-400/70 bg-orange-400/15 text-orange-200' : 'text-zinc-400 hover:text-zinc-100',
       )}
     >
       <span className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wider">{children}</span>
@@ -59,7 +59,7 @@ export function EffectsUnit({
   const beatSynced = value.type !== 'reverb';
 
   return (
-    <div className="flex flex-col gap-1.5 border-t border-zinc-800 px-3 py-2">
+    <div className="flex flex-col gap-1.5 border-t px-3 py-2">
       <div className="flex gap-1">
         {FX_TYPES.map((type) => (
           <FxButton key={type} active={value.type === type} onClick={() => onChange({ type })}>

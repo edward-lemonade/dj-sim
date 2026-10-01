@@ -217,11 +217,11 @@ export function TrackLibrary({
   const isFixed = (id: string): id is FixedColumnId => id in FIXED_WIDTHS;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col border-t border-zinc-800 bg-[#0d0f12]">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5">
+    <section className="flex min-h-0 flex-1 flex-col border-t bg-[#0d0f12]">
+      <div className="flex items-center justify-between border-b px-3 py-1.5">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">Library</p>
-          <span className="rounded border border-zinc-700 px-1.5 py-0.5 text-[11px] text-zinc-400">{songs.length} tracks</span>
+          <span className="rounded border px-1.5 py-0.5 text-[11px] text-zinc-400">{songs.length} tracks</span>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -258,7 +258,7 @@ export function TrackLibrary({
                 // handle sits on the right edge of every flex column that has a flex neighbor to its right
                 const showHandle = isFlex && nextId !== undefined;
                 return (
-                  <th key={id} className="relative truncate border-b border-zinc-800 px-2 py-1 font-medium">
+                  <th key={id} className="relative truncate border-b px-2 py-1 font-medium">
                     {label}
                     {id === 'key' && (
                       <Tooltip>
@@ -327,7 +327,7 @@ export function TrackLibrary({
                     transition: drag ? 'transform 150ms ease' : undefined,
                   }}
                   className={cn(
-                    'cursor-default border-b border-zinc-800/80',
+                    'cursor-default border-b/80',
                     selected ? 'bg-[#2a3340]' : opened ? 'bg-[#1c242e]' : 'hover:bg-[#171c22]',
                     song.libraryStatus === 'error' && 'bg-red-950/40',
                     song.libraryStatus === 'uploading' && 'opacity-60',

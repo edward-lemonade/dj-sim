@@ -157,7 +157,7 @@ export function CDJ({
       aria-label={label ? `Deck ${label}` : 'Deck'}
     >
       {tracks && onLoadTrack ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
           <span>Load</span>
           <TrackPicker
             tracks={tracks}

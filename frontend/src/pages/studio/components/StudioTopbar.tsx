@@ -10,7 +10,7 @@ export function StudioTopbar() {
 
   return (
     <>
-      <header className="flex h-8 shrink-0 items-center border-b border-zinc-800 bg-[#0b0d10] px-2">
+      <header className="flex h-8 shrink-0 items-center border-b bg-[#0b0d10] px-2">
         <Button
           type="button"
           variant="ghost"

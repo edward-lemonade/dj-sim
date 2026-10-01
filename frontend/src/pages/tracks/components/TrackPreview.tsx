@@ -54,7 +54,7 @@ export function TrackPreview({
         />
       )}
 
-      <div className="flex items-center justify-center gap-10 border-y border-zinc-800 bg-mist-900 px-3 py-1.5">
+      <div className="flex items-center justify-center gap-10 border-y bg-mist-900 px-3 py-1.5">
         <TransportControls player={player}/>
         <CueButtons
           cues={cues}
@@ -65,7 +65,7 @@ export function TrackPreview({
         <GridControls disabled={track.libraryStatus !== 'ready' || track.bpm <= 0} onNudge={nudgeGrid} />
       </div>
 
-      <div className="grid grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)] items-center gap-2 border-zinc-800 bg-mist-900 px-3 py-2 text-xs">
+      <div className="grid grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)] items-center gap-2 bg-mist-900 px-3 py-2 text-xs">
         <SongCover song={track} className="h-8 w-8 shrink-0 rounded-sm shadow-none" />
         <MetaField label="Title" value={track.title} disabled={track.libraryStatus !== 'ready'} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
         <MetaField label="Artist" value={track.artist} disabled={track.libraryStatus !== 'ready'} onCommit={(artist) => onPatch(track.id, { artist })} />

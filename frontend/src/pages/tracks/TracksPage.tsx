@@ -23,7 +23,7 @@ function TracksPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden border border-zinc-800 bg-[#101214] text-zinc-200 shadow-lg">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden border bg-[#101214] text-zinc-200 shadow-lg">
       <TrackPreview track={opened} player={player} onPatch={library.patchTrack} />
       <TrackLibrary
         songs={library.songs}

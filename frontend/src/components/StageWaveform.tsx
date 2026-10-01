@@ -211,7 +211,7 @@ export function StageWaveform({
         viewEnd={viewEnd}
       />
 
-      <div className="absolute right-4 top-4 z-10 flex flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/80 backdrop-blur-sm">
+      <div className="absolute right-4 top-4 z-10 flex flex-col overflow-hidden rounded-md border bg-zinc-900/80 backdrop-blur-sm">
         <button
           type="button"
           onClick={() => zoomBy(ZOOM_STEP)}

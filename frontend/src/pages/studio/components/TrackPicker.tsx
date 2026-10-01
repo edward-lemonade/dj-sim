@@ -158,9 +158,9 @@ export function TrackPicker({
           id={panelId}
           role="dialog"
           aria-label={label ? `Load track on deck ${label}` : 'Load track'}
-          className="absolute left-0 top-full z-50 mt-1 w-96 border border-zinc-700 bg-[#101214] shadow-xl"
+          className="absolute left-0 top-full z-50 mt-1 w-96 border bg-[#101214] shadow-xl"
         >
-          <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1">
+          <div className="flex items-center justify-between border-b px-3 py-1">
             <span className="text-[10px] uppercase tracking-wider text-zinc-400">Load track</span>
             <Button
               type="button"
@@ -173,7 +173,7 @@ export function TrackPicker({
               <X />
             </Button>
           </div>
-          <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-1.5">
+          <div className="flex items-center gap-2 border-b px-3 py-1.5">
             <Search className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
             <input
               ref={searchRef}
@@ -193,7 +193,7 @@ export function TrackPicker({
             />
           </div>
           <div className="max-h-80 overflow-y-auto">
-            <div className={cn(ROW_GRID, 'sticky top-0 border-b border-zinc-800 bg-[#1b2027] py-1 text-[10px] uppercase tracking-[0.16em] text-zinc-400')}>
+            <div className={cn(ROW_GRID, 'sticky top-0 border-b bg-[#1b2027] py-1 text-[10px] uppercase tracking-[0.16em] text-zinc-400')}>
               <span>Title</span>
               <span>Artist</span>
               <span>BPM</span>
@@ -209,7 +209,7 @@ export function TrackPicker({
                   onClick={() => pick(track.id)}
                   className={cn(
                     ROW_GRID,
-                    'w-full border-b border-zinc-800/80 py-0.5 text-left text-xs hover:bg-[#171c22] focus-visible:bg-[#171c22] focus-visible:outline-none',
+                    'w-full border-b/80 py-0.5 text-left text-xs hover:bg-[#171c22] focus-visible:bg-[#171c22] focus-visible:outline-none',
                     track.id === selectedId && 'bg-[#2a3340]',
                     played && 'opacity-40',
                   )}

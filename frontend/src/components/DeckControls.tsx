@@ -26,10 +26,10 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
   };
 
   const squareBtn =
-    'flex h-9 w-9 items-center justify-center rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40';
+    'flex h-9 w-9 items-center justify-center rounded border text-zinc-300 hover:bg-zinc-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40';
 
   return (
-    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-6 border-t border-zinc-800 bg-[#101214] px-4 py-3">
+    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-6 border-t bg-[#101214] px-4 py-3">
       {/* Left: Cue above, Play/Pause below, both circular */}
       <div className="flex flex-col items-center gap-2">
         <button
@@ -38,7 +38,7 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
           onClick={onCue}
           aria-label={label ? `Set cue on deck ${label}` : 'Set cue'}
           title="Set cue at playhead"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-600 bg-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-11 w-11 items-center justify-center rounded-full border bg-zinc-900 text-[10px] font-bold uppercase tracking-wider text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Cue
         </button>
