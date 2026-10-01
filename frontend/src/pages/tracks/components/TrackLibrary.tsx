@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { cn } from 'cn';
-import { GripVertical, Loader2, Search, Square, Trash2, Upload } from 'lucide-react';
+import { ArrowLeftRight, GripVertical, Loader2, Search, Square, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
@@ -19,6 +19,8 @@ import { rowShift, useListItemMove } from '../../../hooks/useListItemMove'; // a
 import { trackSeconds } from '@/lib/types/Cues';
 import { CueTicks } from '../../../components/CueTicks';
 import { CircularProgress } from '@/components/CircularProgress';
+import { KeyNotationType } from '@/constants/KeyNotation';
+import { formatKey, keyColor } from '@/lib/utils/formatKey';
 
 const STORAGE_KEY = 'dj-sim.tracks.columnWidths';
 
@@ -111,6 +113,7 @@ export function TrackLibrary({
   const theadRef = useRef<HTMLTableSectionElement | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(24);
+  const [keyNotation, setKeyNotation] = useState<KeyNotationType>(KeyNotationType.Camelot);
 
   // Row reordering. Rows are flush (no gap) and the sticky header occupies the
   // top of the scroll area, so it acts as the list's "padding".
@@ -257,6 +260,24 @@ export function TrackLibrary({
                 return (
                   <th key={id} className="relative truncate border-b border-zinc-800 px-2 py-1 font-medium">
                     {label}
+                    {id === 'key' && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          delay={0}
+                          render={
+                            <button
+                              type="button"
+                              aria-label="Switch key notation"
+                              className="ml-1 inline-flex size-4 items-center justify-center align-middle text-zinc-500 hover:text-zinc-200"
+                              onClick={() => setKeyNotation((current) => (current === KeyNotationType.Standard ? KeyNotationType.Camelot : KeyNotationType.Standard))}
+                            />
+                          }
+                        >
+                          <ArrowLeftRight className="size-3" />
+                        </TooltipTrigger>
+                        <TooltipContent>{KeyNotationType[keyNotation]}</TooltipContent>
+                      </Tooltip>
+                    )}
                     {showHandle && (
                       <span
                         className="absolute inset-y-0 right-0 w-1.5 cursor-col-resize hover:bg-orange-400/70"
@@ -330,7 +351,12 @@ export function TrackLibrary({
                   <td className="truncate px-2 py-0.5 font-medium text-zinc-100">{song.title}</td>
                   <td className="truncate px-2 py-0.5 text-zinc-400">{song.artist}</td>
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.bpm > 0 ? song.bpm : '—'}</td>
-                  <td className="px-2 py-0.5 font-mono text-zinc-300">{song.key || '—'}</td>
+                  <td
+                    className="px-2 py-0.5 font-mono text-zinc-300"
+                    style={{ color: song.key ? keyColor(song.key) : undefined }}
+                  >
+                    {song.key ? formatKey(song.key, keyNotation) : '—'}
+                  </td>
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.duration}</td>
                   <td className="px-1 py-0.5">
                     <div className="h-6 relative overflow-hidden rounded-sm bg-[#15181d] text-zinc-400">
