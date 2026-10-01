@@ -7,18 +7,17 @@ import { Platter } from '@/pages/studio/components/Platter';
 import { clamp, type DeckId, type MixerAudioEngine } from '../useAudioEngine';
 import { CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
+import { TrackPicker } from './TrackPicker';
 
 export type CDJProps = {
   track: Track | null;
-  /** Which mixer channel this deck feeds. Required — used to wire audio, not just to display. */
   deckId: DeckId;
   label?: DeckId;
-  /** Shared mixer engine (from useAudioEngine), so this deck's audio can be connected into it. */
   engine: MixerAudioEngine;
   tracks?: Track[];
+  playedIds?: Set<string>;
   onLoadTrack?: (id: string) => void;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
-  /** Tempo in percent (e.g. -8..8), lifted up so it lives in MixerState. */
   tempo: number;
   onTempoChange: (value: number) => void;
 };
@@ -29,6 +28,7 @@ export function CDJ({
   label,
   engine,
   tracks,
+  playedIds,
   onLoadTrack,
   onPatch,
   tempo,
@@ -122,25 +122,17 @@ export function CDJ({
       aria-label={label ? `Deck ${label}` : 'Deck'}
     >
       {tracks && onLoadTrack ? (
-        <div className="shrink-0 border-b border-zinc-800 px-2 py-1">
-          <label className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-zinc-500">
-            Load
-            <select
-              className="min-w-0 flex-1 bg-[#161a20] text-xs text-zinc-200 outline-none"
-              value={track?.id ?? ''}
-              onChange={(event) => onLoadTrack(event.target.value)}
-              aria-label={label ? `Load track on deck ${label}` : 'Load track'}
-            >
-              <option value="">No track loaded</option>
-              {tracks
-                .filter((item) => item.libraryStatus === 'ready')
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-            </select>
-          </label>
+        <div className="flex shrink-0 items-center gap-2 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+          <span>Load</span>
+          <TrackPicker
+            tracks={tracks}
+            selectedId={track?.id ?? null}
+            referenceBpm={effectiveBpm}
+            referenceKey={track?.key}
+            playedIds={playedIds}
+            onSelect={onLoadTrack}
+            label={label}
+          />
         </div>
       ) : null}
 
