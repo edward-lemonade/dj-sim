@@ -33,7 +33,15 @@ export function Knob({
   const range = max - min;
   const t = range === 0 ? 0 : (clamp(value, min, max) - min) / range;
   const angle = -135 + t * 270;
-  const { selected, inverted, bind, move } = useSyncedControl({ value, min, max, onChange, disabled });
+  const { selected, inverted, automating, configuringAutomation, bind, move, onContextMenu } = useSyncedControl({
+    label,
+    value,
+    min,
+    max,
+    onChange,
+    disabled,
+    automationMode: 'knob',
+  });
 
   const nudge = useCallback(
     (delta: number) => {
@@ -47,22 +55,25 @@ export function Knob({
     <div className="flex flex-col items-center gap-1">
       <div
         role="slider"
-        tabIndex={disabled ? -1 : 0}
+        tabIndex={disabled || automating ? -1 : 0}
         aria-label={label}
         aria-valuemin={min}
         aria-valuemax={max}
         aria-valuenow={Number(value.toFixed(3))}
-        aria-disabled={disabled || undefined}
+        aria-disabled={disabled || automating || undefined}
         className={cn(
           'relative cursor-ns-resize touch-none rounded-full border bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
           size === 'sm' ? 'size-9' : 'size-12',
-          selected && !inverted && 'ring-2 ring-sky-400 focus-visible:ring-sky-400',
-          inverted && 'ring-2 ring-red-400 focus-visible:ring-red-400',
-          disabled && 'cursor-not-allowed opacity-40',
+          automating && 'ring-2 ring-orange-400 focus-visible:ring-orange-400',
+          configuringAutomation && !automating && 'ring-2 ring-yellow-400 focus-visible:ring-yellow-400',
+          selected && !inverted && !automating && !configuringAutomation && 'ring-2 ring-sky-400 focus-visible:ring-sky-400',
+          inverted && !automating && !configuringAutomation && 'ring-2 ring-red-400 focus-visible:ring-red-400',
+          (disabled || automating) && 'cursor-not-allowed opacity-60',
         )}
         {...bind}
+        onContextMenu={onContextMenu}
         onPointerDown={(event) => {
-          if (disabled) return;
+          if (disabled || automating) return;
           event.currentTarget.setPointerCapture(event.pointerId);
           dragRef.current = { lastY: event.clientY };
         }}
@@ -80,9 +91,13 @@ export function Knob({
           dragRef.current = null;
         }}
         onDoubleClick={() => {
-          if (!disabled) onChange(defaultValue);
+          if (!disabled && !automating) onChange(defaultValue);
         }}
         onKeyDown={(event) => {
+          if (automating) {
+            event.preventDefault();
+            return;
+          }
           if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
             event.preventDefault();
             nudge(step);

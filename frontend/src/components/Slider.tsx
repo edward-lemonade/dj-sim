@@ -11,6 +11,8 @@ type VerticalSliderProps = {
   disabled?: boolean;
   className?: string;
   orientation?: 'vertical' | 'horizontal';
+  automationMode?: 'slider' | 'tempo';
+  referenceBpm?: number;
 };
 
 export function Slider({
@@ -23,8 +25,19 @@ export function Slider({
   disabled,
   className,
   orientation = 'vertical',
+  automationMode = 'slider',
+  referenceBpm,
 }: VerticalSliderProps) {
-  const { selected, inverted, bind, move } = useSyncedControl({ value, min, max, onChange, disabled });
+  const { selected, inverted, automating, configuringAutomation, bind, move, onContextMenu } = useSyncedControl({
+    label,
+    value,
+    min,
+    max,
+    onChange,
+    disabled,
+    automationMode,
+    referenceBpm,
+  });
 
   return (
     <input
@@ -34,15 +47,24 @@ export function Slider({
       step={step}
       value={value}
       disabled={disabled}
-      onChange={(event) => move(Number(event.target.value) - value)}
+      onChange={(event) => {
+        if (!automating) move(Number(event.target.value) - value);
+      }}
       // Ctrl/cmd-click selects; without this the native thumb would still jump/drag.
       onMouseDown={(event) => {
-        if (event.ctrlKey || event.metaKey) event.preventDefault();
+        if (automating || event.ctrlKey || event.metaKey) event.preventDefault();
       }}
+      onKeyDown={(event) => {
+        if (automating) event.preventDefault();
+      }}
+      onContextMenu={onContextMenu}
       aria-label={label}
+      aria-disabled={disabled || automating || undefined}
       className={cn(
-        selected && !inverted && 'rounded ring-2 ring-sky-400',
-        inverted && 'rounded ring-2 ring-red-400',
+        automating && 'rounded ring-2 ring-orange-400',
+        configuringAutomation && !automating && 'rounded ring-2 ring-yellow-400',
+        selected && !inverted && !automating && !configuringAutomation && 'rounded ring-2 ring-sky-400',
+        inverted && !automating && !configuringAutomation && 'rounded ring-2 ring-red-400',
         className,
       )}
       style={orientation === 'vertical' ? { writingMode: 'vertical-lr', direction: 'rtl' } : undefined}

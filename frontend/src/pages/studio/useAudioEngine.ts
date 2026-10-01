@@ -53,8 +53,6 @@ export interface AudioEngineOptions {
   eqCutDb?: number;
   /** Max channel/master gain multiplier at value = 1 (headroom above unity) */
   maxGain?: number;
-  /** Max tempo adjustment in +/- percent (e.g. 8 = CDJ's typical +/-8% range) */
-  tempoRangePercent?: number;
 }
 
 interface DeckNodes {
@@ -85,7 +83,6 @@ const DEFAULTS: Required<AudioEngineOptions> = {
   eqBoostDb: 12,
   eqCutDb: 26, // steep enough to read as a "kill" at the extreme without being discontinuous
   maxGain: 1.25,
-  tempoRangePercent: 50,
 };
 
 // Filter knob: negative sweeps a low-pass down, positive sweeps a high-pass
@@ -319,8 +316,8 @@ export class MixerAudioEngine {
   }
 
   setTempo(deckId: DeckId, percent: number) {
-    const clamped = clamp(percent, -this.opts.tempoRangePercent, this.opts.tempoRangePercent);
-    const rate = 1 + clamped / 100;
+    if (!Number.isFinite(percent) || percent <= -100) return;
+    const rate = 1 + percent / 100;
     const deck = this.deck(deckId);
     if (deck.mediaElement) {
       deck.mediaElement.playbackRate = rate;

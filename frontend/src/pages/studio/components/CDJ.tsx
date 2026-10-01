@@ -207,6 +207,8 @@ export function CDJ({
             onChange={onTempoChange}
             disabled={tempoFollowing}
             label={label ? `Deck ${label} tempo` : 'Tempo'}
+            automationMode="tempo"
+            referenceBpm={track?.bpm ?? 0}
             className="max-h-72 min-h-0 w-8 flex-1 cursor-pointer accent-zinc-200"
           />
           <Button

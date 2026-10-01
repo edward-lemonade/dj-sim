@@ -33,7 +33,7 @@ export function ExitConfirmModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="exit-studio-title"
-        className="relative z-10 w-[min(22rem,calc(100%-2rem))] rounded-md border border-zinc-700 bg-[#161a20] p-4 text-zinc-100 shadow-xl"
+        className="relative z-10 w-[min(22rem,calc(100%-2rem))] rounded-md border bg-[#161a20] p-4 text-zinc-100 shadow-xl"
       >
         <p id="exit-studio-title" className="text-sm">
           Are you sure you want to exit?

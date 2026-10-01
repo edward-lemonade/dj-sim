@@ -50,7 +50,9 @@ function StudioPage() {
   );
 
   const masterId = mixer.state.tempoMaster;
-  const masterBpm = masterId === null ? 0 : trackBpm(masterId) * (1 + mixer.state.channelState[masterId].tempo / 100);
+  const effectiveDeckBpm = (id: DeckId) => trackBpm(id) * (1 + mixer.state.channelState[id].tempo / 100);
+  const masterBpm = masterId === null ? 0 : effectiveDeckBpm(masterId);
+  const automationBpm = masterBpm > 0 ? masterBpm : DECK_IDS.map(effectiveDeckBpm).find((bpm) => bpm > 0) ?? 0;
   const isFollowing = (id: DeckId) => masterId !== null && id !== masterId && masterBpm > 0 && trackBpm(id) > 0;
 
   // Followers match the master's effective BPM (track BPM with its tempo applied)
@@ -113,7 +115,7 @@ function StudioPage() {
   );
 
   return (
-    <ControlSelectionProvider>
+    <ControlSelectionProvider bpm={automationBpm}>
       <div className="flex h-svh min-h-0 flex-col bg-[#0b0d10] text-zinc-200">
         <StudioTopbar />
         <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns }}>

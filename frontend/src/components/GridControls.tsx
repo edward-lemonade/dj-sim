@@ -20,7 +20,7 @@ export function GridControls({
 
   return (
     <div
-      className="flex shrink-0 items-center self-center overflow-hidden rounded-none border border-zinc-700 bg-zinc-900/60"
+      className="flex shrink-0 items-center self-center overflow-hidden rounded-none border bg-zinc-900/60"
       style={{ height: SIZE + 2 }}
     >
       <span className="whitespace-nowrap px-1.5 text-[9px] font-medium uppercase leading-none tracking-wider text-zinc-400">
