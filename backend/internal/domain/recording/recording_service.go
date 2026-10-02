@@ -15,8 +15,9 @@ import (
 const maxDurationSeconds = 60 * 60
 
 type Service struct {
-	recordingsDB Repository
-	store        *storage.S3Store
+	recordingsDB     Repository
+	store            *storage.S3Store
+	recordingsPrefix string
 }
 
 func NewService(recordings *Repository, store *storage.S3Store) *Service {
@@ -49,7 +50,10 @@ func (s *Service) Upload(ctx context.Context, userID string, input UploadInput) 
 		return nil, ErrInvalidDuration
 	}
 
-	key := fmt.Sprintf("recordings/users/%s/%s.mp3", userID, uuid.NewString())
+	if s.recordingsPrefix == "" {
+		return nil, fmt.Errorf("AWS_S3_RECORDINGS_KEY is not configured")
+	}
+	key := fmt.Sprintf("%s/users/%s/%s.mp3", s.recordingsPrefix, userID, uuid.NewString())
 	uploaded, err := s.store.UploadObject(ctx, input.File, key, "audio/mpeg")
 	if err != nil {
 		return nil, err

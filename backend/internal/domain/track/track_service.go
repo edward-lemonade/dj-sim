@@ -35,9 +35,6 @@ const (
 
 func NewService(tracks *Repository, store *storage.S3Store, tracksPrefix string, analysisPrefix string) *Service {
 	analysisPrefix = strings.Trim(strings.TrimSpace(analysisPrefix), "/")
-	if analysisPrefix == "" {
-		analysisPrefix = "analysis" // matches the Lambda's RESULTS_PREFIX default
-	}
 	return &Service{
 		tracksDB:       *tracks,
 		store:          store,
