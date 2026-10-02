@@ -28,6 +28,21 @@ export enum StreamConnectionStatus {
   Error = 'error',
 }
 
+export type ListedStreamRoomMember = {
+  userId: string;
+  username: string;
+  avatarUrl: string;
+};
+
+export type ListedStreamRoom = {
+  id: string;
+  visibility: 'public' | 'private';
+  members: ListedStreamRoomMember[];
+  memberCount: number;
+  capacity: number;
+  code?: string;
+};
+
 export type ListedStream = {
   id: string;
   username: string;
@@ -35,6 +50,7 @@ export type ListedStream = {
   name: string;
   startedAt: string;
   coverArts: [string | null, string | null];
+  room?: ListedStreamRoom;
 };
 
 export type StreamDeckSnapshot = {

@@ -1,8 +1,8 @@
 # Streaming Sessions
 
-Feature spec for live, watch-only DJ studio sessions. Replace the placeholder
-Skills page with a Streams directory, let a viewer open an active stream, and
-show the streamer's studio rebuilt from the streamer's control events, with the
+Feature spec for live, watch-only DJ studio sessions. Show active streams in
+the Community directory, let a viewer open an active stream, and show the
+streamer's studio rebuilt from the streamer's control events, with the
 streamer's audio.
 
 Viewers do not receive video. The streamer's client sends a stream of control
@@ -18,7 +18,8 @@ them when the stream ends. LiveKit carries only the streamer's mixer audio.
 
 ## Goals
 
-- Replace the **Skills** navigation item and placeholder page with **Streams**.
+- Replace the **Skills** navigation item and placeholder page with
+  **Community**, including a live streams list.
 - List active streams with the streamer's username and profile picture, stream
   name, and elapsed duration.
 - Let a viewer open a stream from its list entry.
@@ -32,7 +33,7 @@ them when the stream ends. LiveKit carries only the streamer's mixer audio.
   **Stop streaming** while live, with the current viewer count and an eye icon
   next to it.
 - When a streamer ends the stream, show spectators a toast with an option to
-  go back to the Streams directory. Do not navigate them away automatically.
+  go back to the Community directory. Do not navigate them away automatically.
 - Build the event model (serializable actions, server-sequenced log,
   snapshots) so collaboration can reuse it later.
 
@@ -46,10 +47,11 @@ them when the stream ends. LiveKit carries only the streamer's mixer audio.
 
 ## User experience
 
-### Streams directory
+### Community directory: live streams
 
-Replace the `Skills` item in the app navigation with `Streams` and replace the
-placeholder page with the directory. Use a route such as `/streams`.
+The `Community` navigation item and `/community` route contain a live streams
+list (and may contain other community lists as they are implemented). Keep
+`/streams/:streamId` as the viewer route. The API continues to use `/streams`.
 
 Show only currently open streams. Each list item displays:
 
@@ -127,7 +129,7 @@ The viewer page is display-only:
 
 Use a dedicated top bar containing:
 
-- A home button that returns to the Streams directory.
+- A home button that returns to the Community directory.
 - Streamer's profile picture and username.
 - Stream name.
 - Elapsed stream duration, consistent with the directory.
@@ -140,15 +142,15 @@ top bar.
 leaving the Studio, closing the tab, or losing the publishing connection past
 the reconnect timeout), each spectator's client stops audio playback, closes
 the event and audio connections, and stops updating the Studio. It then shows
-a toast saying the stream has ended, with a **Back to Streams** action that
-goes to `/streams`. Spectators are not navigated away automatically; they can
+a toast saying the stream has ended, with a **Back to Community** action that
+goes to `/community`. Spectators are not navigated away automatically; they can
 also use the top bar's home button. The directory should no longer list the
 ended stream. How long the toast stays and what the Studio view shows
 afterward are open (see Open decisions).
 
 **When the stream is still live but the viewer cannot receive it** (for
 example the viewer's own connection fails), show a connection-error state with
-a retry action and a link back to Streams. This state is not used for ended
+a retry action and a link back to Community. This state is not used for ended
 streams.
 
 ### Viewer lifecycle
@@ -393,7 +395,7 @@ unless that becomes a separately specified feature.
    the streamer's own account is excluded. The count appears only in the
    Studio top bar.
 10. **Ended-stream presentation.** Keep the viewer on the frozen Studio and
-    show a persistent toast with **Back to Streams**. Opening an already-ended
+    show a persistent toast with **Back to Community**. Opening an already-ended
     stream shows an ended state with the same navigation action.
 
 ## Agent handoff TODO
@@ -413,9 +415,10 @@ building the corresponding infrastructure.
 - [x] **Define the initial session lifecycle and access policy.** Signed-in
       viewers only, owner-only publishing, distinct-user viewer counts, stop
       confirmation, and a 20-second publisher reconnect grace period.
-- [x] **Replace the Skills navigation and placeholder.** Rename the nav item,
-      update routes to `/streams` and `/streams/:streamId`, and build directory
-      loading, empty, error, refresh, and elapsed-duration states.
+- [x] **Replace the Skills navigation and placeholder.** Rename the nav item
+      to Community, use `/community` for the directory and
+      `/streams/:streamId` for viewers, and build directory loading, empty,
+      error, refresh, and elapsed-duration states.
 - [ ] **Harden session metadata, relay, and authorization.** Create/start/
       list/join/end flows, short-lived publisher/viewer credentials and
       WebSocket tickets, owner-only event acceptance, read-only viewer

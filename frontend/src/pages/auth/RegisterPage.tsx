@@ -1,13 +1,17 @@
 import { SignUp } from '@clerk/react';
+import { useSearchParams } from 'react-router-dom';
+import { safeAuthRedirect } from '@/lib/rooms/join';
 
 export function RegisterPage() {
+  const [params] = useSearchParams();
+
   return (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem 1rem' }}>
       <SignUp
         path="/register"
         routing="path"
         signInUrl="/login"
-        forceRedirectUrl="/"
+        forceRedirectUrl={safeAuthRedirect(params.get('redirect'))}
       />
     </div>
   );

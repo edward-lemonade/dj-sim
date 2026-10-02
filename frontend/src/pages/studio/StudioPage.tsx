@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useUser } from '@clerk/react';
-import { useBlocker } from 'react-router-dom';
+import { useBlocker, useLocation, useNavigate } from 'react-router-dom';
 import { CDJ } from '../../components/CDJ';
 import { Mixer } from '@/components/Mixer';
 import { StudioTopbar } from '@/components/StudioTopbar';
@@ -11,12 +11,20 @@ import { clamp, DECK_IDS, DeckId } from '../../hooks/useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import type { Track } from '@/lib/types/Track';
-import { StreamDeckId, StreamPopupKind, type StreamDeckSnapshot } from '@/lib/types/Stream';
+import { StreamDeckId, StreamPopupKind, type StreamDeckSnapshot, type StudioSnapshot } from '@/lib/types/Stream';
+import type { CreatedRoom } from '@/lib/types/Room';
+import { ENV } from '@/config/env';
+import { createRoom, leaveRoom } from '@/lib/api/RoomsAPI';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { useStudioRecording } from '../../hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
 import { useStreamPublisher } from '@/pages/streams/useStreamConnection';
-import { createInitialStudioSnapshot, reduceStudioSnapshot, StudioActionType } from '@/pages/streams/studioState';
+import {
+  createInitialStudioSnapshot,
+  reduceStudioSnapshot,
+  StudioActionType,
+  type StudioAction,
+} from '@/pages/streams/studioState';
 
 // Matches the tempo slider's range in CDJ
 const TEMPO_RANGE_PERCENT = 50;
@@ -32,6 +40,59 @@ function parseTrackDuration(value: string): number {
 const MAX_STREAM_COVER_URL_LENGTH = 48 * 1024;
 const STREAM_COVER_SIZE = 192;
 const streamCoverThumbnails = new Map<string, Promise<string | null>>();
+
+function roomSocketUrl(room: CreatedRoom): string {
+  const url = new URL(room.eventUrl, ENV.apiBaseUrl);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('ticket', room.eventTicket);
+  return url.toString();
+}
+
+type StudioCommand = StudioAction | { action: 'hydrate'; value: StudioSnapshot };
+
+function reduceStudio(state: StudioSnapshot, command: StudioCommand): StudioSnapshot {
+  if (command.action === 'hydrate') return command.value;
+  return reduceStudioSnapshot(state, command);
+}
+
+function isStudioSnapshot(value: unknown): value is StudioSnapshot {
+  return typeof value === 'object' && value !== null && 'decks' in value && 'mixer' in value;
+}
+
+function snapshotFromRoomEvent(type: string | undefined, payload: unknown): StudioSnapshot | null {
+  if (type === 'snapshot' && isStudioSnapshot(payload)) return payload;
+  if (type === 'joined' && typeof payload === 'object' && payload !== null && 'snapshot' in payload) {
+    const snapshot = (payload as { snapshot: unknown }).snapshot;
+    if (isStudioSnapshot(snapshot)) return snapshot;
+  }
+  return null;
+}
+
+function isStudioAction(value: unknown): value is StudioAction {
+  return typeof value === 'object' && value !== null && 'action' in value;
+}
+
+function connectRoomRelay(room: CreatedRoom): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(roomSocketUrl(room));
+    const timeout = window.setTimeout(() => {
+      socket.close();
+      reject(new Error('Timed out connecting to the room event relay.'));
+    }, 10000);
+    socket.addEventListener('open', () => {
+      window.clearTimeout(timeout);
+      resolve(socket);
+    }, { once: true });
+    socket.addEventListener('error', () => {
+      window.clearTimeout(timeout);
+      reject(new Error('Could not connect to the room event relay.'));
+    }, { once: true });
+    socket.addEventListener('close', () => {
+      window.clearTimeout(timeout);
+      reject(new Error('The room event relay closed before connecting.'));
+    }, { once: true });
+  });
+}
 
 function toStreamCoverUrl(value: string | null): Promise<string | null> {
   if (!value) return Promise.resolve(null);
@@ -103,9 +164,11 @@ async function toStreamTrack(track: Track): Promise<StreamDeckSnapshot['track']>
 
 function StudioPage() {
   const { user } = useUser();
+  const navigate = useNavigate();
+  const location = useLocation();
   const library = useTrackLibrary();
   const [studioState, dispatchStudio] = useReducer(
-    reduceStudioSnapshot,
+    reduceStudio,
     undefined,
     createInitialStudioSnapshot,
   );
@@ -124,26 +187,45 @@ function StudioPage() {
     [DeckId.B]: null,
   });
   const [streamStartError, setStreamStartError] = useState<string | null>(null);
+  const [collabRoom, setCollabRoom] = useState<CreatedRoom | null>(null);
+  const [collabBusy, setCollabBusy] = useState(false);
+  const [collabError, setCollabError] = useState<string | null>(null);
+  const roomSocketRef = useRef<WebSocket | null>(null);
+  const publishRoomSnapshotsRef = useRef(false);
+  const incomingRoomRef = useRef((location.state as { roomSession?: CreatedRoom } | null)?.roomSession);
+  const applyingRemoteRef = useRef(false);
+  const studioSnapshotRef = useRef(studioState);
+  const commitStudio = useCallback((command: StudioCommand) => {
+    dispatchStudio(command);
+    if (command.action === 'hydrate' || applyingRemoteRef.current) return;
+    const socket = roomSocketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: 'event',
+      t: engine?.context.currentTime ?? 0,
+      payload: command,
+    }));
+  }, [engine]);
   const lastPointerUpdate = useRef(0);
   const mixerState = studioState.mixer;
   const setChannel = useCallback((id: DeckId, patch: Partial<typeof mixerState.channelState[DeckId.A]>) => {
-    dispatchStudio({
+    commitStudio({
       action: StudioActionType.MixerChange,
       value: {
         ...mixerState,
         channelState: { ...mixerState.channelState, [id]: { ...mixerState.channelState[id], ...patch } },
       },
     });
-  }, [mixerState]);
+  }, [commitStudio, mixerState]);
   const setFx = useCallback((patch: Partial<typeof mixerState.fx>) => {
-    dispatchStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, fx: { ...mixerState.fx, ...patch } } });
-  }, [mixerState]);
+    commitStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, fx: { ...mixerState.fx, ...patch } } });
+  }, [commitStudio, mixerState]);
   const setMaster = useCallback((value: number) => {
-    dispatchStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, master: value } });
-  }, [mixerState]);
+    commitStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, master: value } });
+  }, [commitStudio, mixerState]);
   const setTempoMaster = useCallback((id: DeckId | null) => {
-    dispatchStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, tempoMaster: id } });
-  }, [mixerState]);
+    commitStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, tempoMaster: id } });
+  }, [commitStudio, mixerState]);
 
   const loadedBeatCounts = DECK_IDS
     .map((id) => deckBeatCounts[id])
@@ -172,11 +254,18 @@ function StudioPage() {
   useEffect(() => {
     const shouldAutoSave =
       recordingStatus === 'recording' || (recordingStatus === 'error' && hasPendingSave);
-    if (navigationBlocker.state !== 'blocked' || !shouldAutoSave || autoSaveNavigation.current) return;
+    if (navigationBlocker.state !== 'blocked' || !shouldAutoSave || autoSaveNavigation.current) {
+      if (navigationBlocker.state === 'blocked' && !shouldAutoSave) {
+        navigationBlocker.proceed();
+      }
+      return;
+    }
     autoSaveNavigation.current = true;
     void stopAndSave().then((saved) => {
       if (saved) navigationBlocker.proceed();
       else navigationBlocker.reset();
+    }).catch(() => {
+      navigationBlocker.reset();
     }).finally(() => {
       autoSaveNavigation.current = false;
     });
@@ -184,6 +273,7 @@ function StudioPage() {
 
   // Auto-load the first N ready tracks into the N decks, in DECK_IDS order.
   useEffect(() => {
+    if (collabRoom || incomingRoomRef.current) return;
     const next = library.songs.filter((song) => song.libraryStatus === 'ready');
     let cancelled = false;
 
@@ -207,7 +297,7 @@ function StudioPage() {
     return () => {
       cancelled = true;
     };
-  }, [library.songs, loadedTrackIds, studioState.decks]);
+  }, [library.songs, loadedTrackIds, studioState.decks, collabRoom]);
 
   const trackBpm = useCallback(
     (id: DeckId) => library.songs.find((song) => song.id === loadedTrackIds[id])?.bpm ?? 0,
@@ -233,18 +323,190 @@ function StudioPage() {
   const { start: startStream, stop: stopStream } = streaming;
   const avatarUrl = user?.imageUrl ?? '';
 
+  useEffect(() => {
+    studioSnapshotRef.current = studioState;
+  }, [studioState]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (streaming.live) {
+        stopStream().catch((cause: unknown) => {
+          console.error('Failed to stop stream on beforeunload', cause);
+        });
+      }
+      if (collabRoom) {
+        leaveRoom(collabRoom.id).catch((cause: unknown) => {
+          console.error('Failed to leave room on beforeunload', cause);
+        });
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (streaming.live) {
+        void stopStream().catch((cause: unknown) => {
+          console.error('Failed to stop stream on unmount', cause);
+        });
+      }
+      if (collabRoom) {
+        void leaveRoom(collabRoom.id).catch((cause: unknown) => {
+          console.error('Failed to leave room on unmount', cause);
+        });
+      }
+    };
+  }, [streaming.live, stopStream, collabRoom]);
+
+  const attachRoomSession = useCallback(async (room: CreatedRoom, publishSnapshots: boolean) => {
+    const socket = await connectRoomRelay(room);
+    socket.addEventListener('message', (message) => {
+      try {
+        const event = JSON.parse(String(message.data)) as { type?: string; payload?: unknown };
+        if (event.type === 'closed') {
+          roomSocketRef.current = null;
+          publishRoomSnapshotsRef.current = false;
+          setCollabRoom(null);
+          socket.close();
+          navigate('/community', { replace: true, state: { roomClosed: true } });
+          return;
+        }
+        if (event.type === 'error') {
+          setCollabError('The room relay rejected an update.');
+          return;
+        }
+        if ((event.type === 'joined' || event.type === 'snapshot')) {
+          const snapshot = snapshotFromRoomEvent(event.type, event.payload);
+          if (snapshot) dispatchStudio({ action: 'hydrate', value: snapshot });
+          return;
+        }
+        if (event.type === 'event' && isStudioAction(event.payload)) {
+          dispatchStudio(event.payload);
+        }
+      } catch {
+        setCollabError('The room relay returned an unreadable message.');
+      }
+    });
+    socket.addEventListener('close', () => {
+      if (roomSocketRef.current === socket) {
+        roomSocketRef.current = null;
+        publishRoomSnapshotsRef.current = false;
+        setCollabError('Room connection lost. The last shared state is still playing locally.');
+      }
+    });
+    roomSocketRef.current = socket;
+    publishRoomSnapshotsRef.current = true;
+    if (publishSnapshots) {
+      socket.send(JSON.stringify({
+        type: 'snapshot',
+        t: engine?.context.currentTime ?? 0,
+        payload: { ...studioSnapshotRef.current, pointer: null },
+      }));
+    }
+    setCollabRoom(room);
+  }, [engine, navigate]);
+
+  const startCollabRoom = useCallback(async (visibility: 'public' | 'private') => {
+    setCollabBusy(true);
+    setCollabError(null);
+    let created: CreatedRoom | null = null;
+    try {
+      created = await createRoom(visibility, avatarUrl);
+      await attachRoomSession({
+        ...created,
+        members: user
+          ? [{ username: user.username ?? user.fullName ?? 'You', avatarUrl }]
+          : created.members,
+      }, true);
+    } catch (cause) {
+      let message = cause instanceof Error ? cause.message : 'Could not create a collaborative room.';
+      if (created) {
+        try {
+          await leaveRoom(created.id);
+        } catch (cleanupCause) {
+          const cleanupMessage = cleanupCause instanceof Error ? cleanupCause.message : 'room cleanup failed';
+          message = `${message} The room could not be closed: ${cleanupMessage}`;
+        }
+      }
+      setCollabError(message);
+      throw cause;
+    } finally {
+      setCollabBusy(false);
+    }
+  }, [attachRoomSession, avatarUrl, user]);
+
+  useEffect(() => {
+    const incoming = incomingRoomRef.current;
+    incomingRoomRef.current = undefined;
+    if (!incoming) return;
+    navigate('/studio', { replace: true, state: null });
+    setCollabBusy(true);
+    setCollabError(null);
+    void attachRoomSession(incoming, false).catch(async (cause: unknown) => {
+      let message = cause instanceof Error ? cause.message : 'Could not connect to the room.';
+      if (!incoming.alreadyMember) {
+        try {
+          await leaveRoom(incoming.id);
+        } catch (cleanupCause) {
+          const cleanupMessage = cleanupCause instanceof Error ? cleanupCause.message : 'room cleanup failed';
+          message = `${message} The room could not be left: ${cleanupMessage}`;
+        }
+      }
+      setCollabError(message);
+    }).finally(() => setCollabBusy(false));
+  }, [attachRoomSession, navigate]);
+
+  const stopCollabRoom = useCallback(async () => {
+    if (!collabRoom) return;
+    setCollabError(null);
+    try {
+      await Promise.race([
+        leaveRoom(collabRoom.id),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Leave room timed out')), 5000))
+      ]);
+      publishRoomSnapshotsRef.current = false;
+      roomSocketRef.current?.close();
+      roomSocketRef.current = null;
+      setCollabRoom(null);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'Could not leave the room.';
+      setCollabError(message);
+      publishRoomSnapshotsRef.current = false;
+      roomSocketRef.current?.close();
+      roomSocketRef.current = null;
+      setCollabRoom(null);
+    }
+  }, [collabRoom]);
+
+  useEffect(() => {
+    if (!collabRoom) return;
+    const interval = window.setInterval(() => {
+      const socket = roomSocketRef.current;
+      if (!publishRoomSnapshotsRef.current || socket?.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({
+        type: 'snapshot',
+        t: engine?.context.currentTime ?? 0,
+        payload: { ...studioSnapshotRef.current, pointer: null },
+      }));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [collabRoom, engine]);
+
+  useEffect(() => () => {
+    roomSocketRef.current?.close();
+    roomSocketRef.current = null;
+  }, []);
+
   const startStreaming = useCallback(async () => {
     if (!engine) return;
     const name = window.prompt('Name your stream');
     if (name === null) return;
     setStreamStartError(null);
     try {
-      const connection = await createStream(name, avatarUrl);
+      const connection = await createStream(name, avatarUrl, collabRoom?.id);
       await startStream(connection, engine);
     } catch (cause) {
       setStreamStartError(cause instanceof Error ? cause.message : 'Could not start streaming.');
     }
-  }, [engine, startStream, avatarUrl]);
+  }, [engine, startStream, avatarUrl, collabRoom?.id]);
 
   const stopStreaming = useCallback(() => {
     if (window.confirm('Stop streaming? Viewers will be told the stream has ended.')) {
@@ -347,6 +609,11 @@ function StudioPage() {
             streamError={streamStartError ?? streaming.error}
             onStartStream={() => void startStreaming()}
             onStopStream={stopStreaming}
+            collabRoom={collabRoom}
+            collabBusy={collabBusy}
+            collabError={collabError}
+            onCreateRoom={startCollabRoom}
+            onLeaveRoom={stopCollabRoom}
           />
         }
         leftDecks={leftDeckIds.map(renderDeck)}

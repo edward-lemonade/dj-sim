@@ -1,9 +1,19 @@
-import { useAuth } from '@clerk/react';
+import { useAuth, useUser } from '@clerk/react';
 import { Download, Pause, Play, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
+import { joinRoomByCode } from '@/lib/api/RoomsAPI';
+import {
+  PENDING_ROOM_CODE_KEY,
+  createdRoomFromJoin,
+  normalizeRoomCode,
+  readSessionValue,
+  roomCodeInputError,
+  roomJoinErrorMessage,
+  writeSessionValue,
+} from '@/lib/rooms/join';
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -17,9 +27,14 @@ function formatDuration(seconds: number): string {
 
 function HomePage() {
   const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const navigate = useNavigate();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [playingId, setPlayingId] = useState<string | null>(null);
@@ -62,6 +77,37 @@ function HomePage() {
       active = false;
     };
   }, [isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    const saved = normalizeRoomCode(readSessionValue(PENDING_ROOM_CODE_KEY));
+    if (saved) setJoinCode(saved);
+  }, []);
+
+  const submitJoinCode = async () => {
+    const code = normalizeRoomCode(joinCode);
+    const validation = roomCodeInputError(joinCode);
+    if (validation) {
+      setJoinError(validation);
+      return;
+    }
+    setJoinError(null);
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      writeSessionValue(PENDING_ROOM_CODE_KEY, code);
+      navigate(`/login?redirect=${encodeURIComponent('/')}`);
+      return;
+    }
+    setJoining(true);
+    try {
+      const joined = await joinRoomByCode(code, user?.imageUrl ?? '');
+      writeSessionValue(PENDING_ROOM_CODE_KEY, '');
+      navigate('/studio', { state: { roomSession: createdRoomFromJoin(joined, code) } });
+    } catch (cause) {
+      setJoinError(roomJoinErrorMessage(cause));
+    } finally {
+      setJoining(false);
+    }
+  };
 
   const stopPlayback = useCallback(() => {
     const audio = audioRef.current;
@@ -185,15 +231,53 @@ function HomePage() {
         <div aria-hidden className="absolute size-[26rem] animate-spin rounded-full border-2 border-dashed border-white/20 [animation-duration:40s]" />
         <div aria-hidden className="absolute size-[20rem] animate-spin rounded-full border border-white/10 [animation-direction:reverse] [animation-duration:60s]" />
 
-        <Link
-          to="/studio"
-          className="group relative -skew-x-[16deg] border-2 border-cyan-300/70 bg-[#0a1a7a] px-12 py-7 shadow-[10px_10px_0_#020617] transition hover:-translate-y-1 hover:shadow-[16px_16px_0_#020617] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white"
-        >
-          <span className="flex skew-x-[16deg] items-center gap-5 text-white">
-            <Play className="size-14 fill-current transition-transform group-hover:scale-110" />
-            <span className="text-6xl font-black italic tracking-tight">Studio</span>
-          </span>
-        </Link>
+        <div className="relative z-10 flex flex-col items-center gap-5">
+          <Link
+            to="/studio"
+            className="group relative -skew-x-[16deg] border-2 border-cyan-300/70 bg-[#0a1a7a] px-12 py-7 shadow-[10px_10px_0_#020617] transition hover:-translate-y-1 hover:shadow-[16px_16px_0_#020617] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white"
+          >
+            <span className="flex skew-x-[16deg] items-center gap-5 text-white">
+              <Play className="size-14 fill-current transition-transform group-hover:scale-110" />
+              <span className="text-6xl font-black italic tracking-tight">Studio</span>
+            </span>
+          </Link>
+          <form
+            className="flex w-[min(20rem,90vw)] flex-col items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitJoinCode();
+            }}
+          >
+            <label htmlFor="home-room-code" className="text-sm font-medium text-cyan-100">
+              Join a room
+            </label>
+            <div className="flex w-full items-center gap-2">
+              <input
+                id="home-room-code"
+                name="roomCode"
+                inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby={joinError ? 'home-room-code-error' : undefined}
+                className="h-10 min-w-0 flex-1 rounded-md border bg-black/40 px-3 text-center font-mono text-lg tracking-[0.35em] text-white"
+                placeholder="000000"
+                value={joinCode}
+                onChange={(event) => {
+                  setJoinCode(event.target.value);
+                  setJoinError(null);
+                }}
+              />
+              <Button type="submit" disabled={joining || !isLoaded}>
+                {joining ? 'Joining...' : 'Join room'}
+              </Button>
+            </div>
+            {joinError && (
+              <p id="home-room-code-error" role="alert" className="text-sm text-red-300">
+                {joinError}
+              </p>
+            )}
+          </form>
+        </div>
       </section>
 
       <div aria-hidden className="pointer-events-none absolute inset-0 z-10 hidden md:block">

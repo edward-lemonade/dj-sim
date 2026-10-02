@@ -27,6 +27,14 @@ export const API_ROUTES = {
     end: (id: string) => `/streams/${id}/end`,
     endOnExit: (id: string) => `/streams/${id}/end-on-exit`,
   },
+  room: {
+    list: '/rooms',
+    create: '/rooms',
+    get: (id: string) => `/rooms/${id}`,
+    joinByCode: '/rooms/join',
+    join: (id: string) => `/rooms/${id}/join`,
+    leave: (id: string) => `/rooms/${id}/leave`,
+  },
 }
 
 export default API_ROUTES

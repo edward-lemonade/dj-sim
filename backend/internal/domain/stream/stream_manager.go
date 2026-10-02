@@ -300,6 +300,14 @@ func validateSnapshot(payload json.RawMessage) bool {
 	return true
 }
 
+func ValidateStudioSnapshot(payload json.RawMessage) bool {
+	return validateSnapshot(payload)
+}
+
+func ValidateStudioAction(payload json.RawMessage) bool {
+	return validateAction(payload)
+}
+
 func validateAction(payload json.RawMessage) bool {
 	action, ok := objectWithFields(payload, "action", "deck", "value")
 	if !ok {

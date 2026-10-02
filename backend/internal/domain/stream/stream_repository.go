@@ -64,3 +64,17 @@ func (r *Repository) End(ctx context.Context, id, ownerID string) error {
 	}
 	return nil
 }
+
+func (r *Repository) EndForced(ctx context.Context, id string) error {
+	now := time.Now().UTC()
+	result := r.db.WithContext(ctx).Model(&Session{}).
+		Where("id = ? AND active = ?", id, true).
+		Updates(map[string]any{"active": false, "ended_at": now})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

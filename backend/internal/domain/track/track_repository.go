@@ -29,6 +29,18 @@ func (r *Repository) ListByUserID(ctx context.Context, userID string) ([]Track, 
 	return tracks, err
 }
 
+func (r *Repository) ListByUserIDs(ctx context.Context, userIDs []string) ([]Track, error) {
+	if len(userIDs) == 0 {
+		return []Track{}, nil
+	}
+	var tracks []Track
+	err := r.db.WithContext(ctx).
+		Where("user_id IN ?", userIDs).
+		Order("created_at DESC").
+		Find(&tracks).Error
+	return tracks, err
+}
+
 func (r *Repository) FindByIDForUser(ctx context.Context, id, userID string) (*Track, error) {
 	var t Track
 	err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).First(&t).Error

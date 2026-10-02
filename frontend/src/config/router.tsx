@@ -30,8 +30,9 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'tracks', element: <TracksPage /> },
-      { path: 'streams', element: <StreamsPage /> },
-      { path: 'skills', element: <Navigate to="/streams" replace /> },
+      { path: 'community', element: <StreamsPage /> },
+      { path: 'streams', element: <Navigate to="/community" replace /> },
+      { path: 'skills', element: <Navigate to="/community" replace /> },
     ],
   },
   {

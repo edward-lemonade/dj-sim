@@ -7,7 +7,7 @@ type NavItem = { to: string; label: string; end?: boolean };
 const navItems: NavItem[] = [
   { to: '/', label: 'Home', end: true },
   { to: '/tracks', label: 'Tracks' },
-  { to: '/streams', label: 'Streams' },
+  { to: '/community', label: 'Community' },
 ];
 
 function AppLayout() {

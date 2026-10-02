@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/recording"
+	"github.com/edward-lemonade/dj-sim-backend/internal/domain/room"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/stream"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
@@ -17,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -42,6 +43,14 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	streamManager := stream.NewManager()
 	streamSvc := stream.NewService(streamRepo, streamManager, liveKitURL, liveKitAPIKey, liveKitSecret)
 	streamHandler := handler.NewStreamHandler(streamSvc, corsOrigin)
+	roomRepo := room.NewRepository(db)
+	roomManager := room.NewRoomManager()
+	roomSvc := room.NewService(roomRepo, roomCodePepper, roomManager)
+	roomHandler := handler.NewRoomHandler(roomSvc, corsOrigin)
+	streamSvc.SetRoomDirectory(roomSvc)
+	roomSvc.SetStreamTerminator(streamSvc)
+	roomSvc.SetTrackDirectory(trackSvc)
+	roomSvc.SetS3Store(store)
 
 	if err := trackRepo.Migrate(ctx); err != nil {
 		log.Fatalf("migration failed: %v", err)
@@ -54,6 +63,9 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	}
 	if err := streamRepo.Migrate(ctx); err != nil {
 		log.Fatalf("stream migration failed: %v", err)
+	}
+	if err := roomRepo.Migrate(ctx); err != nil {
+		log.Fatalf("room migration failed: %v", err)
 	}
 	if err := streamSvc.EndAllActive(ctx); err != nil {
 		if errors.Is(err, stream.ErrCleanupStorage) {
@@ -109,6 +121,17 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	recordings.GET("/:id/download", recordingHandler.Download)
 	recordings.DELETE("/:id", recordingHandler.Delete)
 
+	rooms := auth.Group("/rooms", middleware.RequireUser())
+	rooms.GET("", roomHandler.ListPublic)
+	rooms.GET("/:id", roomHandler.Get)
+	rooms.GET("/:id/library", roomHandler.GetLibrary)
+	rooms.POST("", roomHandler.Create)
+	rooms.POST("/join", roomHandler.JoinByCode)
+	rooms.POST("/:id/join", roomHandler.JoinPublic)
+	rooms.POST("/:id/leave", roomHandler.Leave)
+	rooms.POST("/:id/tracks/:trackId/token", roomHandler.IssueTrackToken)
+	rooms.GET("/:id/tracks/:trackId/audio", roomHandler.GetTrackAudio)
+
 	streams := auth.Group("/streams", middleware.RequireUser())
 	streams.GET("", streamHandler.List)
 	streams.POST("", streamHandler.Create)
@@ -117,5 +140,6 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 
 	r.POST("/streams/:id/end-on-exit", streamHandler.EndOnExit)
 	r.GET("/streams/:id/events", streamHandler.Events)
+	r.GET("/rooms/:id/events", roomHandler.Events)
 	return r
 }

@@ -7,8 +7,8 @@ export async function listStreams(): Promise<ListedStream[]> {
   return data ?? [];
 }
 
-export async function createStream(name: string, avatarUrl: string): Promise<StreamConnection> {
-  const { data } = await axiosClient.post<StreamConnection>(API_ROUTES.stream.create, { name, avatarUrl });
+export async function createStream(name: string, avatarUrl: string, roomId?: string): Promise<StreamConnection> {
+  const { data } = await axiosClient.post<StreamConnection>(API_ROUTES.stream.create, { name, avatarUrl, roomId });
   return data;
 }
 

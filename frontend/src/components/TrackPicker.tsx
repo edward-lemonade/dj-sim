@@ -3,6 +3,7 @@ import { cn } from 'cn';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Track } from '@/lib/types/Track';
+import type { RoomTrack } from '@/lib/types/Room';
 import type { DeckId } from '../hooks/useAudioEngine';
 import { KeyNotationType } from '@/constants/KeyNotation';
 import { formatKey } from '@/lib/utils/formatKey';
@@ -10,7 +11,8 @@ import { keyColor } from '@/lib/utils/formatKey';
 
 const NO_MATCH = 99;
 
-const ROW_GRID = 'grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_2.5rem_2rem] items-center gap-2 px-3';
+const ROW_GRID = 'grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_2.5rem_2rem] items-center gap-2 px-3';
+const ROW_GRID_NO_OWNER = 'grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)_2.5rem_2rem] items-center gap-2 px-3';
 
 function parseCamelot(key: Track['key']) {
   if (!key) return null;
@@ -36,6 +38,8 @@ export function TrackPicker({
   onSelect,
   label,
   onOpenChange,
+  roomTracks,
+  currentUserId,
 }: {
   tracks: Track[];
   selectedId: string | null;
@@ -45,6 +49,8 @@ export function TrackPicker({
   onSelect: (id: string) => void;
   label?: DeckId;
   onOpenChange?: (open: boolean) => void;
+  roomTracks?: RoomTrack[];
+  currentUserId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -87,6 +93,15 @@ export function TrackPicker({
       return terms.every((term) => haystack.includes(term));
     });
   }, [sorted, query]);
+
+  const roomTrackInfo = useMemo(() => {
+    if (!roomTracks || !currentUserId) return new Map();
+    const map = new Map<string, { ownerUsername: string; isOwnedByCurrentUser: boolean }>();
+    for (const rt of roomTracks) {
+      map.set(rt.id, { ownerUsername: rt.ownerUsername, isOwnedByCurrentUser: rt.ownerId === currentUserId });
+    }
+    return map;
+  }, [roomTracks, currentUserId]);
 
   const current = tracks.find((track) => track.id === selectedId);
 
@@ -199,14 +214,16 @@ export function TrackPicker({
             />
           </div>
           <div className="max-h-80 overflow-y-auto">
-            <div className={cn(ROW_GRID, 'sticky top-0 border-b bg-[#1b2027] py-1 text-[10px] uppercase tracking-[0.16em] text-zinc-400')}>
+            <div className={cn(roomTracks ? ROW_GRID : ROW_GRID_NO_OWNER, 'sticky top-0 border-b bg-[#1b2027] py-1 text-[10px] uppercase tracking-[0.16em] text-zinc-400')}>
               <span>Title</span>
               <span>Artist</span>
+              {roomTracks && <span>Owner</span>}
               <span>BPM</span>
               <span>Key</span>
             </div>
             {filtered.map((track) => {
               const played = playedIds?.has(track.id);
+              const info = roomTrackInfo.get(track.id);
               return (
                 <button
                   key={track.id}
@@ -214,14 +231,20 @@ export function TrackPicker({
                   type="button"
                   onClick={() => pick(track.id)}
                   className={cn(
-                    ROW_GRID,
+                    roomTracks ? ROW_GRID : ROW_GRID_NO_OWNER,
                     'w-full border-b/80 py-0.5 text-left text-xs hover:bg-[#171c22] focus-visible:bg-[#171c22] focus-visible:outline-none',
                     track.id === selectedId && 'bg-[#2a3340]',
                     played && 'opacity-40',
+                    info && !info.isOwnedByCurrentUser && 'text-zinc-500',
                   )}
                 >
                   <span className="truncate font-medium text-zinc-100">{track.title}</span>
                   <span className="truncate text-zinc-400">{track.artist}</span>
+                  {roomTracks && (
+                    <span className="truncate text-zinc-400" title={info?.ownerUsername}>
+                      {info?.ownerUsername || '—'}
+                    </span>
+                  )}
                   <span className="font-mono text-zinc-300">{track.bpm > 0 ? track.bpm : '—'}</span>
                   <span className="font-mono text-zinc-300" style={{ color: track.key ? keyColor(track.key) : undefined }}>
                     {track.key ? formatKey(track.key, KeyNotationType.Camelot) : '—'}

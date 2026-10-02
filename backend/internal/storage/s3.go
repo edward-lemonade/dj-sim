@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -354,4 +355,29 @@ func copySource(bucket, key string) string {
 		parts[i] = strings.ReplaceAll(url.QueryEscape(p), "+", "%20")
 	}
 	return bucket + "/" + strings.Join(parts, "/")
+}
+
+func (s *S3Store) PresignedGetObject(ctx context.Context, objectKey string, expiresIn time.Duration) (string, error) {
+	if strings.TrimSpace(objectKey) == "" {
+		return "", fmt.Errorf("object key is required")
+	}
+	if expiresIn < time.Minute || expiresIn > 24*time.Hour {
+		return "", fmt.Errorf("expires duration must be between 1 minute and 24 hours")
+	}
+
+	client, _, err := s.client(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	presignClient := s3.NewPresignClient(client)
+	presignResult, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	}, s3.WithPresignExpires(expiresIn))
+	if err != nil {
+		return "", fmt.Errorf("presign get object: %w", err)
+	}
+
+	return presignResult.URL, nil
 }

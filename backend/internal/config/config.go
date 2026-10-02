@@ -1,6 +1,9 @@
 package config
 
 import (
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 
@@ -25,7 +28,11 @@ type Config struct {
 	LiveKitURL    string
 	LiveKitAPIKey string
 	LiveKitSecret string
+
+	RoomCodePepperHex string
 }
+
+var ErrInvalidRoomCodePepper = errors.New("ROOM_CODE_PEPPER_HEX must contain at least 64 hexadecimal characters")
 
 func Load() Config {
 	_ = godotenv.Load()
@@ -49,7 +56,19 @@ func Load() Config {
 		LiveKitURL:            getEnv("LIVEKIT_URL", ""),
 		LiveKitAPIKey:         getEnv("LIVEKIT_API_KEY", ""),
 		LiveKitSecret:         getEnv("LIVEKIT_API_SECRET", ""),
+		RoomCodePepperHex:     getEnv("ROOM_CODE_PEPPER_HEX", ""),
 	}
+}
+
+func (c Config) RoomCodePepper() ([]byte, error) {
+	if c.RoomCodePepperHex == "" {
+		return nil, nil
+	}
+	pepper, err := hex.DecodeString(c.RoomCodePepperHex)
+	if err != nil || len(pepper) < 32 {
+		return nil, fmt.Errorf("%w: provide at least 32 random bytes encoded as hex", ErrInvalidRoomCodePepper)
+	}
+	return pepper, nil
 }
 
 func getEnv(key, fallback string) string {

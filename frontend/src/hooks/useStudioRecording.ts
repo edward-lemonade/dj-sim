@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { RecordingsAPI } from '@/lib/api/RecordingsAPI';
 import type { MixerAudioEngine } from './useAudioEngine';
 
@@ -32,6 +32,15 @@ export function useStudioRecording(engine: MixerAudioEngine) {
   const finalizedRejectRef = useRef<((error: Error) => void) | null>(null);
   const stopResolveRef = useRef<(() => void) | null>(null);
   const savingPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  useEffect(() => {
+    if (pendingBlobRef.current && status === 'idle') {
+      console.warn('Recording state inconsistent: pending blob exists but status is idle. Cleaning up.');
+      pendingBlobRef.current = null;
+      chunksRef.current = [];
+      setHasPendingSave(false);
+    }
+  }, [status]);
 
   const cleanCapture = useCallback(() => {
     const tap = tapRef.current;
@@ -68,20 +77,18 @@ export function useStudioRecording(engine: MixerAudioEngine) {
 
     const operation = (async () => {
       setError(null);
-      setStatus('saving');
       const tap = tapRef.current;
       const worker = encoderRef.current;
 
       if (pendingBlobRef.current) return uploadPending();
       if (status === 'error') {
-        setStatus('error');
         return false;
       }
       if (!tap || !worker) {
-        setStatus(status);
         return status === 'idle';
       }
 
+      setStatus('saving');
       try {
         await new Promise<void>((resolve, reject) => {
           stopResolveRef.current = resolve;

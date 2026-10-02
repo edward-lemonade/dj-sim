@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { cn } from 'cn';
 import { useSyncedControl } from '@/components/ControlSelection';
+import type { ControlId } from '@/lib/types/Control';
 
 type KnobProps = {
   label: string;
@@ -13,6 +14,11 @@ type KnobProps = {
   disabled?: boolean;
   size?: 'sm' | 'md';
   labelPosition?: 'top' | 'bottom';
+  controlId?: ControlId;
+  leaseOwner?: string;
+  isLeasedByOther?: boolean;
+  onLeaseAcquire?: (controlId: ControlId) => void;
+  onLeaseRelease?: (controlId: ControlId, reason?: string) => void;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -30,6 +36,11 @@ export function Knob({
   disabled,
   size = 'md',
   labelPosition = 'bottom',
+  controlId,
+  leaseOwner,
+  isLeasedByOther,
+  onLeaseAcquire,
+  onLeaseRelease,
 }: KnobProps) {
   const dragRef = useRef<{ lastY: number } | null>(null);
   const range = max - min;
@@ -57,12 +68,12 @@ export function Knob({
     <div className={cn('flex items-center gap-1', labelPosition === 'top' ? 'flex-col-reverse' : 'flex-col')}>
       <div
         role="slider"
-        tabIndex={disabled || automating ? -1 : 0}
-        aria-label={label}
+        tabIndex={disabled || automating || isLeasedByOther ? -1 : 0}
+        aria-label={isLeasedByOther ? `${label} (controlled by ${leaseOwner})` : label}
         aria-valuemin={min}
         aria-valuemax={max}
         aria-valuenow={Number(value.toFixed(3))}
-        aria-disabled={disabled || automating || undefined}
+        aria-disabled={disabled || automating || isLeasedByOther || undefined}
         className={cn(
           'relative cursor-ns-resize touch-none rounded-full border bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
           size === 'sm' ? 'size-9' : 'size-12',
@@ -70,12 +81,14 @@ export function Knob({
           configuringAutomation && !automating && 'ring-2 ring-yellow-400 focus-visible:ring-yellow-400',
           selected && !inverted && !automating && !configuringAutomation && 'ring-2 ring-sky-400 focus-visible:ring-sky-400',
           inverted && !automating && !configuringAutomation && 'ring-2 ring-red-400 focus-visible:ring-red-400',
+          isLeasedByOther && 'ring-2 ring-amber-400 focus-visible:ring-amber-400 cursor-not-allowed opacity-70',
           (disabled || automating) && 'cursor-not-allowed opacity-60',
         )}
         {...bind}
         onContextMenu={onContextMenu}
         onPointerDown={(event) => {
-          if (disabled || automating) return;
+          if (disabled || automating || isLeasedByOther) return;
+          if (controlId) onLeaseAcquire?.(controlId);
           event.currentTarget.setPointerCapture(event.pointerId);
           dragRef.current = { lastY: event.clientY };
         }}
@@ -87,9 +100,11 @@ export function Knob({
           move((dy / 120) * range);
         }}
         onPointerUp={() => {
+          if (controlId) onLeaseRelease?.(controlId);
           dragRef.current = null;
         }}
         onPointerCancel={() => {
+          if (controlId) onLeaseRelease?.(controlId, 'pointer-cancel');
           dragRef.current = null;
         }}
         onDoubleClick={() => {

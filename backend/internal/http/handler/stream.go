@@ -51,6 +51,7 @@ func (h *StreamHandler) Create(c *gin.Context) {
 	var req struct {
 		Name      string `json:"name"`
 		AvatarURL string `json:"avatarUrl"`
+		RoomID    string `json:"roomId"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "stream name is required"})
@@ -58,7 +59,7 @@ func (h *StreamHandler) Create(c *gin.Context) {
 	}
 	u := middleware.CurrentUser(c)
 	connection, err := h.Streams.Create(c.Request.Context(), stream.CreateInput{
-		UserID: u.ID, Username: u.Username, AvatarURL: req.AvatarURL, Name: req.Name,
+		UserID: u.ID, Username: u.Username, AvatarURL: req.AvatarURL, Name: req.Name, RoomID: req.RoomID,
 	})
 	if err != nil {
 		app_error.WriteError(c, err)

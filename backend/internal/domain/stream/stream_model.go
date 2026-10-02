@@ -16,6 +16,7 @@ type Session struct {
 	StartedAt time.Time  `json:"startedAt" gorm:"index;not null"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
 	Active    bool       `json:"active" gorm:"index;not null;default:true"`
+	RoomID    *string    `json:"-" gorm:"type:uuid;index"`
 }
 
 func (s *Session) BeforeCreate(_ *gorm.DB) error {
@@ -25,13 +26,28 @@ func (s *Session) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+type ListedMember struct {
+	Username  string `json:"username"`
+	AvatarURL string `json:"avatarUrl"`
+}
+
+type ListedRoomBroadcast struct {
+	ID          string         `json:"id"`
+	Visibility  string         `json:"visibility"`
+	Members     []ListedMember `json:"members"`
+	MemberCount int            `json:"memberCount"`
+	Capacity    int            `json:"capacity"`
+	Code        string         `json:"code,omitempty"`
+}
+
 type ListedSession struct {
-	ID        string     `json:"id"`
-	Username  string     `json:"username"`
-	AvatarURL string     `json:"avatarUrl"`
-	Name      string     `json:"name"`
-	StartedAt time.Time  `json:"startedAt"`
-	CoverArts [2]*string `json:"coverArts"`
+	ID        string               `json:"id"`
+	Username  string               `json:"username"`
+	AvatarURL string               `json:"avatarUrl"`
+	Name      string               `json:"name"`
+	StartedAt time.Time            `json:"startedAt"`
+	CoverArts [2]*string           `json:"coverArts"`
+	Room      *ListedRoomBroadcast `json:"room,omitempty"`
 }
 
 func ToListed(s Session) ListedSession {

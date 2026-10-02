@@ -48,7 +48,7 @@ function StreamViewerPage() {
     return (
       <main className="flex h-svh flex-col items-center justify-center gap-4 bg-[#0b0d10] text-center text-zinc-100">
         <h1 className="text-2xl font-semibold">This stream has ended</h1>
-        <Button variant="ghost" onClick={() => navigate('/streams')}>Back to Streams</Button>
+        <Button variant="ghost" onClick={() => navigate('/community')}>Back to Community</Button>
       </main>
     );
   }
@@ -61,7 +61,7 @@ function StreamViewerPage() {
             <p role="alert">{stream.error ?? 'Could not join this stream.'}</p>
             <div className="mt-4 flex justify-center gap-2">
               <Button onClick={() => void stream.connect()}><RotateCw /> Retry</Button>
-              <Button variant="ghost" onClick={() => navigate('/streams')}>Back to Streams</Button>
+              <Button variant="ghost" onClick={() => navigate('/community')}>Back to Community</Button>
             </div>
           </div>
         ) : <p role="status"><LoaderCircle className="mr-2 inline animate-spin" />Joining stream...</p>}
@@ -121,7 +121,7 @@ function StreamViewerPage() {
           gridTemplateColumns={gridTemplateColumns}
           topbar={
             <header className="flex min-h-8 shrink-0 items-center gap-2 border-b bg-[#0b0d10] px-2 py-1">
-              <Button type="button" variant="ghost" size="icon-xs" aria-label="Back to streams" onClick={() => navigate('/streams')}>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label="Back to Community" onClick={() => navigate('/community')}>
                 <Home />
               </Button>
               {stream.session.avatarUrl
@@ -147,7 +147,7 @@ function StreamViewerPage() {
             <div role="alert" className="absolute left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-amber-950/95 px-4 py-2 text-sm text-amber-100 shadow-xl">
               {stream.error ?? 'Stream connection lost.'}
               <Button size="sm" variant="outline" onClick={() => void stream.connect()}>Reconnect</Button>
-              <Button size="sm" variant="ghost" onClick={() => navigate('/streams')}>Back to Streams</Button>
+              <Button size="sm" variant="ghost" onClick={() => navigate('/community')}>Back to Community</Button>
             </div>
           )}
           {stream.status === StreamConnectionStatus.Joining && (
@@ -177,7 +177,7 @@ function StreamViewerPage() {
           {stream.status === StreamConnectionStatus.Ended && (
             <div role="status" className="absolute bottom-5 left-1/2 z-60 flex w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-rose-300/30 bg-rose-950/95 p-4 text-sm text-rose-100 shadow-2xl">
               <span>This stream has ended.</span>
-              <Button size="sm" variant="secondary" onClick={() => navigate('/streams')}>Back to Streams</Button>
+              <Button size="sm" variant="secondary" onClick={() => navigate('/community')}>Back to Community</Button>
             </div>
           )}
         </StudioConsoleLayout>

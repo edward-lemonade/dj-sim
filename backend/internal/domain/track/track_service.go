@@ -47,6 +47,10 @@ func (s *Service) ListByUserID(ctx context.Context, userID string) ([]Track, err
 	return s.tracksDB.ListByUserID(ctx, userID)
 }
 
+func (s *Service) ListByUserIDs(ctx context.Context, userIDs []string) ([]Track, error) {
+	return s.tracksDB.ListByUserIDs(ctx, userIDs)
+}
+
 type UploadInput struct {
 	File                io.Reader
 	FileName            string

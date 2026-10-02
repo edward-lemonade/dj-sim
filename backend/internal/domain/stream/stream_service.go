@@ -10,11 +10,19 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/edward-lemonade/dj-sim-backend/internal/domain/room"
 	"github.com/google/uuid"
 	lkauth "github.com/livekit/protocol/auth"
 	livekit "github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go/v2"
 )
+
+type RoomDirectory interface {
+	AssociateStream(ctx context.Context, roomID, userID, streamID string) error
+	DetachStream(ctx context.Context, streamID string) error
+	BroadcastsByStreamIDs(ctx context.Context, streamIDs []string) (map[string]room.BroadcastListing, error)
+	CanControl(ctx context.Context, streamID, userID string) (bool, error)
+}
 
 var (
 	ErrInvalidName          = errors.New("stream name must be between 1 and 120 characters")
@@ -26,6 +34,7 @@ var (
 type Service struct {
 	repository *Repository
 	manager    *Manager
+	rooms      RoomDirectory
 	liveKitURL string
 	apiKey     string
 	apiSecret  string
@@ -42,11 +51,16 @@ func NewService(repository *Repository, manager *Manager, liveKitURL, apiKey, ap
 	}
 }
 
+func (s *Service) SetRoomDirectory(rooms RoomDirectory) {
+	s.rooms = rooms
+}
+
 type CreateInput struct {
 	UserID    string
 	Username  string
 	AvatarURL string
 	Name      string
+	RoomID    string
 }
 
 type Connection struct {
@@ -63,6 +77,17 @@ func (s *Service) List(ctx context.Context) ([]ListedSession, error) {
 	if err != nil {
 		return nil, err
 	}
+	identities := map[string]room.BroadcastListing{}
+	if s.rooms != nil && len(sessions) > 0 {
+		ids := make([]string, len(sessions))
+		for i, session := range sessions {
+			ids[i] = session.ID
+		}
+		identities, err = s.rooms.BroadcastsByStreamIDs(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+	}
 	result := make([]ListedSession, 0, len(sessions))
 	for _, session := range sessions {
 		listed := ToListed(session)
@@ -72,6 +97,9 @@ func (s *Service) List(ctx context.Context) ([]ListedSession, error) {
 				value := cover
 				listed.CoverArts[deck] = &value
 			}
+		}
+		if info, ok := identities[session.ID]; ok {
+			listed.Room = listedRoomBroadcast(info)
 		}
 		result = append(result, listed)
 	}
@@ -109,16 +137,36 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*Connection, e
 
 	session := &Session{
 		UserID: input.UserID, Username: input.Username, AvatarURL: input.AvatarURL,
-		Name: name, StartedAt: time.Now().UTC(), Active: true,
+		Name: name, StartedAt: time.Now().UTC(), Active: true, RoomID: func() *string {
+			if input.RoomID == "" {
+				return nil
+			}
+			return &input.RoomID
+		}(),
 	}
 	if err := s.repository.Create(ctx, session); err != nil {
 		return nil, err
 	}
 	s.manager.Start(session.ID, session.UserID)
+	if input.RoomID != "" {
+		if s.rooms == nil {
+			s.manager.End(session.ID)
+			_ = s.repository.End(ctx, session.ID, session.UserID)
+			return nil, errors.New("room broadcasts are not configured")
+		}
+		if err := s.rooms.AssociateStream(ctx, input.RoomID, input.UserID, session.ID); err != nil {
+			s.manager.End(session.ID)
+			_ = s.repository.End(ctx, session.ID, session.UserID)
+			return nil, err
+		}
+	}
 	connection, err := s.connection(*session, input.UserID, true)
 	if err != nil {
 		s.manager.End(session.ID)
 		_ = s.repository.End(ctx, session.ID, session.UserID)
+		if s.rooms != nil {
+			_ = s.rooms.DetachStream(ctx, session.ID)
+		}
 		return nil, err
 	}
 	return connection, nil
@@ -132,14 +180,70 @@ func (s *Service) Join(ctx context.Context, id, userID string) (*Connection, err
 	if err != nil {
 		return nil, err
 	}
-	return s.connection(*session, userID, session.UserID == userID)
+	connection, err := s.connection(*session, userID, session.UserID == userID)
+	if err != nil {
+		return nil, err
+	}
+	if s.rooms != nil {
+		identities, listErr := s.rooms.BroadcastsByStreamIDs(ctx, []string{session.ID})
+		if listErr != nil {
+			return nil, listErr
+		}
+		if info, ok := identities[session.ID]; ok {
+			connection.Session.Room = listedRoomBroadcast(info)
+		}
+	}
+	return connection, nil
+}
+
+func listedRoomBroadcast(info room.BroadcastListing) *ListedRoomBroadcast {
+	members := make([]ListedMember, 0, len(info.Members))
+	for _, member := range info.Members {
+		members = append(members, ListedMember{Username: member.Username, AvatarURL: member.AvatarURL})
+	}
+	return &ListedRoomBroadcast{
+		ID: info.ID, Visibility: info.Visibility, Members: members,
+		MemberCount: info.MemberCount, Capacity: info.Capacity, Code: info.Code,
+	}
 }
 
 func (s *Service) End(ctx context.Context, id, userID string) error {
-	if err := s.repository.End(ctx, id, userID); err != nil {
+	err := s.repository.End(ctx, id, userID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
+	if errors.Is(err, ErrNotFound) {
+		if s.rooms == nil {
+			return err
+		}
+		allowed, controlErr := s.rooms.CanControl(ctx, id, userID)
+		if controlErr != nil {
+			return controlErr
+		}
+		if !allowed {
+			return ErrNotFound
+		}
+		if err := s.repository.EndForced(ctx, id); err != nil {
+			return err
+		}
+	}
+	return s.finishEnd(ctx, id)
+}
+
+func (s *Service) EndForced(ctx context.Context, id string) error {
+	if err := s.repository.EndForced(ctx, id); err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	return s.finishEnd(ctx, id)
+}
+
+func (s *Service) finishEnd(ctx context.Context, id string) error {
 	s.manager.End(id)
+	if s.rooms != nil {
+		if err := s.rooms.DetachStream(ctx, id); err != nil {
+			return err
+		}
+	}
 	return s.revokeRoom(ctx, id)
 }
 
@@ -163,6 +267,11 @@ func (s *Service) EndAllActive(ctx context.Context) error {
 	}
 	for _, session := range sessions {
 		s.manager.End(session.ID)
+		if s.rooms != nil {
+			if err := s.rooms.DetachStream(ctx, session.ID); err != nil {
+				revokeErrors = append(revokeErrors, err)
+			}
+		}
 	}
 	return errors.Join(revokeErrors...)
 }

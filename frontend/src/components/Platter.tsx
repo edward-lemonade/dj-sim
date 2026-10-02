@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Track } from '@/lib/types/Track';
 import { DeckId } from '../hooks/useAudioEngine';
+import type { ControlId } from '@/lib/types/Control';
 
 // Audio-seconds moved per full platter rotation while scratching.
 const SECONDS_PER_REVOLUTION = 1.8;
@@ -32,6 +33,11 @@ export function Platter({
   onScratchStart,
   onScratchMove,
   onScratchEnd,
+  controlId,
+  leaseOwner,
+  isLeasedByOther,
+  onLeaseAcquire,
+  onLeaseRelease,
 }: {
   label?: DeckId;
   size?: number;
@@ -42,6 +48,11 @@ export function Platter({
   /** deltaSeconds: signed audio-seconds moved; deltaRealSeconds: wall time elapsed since the last move. */
   onScratchMove?: (deltaSeconds: number, deltaRealSeconds: number) => void;
   onScratchEnd?: () => void;
+  controlId?: ControlId;
+  leaseOwner?: string;
+  isLeasedByOther?: boolean;
+  onLeaseAcquire?: (controlId: ControlId) => void;
+  onLeaseRelease?: (controlId: ControlId, reason?: string) => void;
 }) {
   const ringRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ lastAngle: number; lastTime: number } | null>(null);
@@ -52,8 +63,9 @@ export function Platter({
   const coverUrl = isImageCover(track?.coverUrl) ? track.coverUrl : null;
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (disabled || !ringRef.current) return;
+    if (disabled || isLeasedByOther || !ringRef.current) return;
     event.preventDefault();
+    if (controlId) onLeaseAcquire?.(controlId);
     ringRef.current.setPointerCapture(event.pointerId);
     dragRef.current = { lastAngle: angleFromPointer(event.nativeEvent, ringRef.current), lastTime: performance.now() };
     onScratchStart?.();
@@ -78,6 +90,7 @@ export function Platter({
 
   const endDrag = () => {
     if (!dragRef.current) return;
+    if (controlId) onLeaseRelease?.(controlId);
     dragRef.current = null;
     onScratchEnd?.();
   };
@@ -92,9 +105,10 @@ export function Platter({
         onPointerCancel={endDrag}
         onDragStart={(event) => event.preventDefault()}
         className={`relative select-none overflow-hidden rounded-full border border-zinc-600 bg-[#14181e] shadow-inner touch-none ${
-          disabled ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
-        }`}
+          disabled || isLeasedByOther ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+        } ${isLeasedByOther ? 'ring-2 ring-amber-400 opacity-70' : ''}`}
         style={{ width: size, height: size }}
+        aria-label={isLeasedByOther ? `Platter (controlled by ${leaseOwner})` : label ? `Deck ${label} platter` : 'Platter'}
       >
         <div
           className="absolute inset-0 rounded-full"
