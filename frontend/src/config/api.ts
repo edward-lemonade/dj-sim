@@ -20,6 +20,13 @@ export const API_ROUTES = {
     download: (id: string) => `/recordings/${id}/download`,
     remove: (id: string) => `/recordings/${id}`,
   },
+  stream: {
+    list: '/streams',
+    create: '/streams',
+    join: (id: string) => `/streams/${id}/join`,
+    end: (id: string) => `/streams/${id}/end`,
+    endOnExit: (id: string) => `/streams/${id}/end-on-exit`,
+  },
 }
 
 export default API_ROUTES

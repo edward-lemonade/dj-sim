@@ -223,6 +223,12 @@ export class MixerAudioEngine {
     return worklet;
   }
 
+  createStreamingAudioDestination(): MediaStreamAudioDestinationNode {
+    const destination = this.context.createMediaStreamDestination();
+    this.master.connect(destination);
+    return destination;
+  }
+
   disconnectRecordingTap(worklet: AudioWorkletNode) {
     const silentGain = this.recordingConnections.get(worklet);
     if (!silentGain) return;

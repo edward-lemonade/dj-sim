@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from 'cn';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
+import type { StreamDeckSnapshot } from '@/lib/types/Stream';
 import { DeckControls } from '@/components/DeckControls';
 import { Platter } from '@/pages/studio/components/Platter';
 import { clamp, type DeckId, type MixerAudioEngine } from '../useAudioEngine';
@@ -26,7 +27,11 @@ export type CDJProps = {
   track: Track | null;
   deckId: DeckId;
   label?: DeckId;
-  engine: MixerAudioEngine;
+  engine: MixerAudioEngine | null;
+  readOnlyState?: Pick<StreamDeckSnapshot, 'playing' | 'positionSeconds' | 'durationSeconds' | 'rate'> & {
+    capturedAt: number;
+    currentTime: number;
+  };
   tracks?: Track[];
   playedIds?: Set<string>;
   onLoadTrack?: (id: string) => void;
@@ -42,6 +47,8 @@ export type CDJProps = {
   showZoomControls: boolean;
   onSharedZoomBy: (factor: number) => void;
   onBeatCountChange: (id: DeckId, count: number | null) => void;
+  onTransportUpdate?: (id: DeckId, state: { playing: boolean; positionSeconds: number; durationSeconds: number; rate: number }) => void;
+  onPopupChange?: (id: DeckId, open: boolean) => void;
 };
 
 export function CDJ({
@@ -49,6 +56,7 @@ export function CDJ({
   deckId,
   label,
   engine,
+  readOnlyState,
   tracks,
   playedIds,
   onLoadTrack,
@@ -62,8 +70,31 @@ export function CDJ({
   showZoomControls,
   onSharedZoomBy,
   onBeatCountChange,
+  onTransportUpdate,
+  onPopupChange,
 }: CDJProps) {
-  const player = useTrackPlayer({ enableSpacebar: false });
+  const localPlayer = useTrackPlayer({ enableSpacebar: false });
+  const player = useMemo(() => {
+    if (!readOnlyState) return localPlayer;
+    const durationSeconds = readOnlyState.durationSeconds;
+    const currentTime = readOnlyState.currentTime;
+    const totalBeats = track?.bpm && durationSeconds > 0 ? durationSeconds * track.bpm / 60 : 0;
+    const zoom = totalBeats > 0 ? Math.min(MAX_PLAYER_ZOOM, Math.max(MIN_PLAYER_ZOOM, totalBeats / sharedBeatsPerView)) : 1;
+    const width = 1 / zoom;
+    const center = durationSeconds > 0 ? currentTime / durationSeconds : 0;
+    const viewStart = clampWaveformViewStart(center - width / 4, width);
+    return {
+      ...localPlayer,
+      openedId: track?.id ?? null,
+      status: track ? readOnlyState.playing ? 'playing' as const : 'ready' as const : 'idle' as const,
+      currentTime,
+      durationSeconds,
+      zoom,
+      viewStart,
+      viewEnd: viewStart + width,
+      hiResPeaks: null,
+    };
+  }, [localPlayer, readOnlyState, sharedBeatsPerView, track]);
 
   // Remember playback state so scratching resumes only decks that were playing.
   const wasPlayingRef = useRef(false);
@@ -73,8 +104,11 @@ export function CDJ({
   const [waveformTarget, setWaveformTarget] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
-    const target = document.getElementById(`studio-waveform-large-${deckId}`);
-    if (target) setWaveformTarget((current) => current === target ? current : target);
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(`studio-waveform-large-${deckId}`);
+      if (target) setWaveformTarget((current) => current === target ? current : target);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [deckId]);
 
   // Grow the platter to the space this row is given
@@ -91,17 +125,19 @@ export function CDJ({
 
   // Connect this deck's persistent audio element to its mixer channel.
   useEffect(() => {
+    if (!engine) return;
     engine.connectMediaElement(deckId, player.audioElement);
   }, [engine, deckId, player.audioElement]);
 
   useEffect(() => {
+    if (readOnlyState) return;
     if (track?.id) {
       void player.open(track.id);
       return;
     }
     player.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.id]);
+  }, [readOnlyState, track?.id]);
   useEffect(() => {
     const beatCount = track?.bpm && player.durationSeconds > 0
       ? player.durationSeconds * track.bpm / 60
@@ -109,7 +145,21 @@ export function CDJ({
     onBeatCountChange(deckId, beatCount);
   }, [deckId, onBeatCountChange, player.durationSeconds, track?.bpm, track?.id]);
 
+  useEffect(() => {
+    if (!onTransportUpdate) return;
+    const timer = window.setInterval(() => {
+      onTransportUpdate(deckId, {
+        playing: !player.audioElement.paused,
+        positionSeconds: player.audioElement.currentTime || 0,
+        durationSeconds: Number.isFinite(player.audioElement.duration) ? player.audioElement.duration : 0,
+        rate: player.audioElement.playbackRate,
+      });
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [deckId, onTransportUpdate, player.audioElement]);
+
   const syncSharedZoom = useEffectEvent(() => {
+    if (readOnlyState) return;
     const bpm = track?.bpm ?? 0;
     if (bpm <= 0 || player.durationSeconds <= 0) return;
     const totalBeats = player.durationSeconds * bpm / 60;
@@ -122,7 +172,7 @@ export function CDJ({
 
   useEffect(() => {
     syncSharedZoom();
-  }, [player.zoom, player.durationSeconds, track?.id, track?.bpm, sharedBeatsPerView]);
+  }, [player.zoom, player.durationSeconds, track?.id, track?.bpm, sharedBeatsPerView, readOnlyState]);
 
   const cues = normalizeCues(track?.cues);
   const transportDisabled = !track || player.status === 'idle' || player.status === 'loading' || player.status === 'error';
@@ -133,11 +183,12 @@ export function CDJ({
 
   // Lets the shared effects unit sync to this deck's tempo
   useEffect(() => {
+    if (!engine) return;
     engine.setDeckBpm(deckId, effectiveBpm);
   }, [engine, deckId, effectiveBpm]);
 
   const setCueAtPlayhead = () => {
-    if (!track || cueSlotsFull) return;
+    if (readOnlyState || !track || cueSlotsFull) return;
     const next = [...cues];
     const index = next.findIndex((slot) => slot === null);
     if (index < 0) return;
@@ -146,7 +197,7 @@ export function CDJ({
   };
 
   const handleScratchStart = () => {
-    if (transportDisabled) return;
+    if (!engine || readOnlyState || transportDisabled) return;
     wasPlayingRef.current = player.status === 'playing';
     player.setInteracting(true);
     // Pause element playback while scratch grains use the decoded buffer.
@@ -156,7 +207,7 @@ export function CDJ({
   const handleScratchMove = (deltaSeconds: number, deltaRealSeconds: number) => {
     const base = player.currentTime;
     const next = clamp(base + deltaSeconds, 0, player.durationSeconds || base);
-    if (wasPlayingRef.current && player.audioBuffer) {
+    if (engine && wasPlayingRef.current && player.audioBuffer) {
       engine.scratchTo(deckId, player.audioBuffer, base, deltaSeconds, deltaRealSeconds);
     }
     // Seek on every move so the platter and waveform follow the drag.
@@ -164,10 +215,10 @@ export function CDJ({
   };
 
   const handleScratchEnd = () => {
-    engine.stopScratch(deckId);
+    engine?.stopScratch(deckId);
     player.setInteracting(false);
     // Resume from the dragged position only if playback was active before.
-    if (wasPlayingRef.current) {
+    if (!readOnlyState && wasPlayingRef.current) {
       wasPlayingRef.current = false;
       void player.play();
     }
@@ -190,6 +241,7 @@ export function CDJ({
             playedIds={playedIds}
             onSelect={onLoadTrack}
             label={label}
+            onOpenChange={(open) => onPopupChange?.(deckId, open)}
           />
         </div>
       ) : null}
@@ -207,7 +259,7 @@ export function CDJ({
           label={label}
           size={platterSize}
           track={track}
-          disabled={transportDisabled}
+          disabled={transportDisabled || readOnlyState !== undefined}
           onScratchStart={handleScratchStart}
           onScratchMove={handleScratchMove}
           onScratchEnd={handleScratchEnd}
@@ -226,7 +278,7 @@ export function CDJ({
             step={0.1}
             value={tempo}
             onChange={onTempoChange}
-            disabled={tempoFollowing}
+            disabled={readOnlyState !== undefined || tempoFollowing}
             label={label ? `Deck ${label} tempo` : 'Tempo'}
             automationMode="tempo"
             referenceBpm={track?.bpm ?? 0}
@@ -252,7 +304,7 @@ export function CDJ({
               syncMaster ? 'border-orange-400/70 bg-orange-400/15 text-orange-200' : 'border-transparent text-zinc-400 hover:text-zinc-100',
             )}
             aria-pressed={syncMaster}
-            disabled={!syncMaster && !track?.bpm}
+            disabled={readOnlyState !== undefined || (!syncMaster && !track?.bpm)}
             onClick={() => onSyncMasterChange(!syncMaster)}
             aria-label={label ? `Make deck ${label} the tempo master` : 'Tempo master'}
           >
@@ -265,8 +317,8 @@ export function CDJ({
         player={player}
         bpm={track?.bpm ?? 0}
         cues={cues}
-        disabled={transportDisabled}
-        cueDisabled={cueSlotsFull}
+        disabled={transportDisabled || readOnlyState !== undefined}
+        cueDisabled={cueSlotsFull || readOnlyState !== undefined}
         label={label}
         onCue={setCueAtPlayhead}
       />

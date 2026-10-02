@@ -3,8 +3,9 @@ import { Navigate, Outlet, createBrowserRouter } from 'react-router-dom';
 import AppLayout from '@/components/layout/AppLayout';
 import HomePage from '@/pages/home/HomePage';
 import TracksPage from '@/pages/tracks/TracksPage';
-import SkillsPage from '@/pages/skills/SkillsPage';
 import StudioPage from '@/pages/studio/StudioPage';
+import StreamsPage from '@/pages/streams/StreamsPage';
+import StreamViewerPage from '@/pages/streams/StreamViewerPage';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 
@@ -29,12 +30,17 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'tracks', element: <TracksPage /> },
-      { path: 'skills', element: <SkillsPage /> },
+      { path: 'streams', element: <StreamsPage /> },
+      { path: 'skills', element: <Navigate to="/streams" replace /> },
     ],
   },
   {
     path: '/studio',
     element: <StudioPage />,
+  },
+  {
+    path: '/streams/:streamId',
+    element: <StreamViewerPage />,
   },
   {
     path: '/',

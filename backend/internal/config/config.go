@@ -24,6 +24,10 @@ type Config struct {
 	// route has no Clerk session to check (the caller is the Lambda, not a
 	// logged-in user), so this is its only auth.
 	AnalysisWebhookSecret string
+
+	LiveKitURL    string
+	LiveKitAPIKey string
+	LiveKitSecret string
 }
 
 func Load() Config {
@@ -44,6 +48,9 @@ func Load() Config {
 		AWSSecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),
 
 		AnalysisWebhookSecret: getEnv("BACKEND_WEBHOOK_API_KEY", ""),
+		LiveKitURL:            getEnv("LIVEKIT_URL", ""),
+		LiveKitAPIKey:         getEnv("LIVEKIT_API_KEY", ""),
+		LiveKitSecret:         getEnv("LIVEKIT_API_SECRET", ""),
 	}
 }
 

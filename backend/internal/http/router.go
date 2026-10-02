@@ -2,10 +2,12 @@ package http
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/recording"
+	"github.com/edward-lemonade/dj-sim-backend/internal/domain/stream"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/handler"
@@ -15,7 +17,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, analysisWebhookSecret string) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -36,6 +38,10 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	recordingRepo := recording.NewRepository(db)
 	recordingSvc := recording.NewService(recordingRepo, store)
 	recordingHandler := &handler.RecordingHandler{Recordings: recordingSvc}
+	streamRepo := stream.NewRepository(db)
+	streamManager := stream.NewManager()
+	streamSvc := stream.NewService(streamRepo, streamManager, liveKitURL, liveKitAPIKey, liveKitSecret)
+	streamHandler := handler.NewStreamHandler(streamSvc, corsOrigin)
 
 	if err := trackRepo.Migrate(ctx); err != nil {
 		log.Fatalf("migration failed: %v", err)
@@ -45,6 +51,15 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	}
 	if err := recordingRepo.Migrate(ctx); err != nil {
 		log.Fatalf("recording migration failed: %v", err)
+	}
+	if err := streamRepo.Migrate(ctx); err != nil {
+		log.Fatalf("stream migration failed: %v", err)
+	}
+	if err := streamSvc.EndAllActive(ctx); err != nil {
+		if errors.Is(err, stream.ErrCleanupStorage) {
+			log.Fatalf("stream database cleanup failed: %v", err)
+		}
+		log.Printf("stream cleanup completed with errors: %v", err)
 	}
 
 	// Fallback (and, for local dev with no reachable BACKEND_WEBHOOK_URL,
@@ -94,5 +109,13 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	recordings.GET("/:id/download", recordingHandler.Download)
 	recordings.DELETE("/:id", recordingHandler.Delete)
 
+	streams := auth.Group("/streams", middleware.RequireUser())
+	streams.GET("", streamHandler.List)
+	streams.POST("", streamHandler.Create)
+	streams.POST("/:id/join", streamHandler.Join)
+	streams.POST("/:id/end", streamHandler.End)
+
+	r.POST("/streams/:id/end-on-exit", streamHandler.EndOnExit)
+	r.GET("/streams/:id/events", streamHandler.Events)
 	return r
 }

@@ -37,7 +37,7 @@ func main() {
 		log.Println("BACKEND_WEBHOOK_API_KEY not set — analysis webhook endpoint disabled, relying on S3 polling only")
 	}
 
-	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, store, cfg.S3TracksKey, cfg.S3AnalysisPrefix, cfg.AnalysisWebhookSecret)
+	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, store, cfg.S3TracksKey, cfg.S3AnalysisPrefix, cfg.AnalysisWebhookSecret, cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitSecret)
 
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("server failed: %v", err)

@@ -1,0 +1,113 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Eye, Radio, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { listStreams } from '@/lib/api/StreamsAPI';
+import type { ListedStream } from '@/lib/types/Stream';
+
+function durationLabel(startedAt: string, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+    : `${minutes}:${String(remainder).padStart(2, '0')}`;
+}
+
+function StreamsPage() {
+  const [streams, setStreams] = useState<ListedStream[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const current = await listStreams();
+      setStreams(current);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load streams.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void refresh(), 0);
+    const poll = window.setInterval(() => void refresh(), 10000);
+    const clock = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(poll);
+      window.clearInterval(clock);
+    };
+  }, [refresh]);
+
+  return (
+    <main className="mx-auto w-full max-w-4xl">
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-rose-300">Live now</p>
+          <h1 className="mt-1 text-3xl font-semibold text-white">Streams</h1>
+          <p className="mt-2 text-sm text-slate-400">Watch DJs perform live in the studio.</p>
+        </div>
+        <Button variant="outline" size="icon" aria-label="Refresh streams" disabled={refreshing} onClick={() => void refresh()}>
+          <RefreshCw />
+        </Button>
+      </div>
+
+      {loading ? (
+        <p role="status" className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-slate-300">Loading streams...</p>
+      ) : error ? (
+        <section role="alert" className="rounded-2xl border border-rose-400/30 bg-rose-950/30 p-8 text-center">
+          <p className="text-rose-100">{error}</p>
+          <Button className="mt-4" variant="outline" onClick={() => window.location.reload()}>Try again</Button>
+        </section>
+      ) : streams.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-16 text-center">
+          <Radio className="mx-auto size-8 text-slate-500" />
+          <h2 className="mt-3 text-lg font-medium text-white">No active streams</h2>
+          <p className="mt-1 text-sm text-slate-400">Live sets will show up here when someone starts streaming.</p>
+        </div>
+      ) : (
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {streams.map((stream) => (
+            <li key={stream.id}>
+              <Link to={`/streams/${stream.id}`} className="group block rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition hover:border-rose-300/50 hover:bg-white/[0.07]">
+                <div className="flex items-start gap-3">
+                  {stream.avatarUrl ? (
+                    <img src={stream.avatarUrl} alt="" className="size-11 rounded-full border border-white/15 object-cover" />
+                  ) : (
+                    <div aria-hidden="true" className="grid size-11 place-items-center rounded-full bg-gradient-to-br from-fuchsia-500 to-orange-400 font-semibold text-white">
+                      {stream.username.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate font-medium text-white">{stream.username}</p>
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-rose-500/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-rose-200">
+                        <span className="size-1.5 animate-pulse rounded-full bg-rose-400" />
+                        Live
+                      </span>
+                    </div>
+                    <h2 className="mt-2 truncate text-lg font-semibold text-white group-hover:text-rose-100">{stream.name}</h2>
+                    <p className="mt-2 flex items-center gap-1.5 text-sm tabular-nums text-slate-400">
+                      <Eye className="size-4" />
+                      Live for {durationLabel(stream.startedAt, now)}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}
+
+export default StreamsPage;

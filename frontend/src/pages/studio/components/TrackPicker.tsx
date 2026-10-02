@@ -35,6 +35,7 @@ export function TrackPicker({
   playedIds,
   onSelect,
   label,
+  onOpenChange,
 }: {
   tracks: Track[];
   selectedId: string | null;
@@ -43,6 +44,7 @@ export function TrackPicker({
   playedIds?: Set<string>;
   onSelect: (id: string) => void;
   label?: DeckId;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -50,6 +52,10 @@ export function TrackPicker({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const panelId = useId();
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [onOpenChange, open]);
 
   const sorted = useMemo(() => {
     return tracks
