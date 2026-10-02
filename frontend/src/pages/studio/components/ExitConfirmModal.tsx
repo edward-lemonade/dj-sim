@@ -5,19 +5,21 @@ export function ExitConfirmModal({
   open,
   onYes,
   onNo,
+  busy = false,
 }: {
   open: boolean;
   onYes: () => void;
   onNo: () => void;
+  busy?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onNo();
+      if (!busy && event.key === 'Escape') onNo();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onNo]);
+  }, [busy, open, onNo]);
 
   if (!open) return null;
 
@@ -27,6 +29,7 @@ export function ExitConfirmModal({
         type="button"
         className="absolute inset-0 bg-black/60"
         aria-label="Cancel exit"
+        disabled={busy}
         onClick={onNo}
       />
       <div
@@ -39,11 +42,11 @@ export function ExitConfirmModal({
           Are you sure you want to exit?
         </p>
         <div className="mt-4 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onNo}>
+          <Button type="button" variant="ghost" disabled={busy} onClick={onNo}>
             No
           </Button>
-          <Button type="button" onClick={onYes}>
-            Yes
+          <Button type="button" disabled={busy} onClick={onYes}>
+            {busy ? 'Saving recording...' : 'Yes'}
           </Button>
         </div>
       </div>

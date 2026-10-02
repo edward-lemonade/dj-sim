@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useBlocker } from 'react-router-dom';
 import { CDJ } from './components/CDJ';
 import { Mixer } from '@/pages/studio/components/Mixer';
 import { StudioTopbar } from '@/pages/studio/components/StudioTopbar';
@@ -8,6 +9,7 @@ import { clamp, DECK_IDS, DeckId } from './useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
+import { useStudioRecording } from './useStudioRecording';
 
 // Matches the tempo slider's range in CDJ
 const TEMPO_RANGE_PERCENT = 50;
@@ -28,6 +30,11 @@ function StudioPage() {
   const library = useTrackLibrary();
   const mixer = useMixerState();
   const engine = useAudioEngine(mixer.state);
+  const recording = useStudioRecording(engine);
+  const { status: recordingStatus, hasPendingSave, stopAndSave } = recording;
+  const shouldBlockExit = recordingStatus === 'recording' || (recordingStatus === 'error' && hasPendingSave);
+  const navigationBlocker = useBlocker(shouldBlockExit);
+  const autoSaveNavigation = useRef(false);
   const [loadedTrackIds, setLoadedTrackIds] = useState<Record<DeckId, string | null>>(defaultLoadedTrackIds);
   const [deckBeatCounts, setDeckBeatCounts] = useState<Record<DeckId, number | null>>({
     [DeckId.A]: null,
@@ -57,6 +64,19 @@ function StudioPage() {
   useEffect(() => {
     setBeatsPerView((current) => Math.min(maxBeatsPerView, Math.max(minBeatsPerView, current)));
   }, [maxBeatsPerView, minBeatsPerView]);
+
+  useEffect(() => {
+    const shouldAutoSave =
+      recordingStatus === 'recording' || (recordingStatus === 'error' && hasPendingSave);
+    if (navigationBlocker.state !== 'blocked' || !shouldAutoSave || autoSaveNavigation.current) return;
+    autoSaveNavigation.current = true;
+    void stopAndSave().then((saved) => {
+      if (saved) navigationBlocker.proceed();
+      else navigationBlocker.reset();
+    }).finally(() => {
+      autoSaveNavigation.current = false;
+    });
+  }, [navigationBlocker, hasPendingSave, recordingStatus, stopAndSave]);
 
   // Auto-load the first N ready tracks into the N decks, in DECK_IDS order.
   useEffect(() => {
@@ -151,7 +171,15 @@ function StudioPage() {
   return (
     <ControlSelectionProvider bpm={automationBpm}>
       <div className="flex h-svh min-h-0 flex-col bg-[#0b0d10] text-zinc-200">
-        <StudioTopbar />
+        <StudioTopbar
+          recordingStatus={recording.status}
+          recordingError={recording.error}
+          hasPendingSave={recording.hasPendingSave}
+          onStartRecording={() => void recording.start()}
+          onStopAndSave={recording.stopAndSave}
+          onRetrySave={recording.retrySave}
+          onDiscard={recording.discard}
+        />
         <section aria-label="Deck waveforms" className="flex-none border-b bg-[#101214]">
           <div className="bg-gradient-to-r from-yellow-400 to-pink-400 p-0.5">
             <div className="bg-[#101214]">

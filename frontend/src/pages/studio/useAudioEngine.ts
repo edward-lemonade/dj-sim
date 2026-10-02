@@ -105,6 +105,7 @@ export class MixerAudioEngine {
   readonly context: AudioContext;
   readonly master: GainNode;
   readonly fx: FxRack;
+  private recordingConnections = new Map<AudioWorkletNode, GainNode>();
 
   private readonly opts: Required<AudioEngineOptions>;
   private readonly decks = new Map<DeckId, DeckNodes>();
@@ -192,6 +193,43 @@ export class MixerAudioEngine {
   /** The node any deck's audio source should connect into. */
   getInputNode(deckId: DeckId): GainNode {
     return this.deck(deckId).input;
+  }
+
+  async createRecordingTap(): Promise<AudioWorkletNode> {
+    if (!this.context.audioWorklet) {
+      throw new Error('AudioWorklet is not supported in this browser.');
+    }
+
+    const processorUrl = new URL(
+      `${import.meta.env.BASE_URL}audio-worklet/recording-capture-processor.js`,
+      window.location.href,
+    );
+    await this.context.audioWorklet.addModule(processorUrl);
+
+    const worklet = new AudioWorkletNode(this.context, 'recording-capture-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      channelCount: 2,
+      channelCountMode: 'explicit',
+    });
+    const silentGain = this.context.createGain();
+    silentGain.gain.value = 0;
+
+    this.master.connect(worklet);
+    worklet.connect(silentGain);
+    silentGain.connect(this.context.destination);
+    this.recordingConnections.set(worklet, silentGain);
+    return worklet;
+  }
+
+  disconnectRecordingTap(worklet: AudioWorkletNode) {
+    const silentGain = this.recordingConnections.get(worklet);
+    if (!silentGain) return;
+    this.master.disconnect(worklet);
+    worklet.disconnect();
+    silentGain.disconnect();
+    this.recordingConnections.delete(worklet);
   }
 
   /**

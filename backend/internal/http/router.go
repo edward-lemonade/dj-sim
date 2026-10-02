@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/edward-lemonade/dj-sim-backend/internal/domain/recording"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/handler"
@@ -18,7 +19,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	ctx := context.Background()
 
 	r := gin.Default()
-	r.MaxMultipartMemory = 100 << 20
+	r.MaxMultipartMemory = 16 << 20
 	if corsOrigin == "" {
 		corsOrigin = "*"
 	}
@@ -32,11 +33,18 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	trackSvc := track.NewService(trackRepo, store, tracksPrefix, analysisPrefix)
 	trackHandler := &handler.TrackHandler{Tracks: trackSvc}
 
+	recordingRepo := recording.NewRepository(db)
+	recordingSvc := recording.NewService(recordingRepo, store)
+	recordingHandler := &handler.RecordingHandler{Recordings: recordingSvc}
+
 	if err := trackRepo.Migrate(ctx); err != nil {
 		log.Fatalf("migration failed: %v", err)
 	}
 	if err := userRepo.Migrate(ctx); err != nil {
 		log.Fatalf("migration failed: %v", err)
+	}
+	if err := recordingRepo.Migrate(ctx); err != nil {
+		log.Fatalf("recording migration failed: %v", err)
 	}
 
 	// Fallback (and, for local dev with no reachable BACKEND_WEBHOOK_URL,
@@ -77,6 +85,14 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	tracks.GET("/:id/audio", trackHandler.Audio)
 	tracks.POST("/:id/analyze", trackHandler.Analyze)
 	tracks.POST("/:id/analyze/cancel", trackHandler.CancelAnalysis)
+
+	recordings := auth.Group("/recordings", middleware.RequireUser())
+	recordings.GET("", recordingHandler.List)
+	recordings.POST("/upload", recordingHandler.Upload)
+	recordings.PATCH("/:id", recordingHandler.Update)
+	recordings.GET("/:id/audio", recordingHandler.Audio)
+	recordings.GET("/:id/download", recordingHandler.Download)
+	recordings.DELETE("/:id", recordingHandler.Delete)
 
 	return r
 }
