@@ -41,6 +41,7 @@ type liveSession struct {
 	seq          uint64
 	snapshotSeq  uint64
 	snapshot     json.RawMessage
+	snapshotTime float64
 	recentEvents []Event
 	participants map[string]Participant
 	viewers      map[string]int
@@ -149,6 +150,7 @@ func (m *Manager) Attach(streamID string, p Participant) (func(), error) {
 	live.participants[key] = p
 	snapshot := append(json.RawMessage(nil), live.snapshot...)
 	snapshotSeq := live.snapshotSeq
+	snapshotTime := live.snapshotTime
 	recent := append([]Event(nil), live.recentEvents...)
 	count := len(live.viewers)
 	live.mu.Unlock()
@@ -156,7 +158,7 @@ func (m *Manager) Attach(streamID string, p Participant) (func(), error) {
 	if p.Owner {
 		_ = p.Send(Event{Type: "viewer-count", Count: count})
 	} else {
-		_ = p.Send(Event{Type: "joined", Seq: snapshotSeq, Payload: snapshot})
+		_ = p.Send(Event{Type: "joined", Seq: snapshotSeq, T: snapshotTime, Payload: snapshot})
 		for _, event := range recent {
 			if event.Seq > snapshotSeq {
 				_ = p.Send(event)
@@ -211,6 +213,7 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 		live.seq++
 		live.snapshot = append(live.snapshot[:0], incoming.Payload...)
 		live.snapshotSeq = live.seq
+		live.snapshotTime = incoming.T
 		incoming.Seq = live.seq
 	case "event", "pointer":
 		maxPayload := 256 << 10

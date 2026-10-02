@@ -6,7 +6,31 @@ import type { StreamConnection, StreamEvent, StudioSnapshot } from '@/lib/types/
 import { endStream, joinStream } from '@/lib/api/StreamsAPI';
 import type { MixerAudioEngine } from '@/hooks/useAudioEngine';
 import { ApiError, axiosClient } from '@/lib/clients/axios';
-import { diffStudioSnapshots, reduceStudioSnapshot, type StudioAction } from './studioState';
+import {
+  diffStudioSnapshots,
+  interpolateDeckPosition,
+  interpolateMixerState,
+  interpolatePointer,
+  reduceStudioSnapshot,
+  STREAM_PLAYBACK_BUFFER_SECONDS,
+  type StudioAction,
+  type MixerSample,
+  type PointerSample,
+  type TransportSample,
+} from './studioState';
+
+const PLAYBACK_RENDER_INTERVAL_MS = 1000 / 30;
+
+function isStudioSnapshot(value: unknown): value is StudioSnapshot {
+  return typeof value === 'object' && value !== null && 'decks' in value && 'mixer' in value;
+}
+
+function getSnapshotTransportSamples(snapshot: StudioSnapshot, time: number): Record<'A' | 'B', TransportSample> {
+  return {
+    A: { time, trackId: snapshot.decks.A.track?.id ?? null, transport: snapshot.decks.A },
+    B: { time, trackId: snapshot.decks.B.track?.id ?? null, transport: snapshot.decks.B },
+  };
+}
 
 function eventSocketUrl(connection: StreamConnection): string {
   const url = new URL(connection.eventUrl, ENV.apiBaseUrl);
@@ -270,6 +294,11 @@ export function useStreamViewer(id: string) {
   const [viewerCount, setViewerCount] = useState(0);
   const [remotePointer, setRemotePointer] = useState<{ x: number; y: number } | null>(null);
   const snapshotRef = useRef<StudioSnapshot | null>(null);
+  const eventQueueRef = useRef<StreamEvent[]>([]);
+  const transportSamplesRef = useRef<Record<'A' | 'B', TransportSample[]>>({ A: [], B: [] });
+  const mixerSamplesRef = useRef<MixerSample[]>([]);
+  const pointerSamplesRef = useRef<PointerSample[]>([]);
+  const latestTimelineRef = useRef<{ time: number; receivedAt: number } | null>(null);
   const roomRef = useRef<Room | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const audioElementsRef = useRef<HTMLAudioElement[]>([]);
@@ -301,6 +330,13 @@ export function useStreamViewer(id: string) {
     setStatus('joining');
     setError(null);
     endedRef.current = false;
+    snapshotRef.current = null;
+    eventQueueRef.current = [];
+    transportSamplesRef.current = { A: [], B: [] };
+    mixerSamplesRef.current = [];
+    pointerSamplesRef.current = [];
+    latestTimelineRef.current = null;
+    setSnapshot(null);
     const oldSocket = socketRef.current;
     socketRef.current = null;
     oldSocket?.close();
@@ -313,6 +349,7 @@ export function useStreamViewer(id: string) {
       room = connectedRoom;
       connectedRoom.on(RoomEvent.TrackSubscribed, (track) => {
         if (disposedRef.current || attempt !== attemptRef.current || track.kind !== Track.Kind.Audio) return;
+        track.setPlayoutDelay(STREAM_PLAYBACK_BUFFER_SECONDS);
         const audio = track.attach();
         audio.autoplay = true;
         audioElementsRef.current.push(audio);
@@ -322,6 +359,11 @@ export function useStreamViewer(id: string) {
         if (!disposedRef.current && attempt === attemptRef.current && !endedRef.current) {
           stopViewerAudio();
           snapshotRef.current = null;
+          eventQueueRef.current = [];
+          transportSamplesRef.current = { A: [], B: [] };
+          mixerSamplesRef.current = [];
+          pointerSamplesRef.current = [];
+          latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
           setStatus('error');
@@ -345,28 +387,16 @@ export function useStreamViewer(id: string) {
       socket.addEventListener('message', (message) => {
         if (disposedRef.current || attempt !== attemptRef.current) return;
         const event = JSON.parse(String(message.data)) as StreamEvent;
-        if (event.type === 'joined' || event.type === 'snapshot') {
-          const next = (event.payload as StudioSnapshot | undefined) ?? null;
-          snapshotRef.current = next;
-          setRemotePointer(next?.pointer ?? null);
-          setSnapshot(next ? { ...next, capturedAt: Date.now() } : null);
-        } else if (event.type === 'event' && event.payload && snapshotRef.current) {
-          const next = reduceStudioSnapshot(snapshotRef.current, event.payload as StudioAction);
-          snapshotRef.current = next;
-          setSnapshot({ ...next, capturedAt: Date.now() });
-        } else if (event.type === 'pointer') {
-          const p = event.payload as { x: number; y: number } | null;
-          setRemotePointer(p);
-          if (snapshotRef.current) {
-            const next = reduceStudioSnapshot(snapshotRef.current, { action: 'pointer', value: p });
-            snapshotRef.current = next;
-            setSnapshot({ ...next, capturedAt: Date.now() });
-          }
-        } else if (event.type === 'viewer-count') {
+        if (event.type === 'viewer-count') {
           setViewerCount(event.count ?? 0);
         } else if (event.type === 'ended') {
           endedRef.current = true;
           attemptRef.current++;
+          eventQueueRef.current = [];
+          transportSamplesRef.current = { A: [], B: [] };
+          mixerSamplesRef.current = [];
+          pointerSamplesRef.current = [];
+          latestTimelineRef.current = null;
           if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
           setStatus('ended');
           stopViewerAudio();
@@ -374,12 +404,62 @@ export function useStreamViewer(id: string) {
         } else if (event.type === 'error') {
           setStatus('error');
           setError('The stream connection returned an error.');
+        } else if (
+          (event.type === 'joined' || event.type === 'snapshot' || event.type === 'event' || event.type === 'pointer') &&
+          Number.isFinite(event.t)
+        ) {
+          const time = event.t!;
+          const receivedAt = performance.now();
+          const latest = latestTimelineRef.current;
+          if (!latest || time > latest.time) latestTimelineRef.current = { time, receivedAt };
+          eventQueueRef.current.push(event);
+
+          if ((event.type === 'joined' || event.type === 'snapshot') && isStudioSnapshot(event.payload)) {
+            const snapshotSamples = getSnapshotTransportSamples(event.payload, time);
+            for (const deck of ['A', 'B'] as const) {
+              transportSamplesRef.current[deck].push(snapshotSamples[deck]);
+            }
+            mixerSamplesRef.current.push({ time, value: event.payload.mixer });
+            if (event.payload.pointer) pointerSamplesRef.current.push({ time, value: event.payload.pointer });
+          } else if (event.type === 'event' && event.payload && typeof event.payload === 'object') {
+            const action = event.payload as StudioAction;
+            if (action.action === 'transport') {
+              const samples = transportSamplesRef.current[action.deck];
+              const previous = samples[samples.length - 1];
+              samples.push({
+                time,
+                trackId: snapshotRef.current?.decks[action.deck].track?.id ?? previous?.trackId ?? null,
+                transport: action.value,
+              });
+            } else if (action.action === 'track-load') {
+              const samples = transportSamplesRef.current[action.deck];
+              samples.push({
+                time,
+                trackId: action.value?.id ?? null,
+                transport: {
+                  playing: false,
+                  positionSeconds: 0,
+                  durationSeconds: action.value?.durationSeconds ?? 0,
+                  rate: 1,
+                },
+              });
+            } else if (action.action === 'mixer-change') {
+              mixerSamplesRef.current.push({ time, value: action.value });
+            } else if (action.action === 'pointer') {
+              pointerSamplesRef.current.push({ time, value: action.value });
+            }
+          }
         }
       });
       socket.addEventListener('error', () => {
         if (!disposedRef.current && attempt === attemptRef.current && !endedRef.current) {
           stopViewerAudio();
           snapshotRef.current = null;
+          eventQueueRef.current = [];
+          transportSamplesRef.current = { A: [], B: [] };
+          mixerSamplesRef.current = [];
+          pointerSamplesRef.current = [];
+          latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
           setStatus('error');
@@ -391,6 +471,11 @@ export function useStreamViewer(id: string) {
         if (!disposedRef.current && attempt === attemptRef.current && !endedRef.current) {
           stopViewerAudio();
           snapshotRef.current = null;
+          eventQueueRef.current = [];
+          transportSamplesRef.current = { A: [], B: [] };
+          mixerSamplesRef.current = [];
+          pointerSamplesRef.current = [];
+          latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
           setStatus('error');
@@ -416,6 +501,10 @@ export function useStreamViewer(id: string) {
         audio.remove();
       });
       audioElementsRef.current = [];
+      snapshotRef.current = null;
+      eventQueueRef.current = [];
+      transportSamplesRef.current = { A: [], B: [] };
+      latestTimelineRef.current = null;
       setStatus('error');
       setError(cause instanceof Error ? cause.message : 'Could not join this stream.');
       const retryable = !(cause instanceof ApiError && cause.status !== undefined && (cause.status < 500 || cause.status === 503));
@@ -428,6 +517,102 @@ export function useStreamViewer(id: string) {
   useEffect(() => {
     connectRef.current = connect;
   }, [connect]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const latest = latestTimelineRef.current;
+      if (!latest || endedRef.current) return;
+
+      const elapsedSinceLatest = Math.max(0, performance.now() - latest.receivedAt) / 1000;
+      const presentationTime = Math.max(
+        0,
+        latest.time + elapsedSinceLatest - STREAM_PLAYBACK_BUFFER_SECONDS,
+      );
+
+      while (eventQueueRef.current[0] && (eventQueueRef.current[0].t ?? Infinity) <= presentationTime) {
+        const event = eventQueueRef.current.shift()!;
+        if ((event.type === 'joined' || event.type === 'snapshot') && isStudioSnapshot(event.payload)) {
+          const next = event.payload;
+          snapshotRef.current = next;
+          setRemotePointer(next.pointer);
+          for (const deck of ['A', 'B'] as const) {
+            const samples = transportSamplesRef.current[deck];
+            const sampleIndex = samples.findIndex((sample) => sample.time === event.t);
+            if (sampleIndex >= 0) {
+              samples[sampleIndex] = {
+                ...samples[sampleIndex],
+                trackId: next.decks[deck].track?.id ?? null,
+                transport: next.decks[deck],
+              };
+            }
+          }
+        } else if (event.type === 'event' && event.payload && snapshotRef.current) {
+          snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, event.payload as StudioAction);
+        } else if (event.type === 'pointer') {
+          const pointer = (event.payload as { x: number; y: number } | null) ?? null;
+          setRemotePointer(pointer);
+          if (snapshotRef.current) {
+            snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, { action: 'pointer', value: pointer });
+          }
+        }
+      }
+
+      const current = snapshotRef.current;
+      if (!current) return;
+
+      const decks = { ...current.decks };
+      for (const deck of ['A', 'B'] as const) {
+        const samples = transportSamplesRef.current[deck];
+        let previousIndex = -1;
+        let nextIndex = -1;
+        for (let index = 0; index < samples.length; index++) {
+          if (samples[index].time <= presentationTime) previousIndex = index;
+          else {
+            nextIndex = index;
+            break;
+          }
+        }
+        if (previousIndex >= 0) {
+          const previous = samples[previousIndex];
+          const next = nextIndex >= 0 ? samples[nextIndex] : undefined;
+          decks[deck] = {
+            ...decks[deck],
+            positionSeconds: interpolateDeckPosition(
+              decks[deck].track?.id ?? null,
+              previous,
+              next,
+              presentationTime,
+            ),
+          };
+          if (previousIndex > 0) samples.splice(0, previousIndex);
+        }
+      }
+
+      const previousMixerIndex = mixerSamplesRef.current.findLastIndex((sample) => sample.time <= presentationTime);
+      const mixer = previousMixerIndex >= 0
+        ? interpolateMixerState(
+            mixerSamplesRef.current[previousMixerIndex],
+            mixerSamplesRef.current[previousMixerIndex + 1],
+            presentationTime,
+          )
+        : current.mixer;
+      if (previousMixerIndex > 0) mixerSamplesRef.current.splice(0, previousMixerIndex);
+
+      const previousPointerIndex = pointerSamplesRef.current.findLastIndex((sample) => sample.time <= presentationTime);
+      const pointer = previousPointerIndex >= 0
+        ? interpolatePointer(
+            pointerSamplesRef.current[previousPointerIndex],
+            pointerSamplesRef.current[previousPointerIndex + 1],
+            presentationTime,
+          )
+        : current.pointer;
+      if (previousPointerIndex > 0) pointerSamplesRef.current.splice(0, previousPointerIndex);
+
+      setSnapshot({ ...current, decks, mixer, pointer, capturedAt: presentationTime * 1000 });
+    }, PLAYBACK_RENDER_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const joinTimer = window.setTimeout(() => void connect(), 0);

@@ -88,10 +88,7 @@ function StreamViewerPage() {
         readOnlyState={{
           ...deck,
           capturedAt: snapshot.capturedAt,
-          currentTime: Math.min(
-            deck.durationSeconds,
-            deck.positionSeconds + (deck.playing ? Math.max(0, now - snapshot.capturedAt) / 1000 * deck.rate : 0),
-          ),
+          currentTime: deck.positionSeconds,
         }}
         track={track}
         tracks={track ? [track] : []}
@@ -181,7 +178,7 @@ function StreamViewerPage() {
         </StudioConsoleLayout>
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-[70] border-[3px] border-transparent"
+          className="pointer-events-none absolute inset-0 z-70 border-[3px] border-transparent"
           style={{ borderImage: 'linear-gradient(to bottom right, #d946ef, #fb923c, #22d3ee) 1' }}
         />
       </main>

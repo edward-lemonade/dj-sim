@@ -130,7 +130,7 @@ func TestLateViewerGetsCurrentSnapshotAndPublisherEventsAreOwnerOnly(t *testing.
 		},
 		"beatsPerView":32,"pointer":null,"popup":null,"capturedAt":0
 	}`)
-	if err := manager.Publish("stream-a", "owner-a", Event{Type: "snapshot", Payload: snapshot}); err != nil {
+	if err := manager.Publish("stream-a", "owner-a", Event{Type: "snapshot", T: 1, Payload: snapshot}); err != nil {
 		t.Fatal(err)
 	}
 	action := json.RawMessage(`{"action":"waveform-view","value":16}`)
@@ -152,7 +152,7 @@ func TestLateViewerGetsCurrentSnapshotAndPublisherEventsAreOwnerOnly(t *testing.
 		t.Fatal(err)
 	}
 	defer detach()
-	if len(received) != 2 || received[0].Type != "joined" || received[0].Seq != 1 ||
+	if len(received) != 2 || received[0].Type != "joined" || received[0].Seq != 1 || received[0].T != 1 ||
 		received[1].Type != "event" || received[1].Seq != 2 || received[1].T != 1.25 {
 		t.Fatalf("late join events = %#v, want snapshot followed by sequenced action", received)
 	}

@@ -438,9 +438,11 @@ building the corresponding infrastructure.
       exit now ends the session via an owner-only exit ticket, with a server
       guard that ends an existing session before that user can start another.
       Finish remaining popup/state mirroring and teardown/reconnect verification.
-- [ ] **Prototype and tune event/audio sync.** Measure the offset between
-      events and audio for viewers, implement the playout buffer, and settle the
-      acceptable offset.
+- [ ] **Tune event/audio sync.** Viewers now render sequenced state on a
+      500 ms delayed timeline, interpolate deck playheads, mixer values, and
+      pointer positions between buffered samples, and request the same LiveKit
+      audio playout delay. Measure and tune the actual offset across browsers
+      and rapid control changes.
 - [ ] **Test the complete flow.** Verify concurrent viewers, start/end
       propagation in the directory, elapsed time, a late joiner seeing the
       correct current state, a reconnecting viewer resuming without gaps,

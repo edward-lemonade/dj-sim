@@ -4,6 +4,89 @@ import type { StreamDeckSnapshot, StudioSnapshot } from '@/lib/types/Stream';
 export type StreamDeckId = 'A' | 'B';
 export type StreamPopup = null | { kind: 'track-picker'; deck: StreamDeckId };
 export type StreamPointer = { x: number; y: number } | null;
+export const STREAM_PLAYBACK_BUFFER_SECONDS = 0.5;
+
+export type MixerSample = { time: number; value: MixerState };
+export type PointerSample = { time: number; value: StreamPointer };
+
+export type TransportSample = {
+  time: number;
+  trackId: string | null;
+  transport: Pick<StreamDeckSnapshot, 'playing' | 'positionSeconds' | 'durationSeconds' | 'rate'>;
+};
+
+export function interpolateMixerState(current: MixerSample, next: MixerSample | undefined, time: number): MixerState {
+  if (!next) return current.value;
+  const span = next.time - current.time;
+  const fraction = span > 0 ? Math.max(0, Math.min(1, (time - current.time) / span)) : 0;
+  const mix = (from: number, to: number) => from + (to - from) * fraction;
+
+  return {
+    ...current.value,
+    master: mix(current.value.master, next.value.master),
+    channelState: {
+      0: {
+        high: mix(current.value.channelState[0].high, next.value.channelState[0].high),
+        mid: mix(current.value.channelState[0].mid, next.value.channelState[0].mid),
+        low: mix(current.value.channelState[0].low, next.value.channelState[0].low),
+        filter: mix(current.value.channelState[0].filter, next.value.channelState[0].filter),
+        volume: mix(current.value.channelState[0].volume, next.value.channelState[0].volume),
+        tempo: mix(current.value.channelState[0].tempo, next.value.channelState[0].tempo),
+      },
+      1: {
+        high: mix(current.value.channelState[1].high, next.value.channelState[1].high),
+        mid: mix(current.value.channelState[1].mid, next.value.channelState[1].mid),
+        low: mix(current.value.channelState[1].low, next.value.channelState[1].low),
+        filter: mix(current.value.channelState[1].filter, next.value.channelState[1].filter),
+        volume: mix(current.value.channelState[1].volume, next.value.channelState[1].volume),
+        tempo: mix(current.value.channelState[1].tempo, next.value.channelState[1].tempo),
+      },
+    },
+    fx: {
+      ...current.value.fx,
+      wet: mix(current.value.fx.wet, next.value.fx.wet),
+    },
+  };
+}
+
+export function interpolatePointer(current: PointerSample, next: PointerSample | undefined, time: number): StreamPointer {
+  if (!current.value || !next?.value) return current.value;
+  const span = next.time - current.time;
+  const fraction = span > 0 ? Math.max(0, Math.min(1, (time - current.time) / span)) : 0;
+  return {
+    x: current.value.x + (next.value.x - current.value.x) * fraction,
+    y: current.value.y + (next.value.y - current.value.y) * fraction,
+  };
+}
+
+export function interpolateDeckPosition(
+  trackId: string | null,
+  current: TransportSample,
+  next: TransportSample | undefined,
+  time: number,
+): number {
+  const { transport } = current;
+  let position = transport.positionSeconds;
+  if (
+    next &&
+    current.trackId === next.trackId &&
+    current.trackId === trackId &&
+    transport.playing === next.transport.playing &&
+    transport.rate === next.transport.rate
+  ) {
+    const span = next.time - current.time;
+    const expectedPosition = position + (transport.playing && span > 0 ? span * transport.rate : 0);
+    if (Math.abs(next.transport.positionSeconds - expectedPosition) < 0.5) {
+      const fraction = span > 0 ? Math.max(0, Math.min(1, (time - current.time) / span)) : 0;
+      position += (next.transport.positionSeconds - position) * fraction;
+    } else if (transport.playing) {
+      position += Math.max(0, time - current.time) * transport.rate;
+    }
+  } else if (transport.playing) {
+    position += Math.max(0, time - current.time) * transport.rate;
+  }
+  return Math.max(0, Math.min(transport.durationSeconds, position));
+}
 
 export type StudioAction =
   | { action: 'mixer-change'; value: MixerState }
