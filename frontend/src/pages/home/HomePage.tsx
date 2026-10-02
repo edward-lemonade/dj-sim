@@ -209,16 +209,32 @@ function HomePage() {
         <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_85%_100%,rgba(29,91,255,.22),transparent_55%)]" />
 
         <div className="relative flex min-h-0 flex-1 flex-col px-6 py-10 md:px-0 md:py-14 md:[clip-path:polygon(31.57%_0,100%_0,100%_100%,3%_100%)]">
-          <div className="mb-4 flex shrink-0 items-center justify-between gap-4 md:pl-[32%] md:pr-10">
-            <h1 id="recordings-title" className="text-4xl font-black italic tracking-tight text-white">Past sessions</h1>
-            <span className="-skew-x-12 bg-blue-900/70 px-3 py-1 text-sm font-bold text-cyan-200">{recordings.length} recordings</span>
-          </div>
+          {isSignedIn && (
+            <div className="mb-4 flex shrink-0 items-center justify-between gap-4 md:pl-[32%] md:pr-10">
+              <h1 id="recordings-title" className="text-4xl font-black italic tracking-tight text-white">Past sessions</h1>
+              <span className="-skew-x-12 bg-blue-900/70 px-3 py-1 text-sm font-bold text-cyan-200">{recordings.length} recordings</span>
+            </div>
+          )}
           {!isLoaded || (isSignedIn && loading) ? (
             <p className="py-6 text-center text-sm text-slate-400" role="status">Loading recordings...</p>
           ) : !isSignedIn ? (
-            <p className="py-6 text-center text-sm text-slate-400">
-              <Link className="text-white underline" to="/login">Sign in</Link> to see and save your sets.
-            </p>
+            <div className="flex flex-1 flex-col items-center justify-center py-6 text-center md:pl-[32%] md:pr-10">
+              <p className="text-sm text-slate-400">Log in or register to see and save your sets.</p>
+              <div className="mt-6 flex items-center justify-center gap-4">
+                <Link
+                  to="/login"
+                  className="-skew-x-[16deg] border-2 border-cyan-300/70 px-8 py-3 font-bold italic text-white transition hover:bg-white/10"
+                >
+                  <span className="block skew-x-[16deg]">Login</span>
+                </Link>
+                <Link
+                  to="/register"
+                  className="-skew-x-[16deg] border-2 border-cyan-300/70 bg-[#0a1a7a] px-8 py-3 font-bold italic text-white shadow-[6px_6px_0_#020617] transition hover:-translate-y-0.5 hover:shadow-[9px_9px_0_#020617]"
+                >
+                  <span className="block skew-x-[16deg]">Register</span>
+                </Link>
+              </div>
+            </div>
           ) : error && recordings.length === 0 ? (
             <div className="py-4 text-center">
               <p className="text-sm text-red-300" role="alert">{error}</p>

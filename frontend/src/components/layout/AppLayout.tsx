@@ -77,7 +77,7 @@ function HeaderAuth() {
 
   return (
     <div className="flex items-center gap-2">
-      <Link to="/login" className={cn(buttonVariants({ variant: 'ghost' }), 'rounded-full')}>
+      <Link to="/login" className={cn(buttonVariants(), 'rounded-full')}>
         Login
       </Link>
       <Link to="/register" className={cn(buttonVariants(), 'rounded-full')}>
