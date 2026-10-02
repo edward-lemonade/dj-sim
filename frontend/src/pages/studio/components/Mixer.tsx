@@ -1,5 +1,6 @@
 import { ChannelStrip } from '@/pages/studio/components/ChannelStrip';
 import { EffectsUnit } from '@/pages/studio/components/EffectsUnit';
+import { Slider } from '@/components/Slider';
 import { DECK_IDS, DeckId } from '../useAudioEngine';
 import type { FxState } from '../fxRack';
 import type { ChannelState, MixerState } from '../useMixerState';
@@ -16,32 +17,25 @@ export function Mixer({
   onMasterChange: (value: number) => void;
 }) {
   return (
-    <section className="flex min-h-0 flex-col border-x bg-mist-900">
-      {/* Column count follows DECK_IDS — add a deck in deckId.ts and a strip appears here automatically. */}
-      <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns: `repeat(${DECK_IDS.length}, minmax(0, 1fr))` }}>
-        {DECK_IDS.map((id) => (
-          <ChannelStrip
-            key={id}
-            label={id}
-            value={state.channelState[id]}
-            onChange={(patch) => onChannelChange(id, patch)}
-          />
-        ))}
-      </div>
-      <EffectsUnit value={state.fx} onChange={onFxChange} />
-      <div className="flex flex-col items-center gap-2 border-t px-4 py-3">
-        <span className="text-xs uppercase tracking-wide text-zinc-500">Master</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
+    <section className="grid min-h-0 min-w-0 grid-cols-4 overflow-hidden border-x bg-mist-900">
+      <div className="flex min-h-0 flex-col items-center justify-center gap-2 border-r border-white/10 px-1 py-2">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Master</span>
+        <Slider
           value={state.master}
-          onChange={(e) => onMasterChange(Number(e.target.value))}
-          className="w-full"
-          aria-label="Master volume"
+          onChange={onMasterChange}
+          label="Master volume"
+          className="h-32 w-5 flex-none cursor-pointer accent-zinc-200"
         />
       </div>
+      {DECK_IDS.map((id) => (
+        <ChannelStrip
+          key={id}
+          label={id}
+          value={state.channelState[id]}
+          onChange={(patch) => onChannelChange(id, patch)}
+        />
+      ))}
+      <EffectsUnit value={state.fx} onChange={onFxChange} className="min-h-0 min-w-0 justify-center border-l-0 border-t-0 px-1 py-2" />
     </section>
   );
 }

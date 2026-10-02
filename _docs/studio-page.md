@@ -1,6 +1,6 @@
 # StudioPage
 
-A two-deck DJ view: a thin top bar, a CDJ on the left, a mixer in the middle, and a CDJ on the right.
+A two-deck DJ view: a thin top bar, a full-width stacked waveform panel, then a CDJ on the left, a mixer in the middle, and a CDJ on the right. Each mini overview stays below its load picker in the matching deck.
 
 ## Open questions
 
@@ -15,17 +15,19 @@ A two-deck DJ view: a thin top bar, a CDJ on the left, a mixer in the middle, an
 ┌──────────────────────────────────────────────────────────┐
 │ [home]                                       (thin bar)  │
 ├────────────────────┬──────────────────┬──────────────────┤
+│              Deck A waveform (large)                     │
+├──────────────────────────────────────────────────────────┤
+│              Deck B waveform (large)                     │
+├────────────────────┬──────────────────┬──────────────────┤
 │       CDJ A        │      Mixer       │       CDJ B      │
-│                    │  ┌────┐  ┌────┐  │                  │
-│                    │  │ HI │  │ HI │  │                  │
-│                    │  │ MID│  │ MID│  │                  │
-│                    │  │ LOW│  │ LOW│  │                  │
-│                    │  │ vol│  │ vol│  │                  │
+│ [load] [mini]      │ Master│ A │ B │FX│ [load] [mini]   │
+│                    │       EQ   EQ    │                  │
 └────────────────────┴──────────────────┴──────────────────┘
 ```
 
-- [x] `StudioPage.tsx`: full-height column, with `StudioTopbar` on top and a `grid grid-cols-3` filling the rest (`min-h-0 flex-1`).
-- [x] Left and right thirds are `<CDJ />` instances. The middle third is `<Mixer />`.
+- [x] `StudioPage.tsx`: full-height column with `StudioTopbar`, a stacked full-width waveform panel, and a `grid grid-cols-3` deck/mixer area filling the remaining height (`min-h-0 flex-1`).
+- [x] The waveform panel stacks the large A/B waveforms vertically with one shared beat-scale zoom. Each mini overview remains below its track picker inside its corresponding `<CDJ />`.
+- [x] The lower layout flanks `<Mixer />` with the left and right `<CDJ />` instances.
 - [x] Add the route (e.g. `/studio`) and a way to reach it from the home page.
 
 ## 1. `StudioTopbar`
@@ -98,9 +100,9 @@ Three zones: left, center, right.
   - [x] Jump mode: clicking a set cue calls `player.seek(cues[i])`. Unset cues are disabled (see open questions).
   - [x] Set and unset styling stays the same (solid vs outline).
 
-## 3. `Mixer` (middle third)
+## 3. `Mixer` (middle column)
 
-Two identical channel strips, one per deck (`ChannelStrip`).
+Four equal-width columns: master volume, Deck A channel strip, Deck B channel strip, and effects.
 
 - [x] `ChannelStrip` props: `label`, plus `value`/`onChange` for high, mid, low and volume (controlled, so the page can lift state later).
 - [x] Three **rotary knobs** stacked vertically: HIGH, MID, LOW.

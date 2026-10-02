@@ -6,10 +6,13 @@ import { useAudioEngine } from './useAudioEngine';
 import { useMixerState } from './useMixerState';
 import { clamp, DECK_IDS, DeckId } from './useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
+import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 
 // Matches the tempo slider's range in CDJ
 const TEMPO_RANGE_PERCENT = 50;
+const ABSOLUTE_MIN_BEATS_PER_VIEW = 0.01;
+const ABSOLUTE_MAX_BEATS_PER_VIEW = 65536;
 
 function defaultLoadedTrackIds(): Record<DeckId, string | null> {
   return DECK_IDS.reduce(
@@ -26,7 +29,34 @@ function StudioPage() {
   const mixer = useMixerState();
   const engine = useAudioEngine(mixer.state);
   const [loadedTrackIds, setLoadedTrackIds] = useState<Record<DeckId, string | null>>(defaultLoadedTrackIds);
+  const [deckBeatCounts, setDeckBeatCounts] = useState<Record<DeckId, number | null>>({
+    [DeckId.A]: null,
+    [DeckId.B]: null,
+  });
+  const [beatsPerView, setBeatsPerView] = useState(32);
   const { setChannel, setTempoMaster } = mixer;
+
+  const loadedBeatCounts = DECK_IDS
+    .map((id) => deckBeatCounts[id])
+    .filter((count): count is number => count !== null);
+  const minBeatsPerView = loadedBeatCounts.length
+    ? Math.max(ABSOLUTE_MIN_BEATS_PER_VIEW, Math.max(...loadedBeatCounts) / MAX_PLAYER_ZOOM)
+    : ABSOLUTE_MIN_BEATS_PER_VIEW;
+  const maxBeatsPerView = loadedBeatCounts.length
+    ? Math.min(ABSOLUTE_MAX_BEATS_PER_VIEW, Math.min(...loadedBeatCounts) / MIN_PLAYER_ZOOM)
+    : ABSOLUTE_MAX_BEATS_PER_VIEW;
+
+  const reportDeckBeatCount = useCallback((id: DeckId, count: number | null) => {
+    setDeckBeatCounts((current) => current[id] === count ? current : { ...current, [id]: count });
+  }, []);
+
+  const adjustWaveformZoom = useCallback((factor: number) => {
+    setBeatsPerView((current) => Math.min(maxBeatsPerView, Math.max(minBeatsPerView, current * factor)));
+  }, [maxBeatsPerView, minBeatsPerView]);
+
+  useEffect(() => {
+    setBeatsPerView((current) => Math.min(maxBeatsPerView, Math.max(minBeatsPerView, current)));
+  }, [maxBeatsPerView, minBeatsPerView]);
 
   // Auto-load the first N ready tracks into the N decks, in DECK_IDS order.
   useEffect(() => {
@@ -92,7 +122,7 @@ function StudioPage() {
 
   const gridTemplateColumns = [
     ...leftIds.map(() => 'minmax(0,1fr)'),
-    'minmax(0,0.4fr)',
+    'minmax(320px,0.6fr)',
     ...rightIds.map(() => 'minmax(0,1fr)'),
   ].join(' ');
 
@@ -111,6 +141,10 @@ function StudioPage() {
       syncMaster={masterId === id}
       onSyncMasterChange={(on) => setTempoMaster(on ? id : null)}
       tempoFollowing={isFollowing(id)}
+      sharedBeatsPerView={beatsPerView}
+      showZoomControls={id === DeckId.A}
+      onSharedZoomBy={adjustWaveformZoom}
+      onBeatCountChange={reportDeckBeatCount}
     />
   );
 
@@ -118,7 +152,26 @@ function StudioPage() {
     <ControlSelectionProvider bpm={automationBpm}>
       <div className="flex h-svh min-h-0 flex-col bg-[#0b0d10] text-zinc-200">
         <StudioTopbar />
-        <div className="grid min-h-0 flex-1" style={{ gridTemplateColumns }}>
+        <section aria-label="Deck waveforms" className="flex-none border-b bg-[#101214]">
+          <div className="bg-gradient-to-r from-yellow-400 to-pink-400 p-0.5">
+            <div className="bg-[#101214]">
+              {DECK_IDS.map((id) => (
+                <div
+                  key={id}
+                  className="relative h-14 min-h-0 min-w-0 border-b border-white/5 last:border-b-0"
+                  role="group"
+                  aria-label={`Deck ${id === DeckId.A ? 'A' : 'B'} waveform`}
+                >
+                  <div id={`studio-waveform-large-${id}`} className="h-full min-h-0 min-w-0" />
+                  <span className="pointer-events-none absolute left-2 top-1 z-10 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    {id === DeckId.A ? 'A' : 'B'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+        <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)]" style={{ gridTemplateColumns }}>
           {leftIds.map(renderDeck)}
           <Mixer
             state={mixer.state}

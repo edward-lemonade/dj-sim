@@ -9,8 +9,14 @@ import {
 
 export type PlayerStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'error';
 
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 48;
+export const MIN_PLAYER_ZOOM = 0.001;
+export const MAX_PLAYER_ZOOM = 4096;
+
+export function clampWaveformViewStart(start: number, width: number) {
+  const minimum = Math.min(0, 1 - width);
+  const maximum = Math.max(0, 1 - width);
+  return Math.min(maximum, Math.max(minimum, start));
+}
 
 export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
   const enableSpacebar = options?.enableSpacebar !== false;
@@ -24,27 +30,20 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Stable for the component's lifetime (created once, via the useState
-  // initializer form). Exposed below so a consumer (e.g. CDJ) can hand this
-  // exact element to MixerAudioEngine.connectMediaElement — the engine needs
-  // a real, persistent HTMLMediaElement to create a MediaElementAudioSourceNode
-  // from, which a private ref never let it reach.
+  // Keep one persistent audio element so the mixer can connect it exactly once.
   const [audioElement] = useState(() => new Audio());
 
   const blobUrlRef = useRef<string | null>(null);
   const peaksCacheRef = useRef<Map<string, ThreeBandPeaks>>(new Map());
-  // Same decode as peaksCacheRef, kept alongside it instead of discarded —
-  // scratch playback (see MixerAudioEngine.scratchTo) needs the actual
-  // samples, not just the peaks. Note this means every track opened this
-  // session keeps its full decoded PCM in memory for the component's
-  // lifetime, same tradeoff the peaks cache already made, just heavier.
+  // Retain decoded PCM alongside cached peaks so platter scratching can play
+  // grains from the original samples.
   const bufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
   const interactingRef = useRef(false);
   const openedIdRef = useRef<string | null>(null);
   openedIdRef.current = openedId;
 
   const viewWidth = 1 / zoom;
-  const viewEnd = Math.min(1, viewStart + viewWidth);
+  const viewEnd = viewStart + viewWidth;
 
   const revokeBlob = useCallback(() => {
     if (blobUrlRef.current) {
@@ -91,14 +90,8 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
     setErrorMessage(null);
 
     try {
-      // fetchTrackAudioBlob downloads the actual audio bytes (rather than
-      // pointing the element at a remote URL directly), and the object URL
-      // below is same-origin by construction. That's required, not just
-      // convenient: MixerAudioEngine.connectMediaElement() calls
-      // createMediaElementSource() on this element, and if its `src` were a
-      // bare cross-origin URL (e.g. a raw S3 link) instead of a locally
-      // downloaded blob, the element would be CORS-tainted and Web Audio
-      // would silently produce silence from it — no error, just no sound.
+      // Use a same-origin blob URL; Web Audio can silently mute a media source
+      // loaded directly from a cross-origin URL without permissive CORS.
       const blob = await fetchTrackAudioBlob(trackId);
       if (openedIdRef.current !== trackId) return;
 
@@ -186,19 +179,17 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
 
   const jumpStart = useCallback(() => seek(0), [seek]);
   const jumpEnd = useCallback(() => {
-    // Kept as `??` for parity with the original behavior: audio.duration is
-    // NaN (not null/undefined) before metadata loads, so this only falls
-    // back to durationSeconds in the same narrow case the prior code did.
+    // Preserve the existing fallback behavior when duration metadata is absent.
     const duration = audioElement.duration ?? durationSeconds;
     seek(Math.max(0, duration - 0.05));
     pause();
   }, [audioElement, durationSeconds, pause, seek]);
 
   const setView = useCallback((start: number, nextZoom = zoom) => {
-    const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+    const z = Math.min(MAX_PLAYER_ZOOM, Math.max(MIN_PLAYER_ZOOM, nextZoom));
     const width = 1 / z;
     setZoom(z);
-    setViewStart(Math.min(Math.max(0, start), 1 - width));
+    setViewStart(clampWaveformViewStart(start, width));
   }, [zoom]);
 
   const setInteracting = useCallback((value: boolean) => {
@@ -234,7 +225,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
         const width = 1 / zoom;
         const third = width / 3;
         if (frac < viewStart + third || frac > viewStart + third * 2) {
-          setViewStart(Math.min(Math.max(0, frac - width / 2), 1 - width));
+          setViewStart(clampWaveformViewStart(frac - width / 2, width));
         }
       }
       frame = requestAnimationFrame(tick);

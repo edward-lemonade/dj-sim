@@ -297,7 +297,7 @@ function AutomationPopup({
         role="dialog"
         aria-modal="true"
         aria-label={`Automate ${control.label}`}
-        className="fixed w-40 border border-zinc-600 bg-[#111418] px-2 pb-2 pt-1 text-zinc-200 shadow-2xl"
+        className="fixed w-40 border bg-[#111418] px-2 pb-2 pt-1 text-zinc-200 shadow-2xl"
         style={{ left: position.x, top: position.y }}
         onPointerDown={(event) => event.stopPropagation()}
         onContextMenu={(event) => event.preventDefault()}
@@ -313,7 +313,7 @@ function AutomationPopup({
                 onClick={() => setEndpoint(option)}
                 className={cn(
                   'flex h-6 items-center justify-center border text-[9px] capitalize',
-                  endpoint === option ? 'border-orange-400 bg-orange-400/15 text-orange-200' : 'border-zinc-700 text-zinc-400 hover:text-zinc-100',
+                  endpoint === option ? 'border-orange-400 bg-orange-400/15 text-orange-200' : 'text-zinc-400 hover:text-zinc-100',
                 )}
               >
                 <span className="text-[9px] leading-none">{option}</span>
@@ -332,7 +332,7 @@ function AutomationPopup({
               }}
               className={cn(
                 'h-6 min-w-0 w-full border bg-[#0b0d10] px-0 text-center text-[9px] leading-none text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-orange-400',
-                endpoint === 'custom' ? 'border-orange-400 bg-orange-400/15 text-orange-200' : 'border-zinc-700',
+                endpoint === 'custom' ? 'border-orange-400 bg-orange-400/15 text-orange-200' : '',
               )}
             />
           </div>
@@ -348,7 +348,7 @@ function AutomationPopup({
                 onClick={() => setUnit(option)}
                 className={cn(
                   'flex h-6 items-center justify-center border text-[9px] capitalize',
-                  unit === option ? 'border-orange-400 bg-orange-400/15 text-orange-200' : 'border-zinc-700 text-zinc-400 hover:text-zinc-100',
+                  unit === option ? 'border-orange-400 bg-orange-400/15 text-orange-200' : 'text-zinc-400 hover:text-zinc-100',
                 )}
               >
                 <span className="text-[9px] leading-none">{option}</span>
@@ -363,7 +363,7 @@ function AutomationPopup({
               min="0.1"
               step={unit === 'beats' ? '0.25' : '0.1'}
               onChange={(event) => setDuration(event.target.value)}
-              className="mt-1 h-6 w-full border border-zinc-700 bg-[#0b0d10] px-2 text-[9px] text-zinc-100 outline-none focus:border-orange-400"
+              className="mt-1 h-6 w-full border bg-[#0b0d10] px-2 text-[9px] text-zinc-100 outline-none focus:border-orange-400"
             />
           </label>
         </fieldset>

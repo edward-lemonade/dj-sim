@@ -2,12 +2,7 @@ import { useRef, useState } from 'react';
 import type { Track } from '@/lib/types/Track';
 import { DeckId } from '../useAudioEngine';
 
-// Seconds of playback per full platter rotation — tunable "feel" constant
-// for translating a drag into a scratch seek, not derived from anything
-// (real vinyl at 33⅓rpm is ~1.8s/rev, used here as a familiar starting
-// point). No longer used to derive the platter's own visual angle (see
-// `angle` state below) — only to convert a drag into onScratchMove's
-// deltaSeconds, same as before.
+// Audio-seconds moved per full platter rotation while scratching.
 const SECONDS_PER_REVOLUTION = 1.8;
 
 function isImageCover(cover: string | undefined | null): cover is string {
@@ -33,7 +28,6 @@ export function Platter({
   label,
   size,
   track,
-  currentTime,
   disabled,
   onScratchStart,
   onScratchMove,
@@ -42,12 +36,6 @@ export function Platter({
   label?: DeckId;
   size?: number;
   track?: Track | null;
-  // No longer drives rotation directly (see `angle` state below) — the
-  // platter shouldn't auto-spin during normal playback, since a
-  // continuously-moving target makes it hard to grab precisely for
-  // scratching. Kept in the props for API compatibility / potential future
-  // use (e.g. resyncing the visual angle on seek).
-  currentTime: number;
   /** True when there's nothing to scratch (no track loaded / not ready). */
   disabled?: boolean;
   onScratchStart?: () => void;
@@ -58,10 +46,7 @@ export function Platter({
   const ringRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ lastAngle: number; lastTime: number } | null>(null);
 
-  // Visual rotation, in degrees. Unlike the old currentTime-derived formula,
-  // this only ever changes inside handlePointerMove below — it does not
-  // track playback, so the platter sits still while the track plays and
-  // only turns in direct response to the user's own drag motion.
+  // Visual angle changes only while the user drags the platter.
   const [angle, setAngle] = useState(0);
 
   const coverUrl = isImageCover(track?.coverUrl) ? track.coverUrl : null;
@@ -85,15 +70,9 @@ export function Platter({
 
     dragRef.current = { lastAngle: nextAngle, lastTime: now };
 
-    // Rotate the ring by exactly the angle the pointer moved through — a
-    // direct 1:1 visual response to the drag. Same deltaAngle that feeds
-    // deltaSeconds below, just expressed in degrees for CSS instead of
-    // being converted to an audio-seconds offset.
+    // Keep the visual rotation 1:1 with pointer movement.
     setAngle((prev) => (prev + (deltaAngle * 180) / Math.PI) % 360);
 
-    // Unchanged from before: the caller (scratch engine) still receives
-    // audio-seconds moved, exactly as it did when the ring's angle was
-    // driven by currentTime.
     onScratchMove?.(deltaSeconds, deltaRealSeconds);
   };
 

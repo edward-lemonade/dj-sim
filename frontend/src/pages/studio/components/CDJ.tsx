@@ -1,12 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn } from 'cn';
-import { useTrackPlayer } from '@/hooks/useTrackPlayer';
+import {
+  clampWaveformViewStart,
+  MAX_PLAYER_ZOOM,
+  MIN_PLAYER_ZOOM,
+  useTrackPlayer,
+} from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
 import { DeckControls } from '@/components/DeckControls';
 import { Platter } from '@/pages/studio/components/Platter';
 import { clamp, type DeckId, type MixerAudioEngine } from '../useAudioEngine';
-import { CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
+import { CdjMiniWaveformDisplay, CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
 import { TrackPicker } from './TrackPicker';
 import { Button } from '@/components/ui/button';
@@ -32,6 +38,10 @@ export type CDJProps = {
   onSyncMasterChange: (on: boolean) => void;
   /** Another deck is the master and this deck's tempo is being driven by it. */
   tempoFollowing: boolean;
+  sharedBeatsPerView: number;
+  showZoomControls: boolean;
+  onSharedZoomBy: (factor: number) => void;
+  onBeatCountChange: (id: DeckId, count: number | null) => void;
 };
 
 export function CDJ({
@@ -48,18 +58,24 @@ export function CDJ({
   syncMaster,
   onSyncMasterChange,
   tempoFollowing,
+  sharedBeatsPerView,
+  showZoomControls,
+  onSharedZoomBy,
+  onBeatCountChange,
 }: CDJProps) {
   const player = useTrackPlayer({ enableSpacebar: false });
 
-  // Whether the deck was playing when the current scratch drag started —
-  // gates whether scratchTo() makes any sound, and whether handleScratchEnd
-  // resumes playback afterward. Dragging the platter while paused still
-  // moves the playhead (via player.seek below), just silently, and stays
-  // paused when released.
+  // Remember playback state so scratching resumes only decks that were playing.
   const wasPlayingRef = useRef(false);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [platterSize, setPlatterSize] = useState(PLATTER_MIN_SIZE);
+  const [waveformTarget, setWaveformTarget] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const target = document.getElementById(`studio-waveform-large-${deckId}`);
+    if (target) setWaveformTarget((current) => current === target ? current : target);
+  }, [deckId]);
 
   // Grow the platter to the space this row is given
   useEffect(() => {
@@ -73,9 +89,7 @@ export function CDJ({
     return () => ro.disconnect();
   }, []);
 
-  // Wire this deck's <audio> element into the mixer engine's EQ/volume/tempo
-  // chain. connectMediaElement is idempotent, so re-running this (StrictMode
-  // double-invoke, re-renders before deps settle) is safe.
+  // Connect this deck's persistent audio element to its mixer channel.
   useEffect(() => {
     engine.connectMediaElement(deckId, player.audioElement);
   }, [engine, deckId, player.audioElement]);
@@ -88,9 +102,29 @@ export function CDJ({
     player.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.id]);
+  useEffect(() => {
+    const beatCount = track?.bpm && player.durationSeconds > 0
+      ? player.durationSeconds * track.bpm / 60
+      : null;
+    onBeatCountChange(deckId, beatCount);
+  }, [deckId, onBeatCountChange, player.durationSeconds, track?.bpm, track?.id]);
+
+  const syncSharedZoom = useEffectEvent(() => {
+    const bpm = track?.bpm ?? 0;
+    if (bpm <= 0 || player.durationSeconds <= 0) return;
+    const totalBeats = player.durationSeconds * bpm / 60;
+    const zoom = Math.min(MAX_PLAYER_ZOOM, Math.max(MIN_PLAYER_ZOOM, totalBeats / sharedBeatsPerView));
+    if (Math.abs(player.zoom - zoom) < 0.001) return;
+    const width = 1 / zoom;
+    const center = player.currentTime / player.durationSeconds;
+    player.setView(clampWaveformViewStart(center - width / 2, width), zoom);
+  });
+
+  useEffect(() => {
+    syncSharedZoom();
+  }, [player.zoom, player.durationSeconds, track?.id, track?.bpm, sharedBeatsPerView]);
 
   const cues = normalizeCues(track?.cues);
-  const playing = player.status === 'playing';
   const transportDisabled = !track || player.status === 'idle' || player.status === 'loading' || player.status === 'error';
   const cueSlotsFull = cues.every((slot) => slot !== null);
   // BPM after applying the tempo adjustment — this is what the MetaField
@@ -112,39 +146,27 @@ export function CDJ({
   };
 
   const handleScratchStart = () => {
-    if (!player.audioBuffer || transportDisabled) return;
+    if (transportDisabled) return;
     wasPlayingRef.current = player.status === 'playing';
     player.setInteracting(true);
-    // Still paused during the drag itself: scratchTo() plays short grains
-    // straight from the decoded buffer as the audible output while
-    // scratching (see MixerAudioEngine's docstring — that's a separate
-    // audio path from normal <audio> element playback, not a mix of both),
-    // so the element is paused here to avoid the two overlapping. The
-    // permanent-pause bug was that this pause never got undone — see
-    // handleScratchEnd below, which now resumes if it was playing before.
+    // Pause element playback while scratch grains use the decoded buffer.
     if (wasPlayingRef.current) player.pause();
   };
 
   const handleScratchMove = (deltaSeconds: number, deltaRealSeconds: number) => {
-    if (!player.audioBuffer) return;
     const base = player.currentTime;
     const next = clamp(base + deltaSeconds, 0, player.durationSeconds || base);
-    if (wasPlayingRef.current) {
+    if (wasPlayingRef.current && player.audioBuffer) {
       engine.scratchTo(deckId, player.audioBuffer, base, deltaSeconds, deltaRealSeconds);
     }
-    // Moves the real playhead every move (not just on release) so the
-    // platter and waveform track the drag live. Silent on its own — the
-    // element is already paused — so this is safe even when not scratching audibly.
+    // Seek on every move so the platter and waveform follow the drag.
     player.seek(next);
   };
 
   const handleScratchEnd = () => {
     engine.stopScratch(deckId);
     player.setInteracting(false);
-    // Resume from wherever the drag left the playhead (already synced live
-    // by every handleScratchMove call above) if playback was running before
-    // the drag started. Without this, a scratch permanently pauses the deck
-    // — dragging the platter should nudge playback, not stop it.
+    // Resume from the dragged position only if playback was active before.
     if (wasPlayingRef.current) {
       wasPlayingRef.current = false;
       void player.play();
@@ -152,12 +174,13 @@ export function CDJ({
   };
 
   return (
-    <section
-      className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-[#101214]"
-      aria-label={label ? `Deck ${label}` : 'Deck'}
-    >
+    <>
+      <section
+        className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)_auto] bg-[#101214]"
+        aria-label={label ? `Deck ${label}` : 'Deck'}
+      >
       {tracks && onLoadTrack ? (
-        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+        <div className="flex min-w-0 shrink-0 items-center gap-2 border-b px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
           <span>Load</span>
           <TrackPicker
             tracks={tracks}
@@ -171,21 +194,19 @@ export function CDJ({
         </div>
       ) : null}
 
-      <CdjWaveformDisplay 
-        track={track}
-        player={player}
-      />
+      <div className="h-7 min-h-0 min-w-0 overflow-hidden border-b border-white/5">
+        <CdjMiniWaveformDisplay track={track} player={player} />
+      </div>
 
       <div
         ref={stageRef}
-        className="grid flex-1 min-h-0 grid-cols-[1fr_auto_1fr] grid-rows-[minmax(0,1fr)] items-center gap-10 border-t border-slate/40 px-4 py-4"
+        className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] items-center gap-4 border-t border-slate/40 px-2 py-2"
       >
         <div />
         <Platter
           label={label}
           size={platterSize}
           track={track}
-          currentTime={player.currentTime}
           disabled={transportDisabled}
           onScratchStart={handleScratchStart}
           onScratchMove={handleScratchMove}
@@ -249,6 +270,18 @@ export function CDJ({
         label={label}
         onCue={setCueAtPlayhead}
       />
-    </section>
+      </section>
+      {waveformTarget
+        ? createPortal(
+            <CdjWaveformDisplay
+              track={track}
+              player={player}
+              showZoomControls={showZoomControls}
+              onZoomBy={onSharedZoomBy}
+            />,
+            waveformTarget,
+          )
+        : null}
+    </>
   );
 }

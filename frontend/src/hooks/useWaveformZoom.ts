@@ -1,8 +1,8 @@
-import type { TrackPlayer } from '@/hooks/useTrackPlayer';
+import { clampWaveformViewStart, type TrackPlayer } from '@/hooks/useTrackPlayer';
 
 export const ZOOM_STEP = 0.7;
 export const MIN_ZOOM = 1;
-export const MAX_ZOOM = 48;
+export const MAX_ZOOM = 4096;
 
 export function useWaveformZoom(player: TrackPlayer, playhead?: number) {
   const zoomBy = (factor: number) => {
@@ -12,7 +12,7 @@ export function useWaveformZoom(player: TrackPlayer, playhead?: number) {
 
     const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, player.zoom / factor));
     const newWidth = 1 / newZoom;
-    const newStart = Math.max(0, Math.min(center - newWidth / 2, 1 - newWidth));
+    const newStart = clampWaveformViewStart(center - newWidth / 2, newWidth);
     player.setView(newStart, newZoom);
   };
 

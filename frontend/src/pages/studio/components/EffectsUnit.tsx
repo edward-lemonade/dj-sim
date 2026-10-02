@@ -1,22 +1,14 @@
 import type { ReactNode } from 'react';
 import { cn } from 'cn';
+import { Knob } from '@/components/Knob';
 import { Slider } from '@/components/Slider';
 import { DECK_IDS, DeckId } from '../useAudioEngine';
-import { FX_DIVISIONS, FX_TYPES, type FxDivision, type FxState, type FxType } from '../fxRack';
+import { FX_TYPES, type FxState, type FxType } from '../fxRack';
 
 const TYPE_LABELS: Record<FxType, string> = {
   echo: 'Echo',
   reverb: 'Reverb',
   flanger: 'Flanger',
-};
-
-const DIVISION_LABELS: Record<FxDivision, string> = {
-  0.25: '1/4',
-  0.5: '1/2',
-  0.75: '3/4',
-  1: '1',
-  2: '2',
-  4: '4',
 };
 
 function FxButton({
@@ -52,42 +44,46 @@ function FxButton({
 export function EffectsUnit({
   value,
   onChange,
+  className,
 }: {
   value: FxState;
   onChange: (patch: Partial<FxState>) => void;
+  className?: string;
 }) {
-  const beatSynced = value.type !== 'reverb';
-
   return (
-    <div className="flex flex-col gap-1.5 border-t px-3 py-2">
-      <div className="flex gap-1">
+    <div className={cn('flex h-full min-h-0 min-w-0 flex-col items-center justify-center gap-2 px-1 py-2', className)}>
+      <div role="group" aria-label="Effect type" className="flex w-full flex-col gap-1">
         {FX_TYPES.map((type) => (
           <FxButton key={type} active={value.type === type} onClick={() => onChange({ type })}>
             {TYPE_LABELS[type]}
           </FxButton>
         ))}
       </div>
-      <div className="flex gap-1">
-        {FX_DIVISIONS.map((division) => (
-          <FxButton
-            key={division}
-            active={value.division === division}
-            disabled={!beatSynced}
-            label={`${DIVISION_LABELS[division]} beat`}
-            onClick={() => onChange({ division })}
-          >
-            {DIVISION_LABELS[division]}
-          </FxButton>
-        ))}
+      <div role="group" aria-label="Effect timing" className="border-t border-white/10 pt-2">
+        <Knob
+          size="sm"
+          label="Beats"
+          value={value.division}
+          min={0.25}
+          max={4}
+          step={0.01}
+          defaultValue={1}
+          disabled={value.type === 'reverb'}
+          onChange={(division) => onChange({ division })}
+          labelPosition="top"
+        />
       </div>
-      <Slider
-        orientation="horizontal"
-        label="Effect level"
-        value={value.wet}
-        onChange={(wet) => onChange({ wet })}
-        className="w-full cursor-pointer accent-zinc-200"
-      />
-      <div className="flex gap-1">
+      <div className="flex flex-col items-center justify-center gap-1 border-t border-white/10 pt-2">
+        <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Level</span>
+        <Slider
+          orientation="vertical"
+          label="Effect level"
+          value={value.wet}
+          onChange={(wet) => onChange({ wet })}
+          className="h-20 w-4 cursor-pointer accent-zinc-200"
+        />
+      </div>
+      <div role="group" aria-label="Effect sends" className="flex w-full gap-1 border-t border-white/10 pt-2">
         {DECK_IDS.map((id) => (
           <FxButton
             key={id}

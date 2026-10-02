@@ -30,7 +30,6 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
 
   return (
     <div className="grid grid-cols-[auto_1fr_auto] items-center gap-6 border-t bg-[#101214] px-4 py-3">
-      {/* Left: Cue above, Play/Pause below, both circular */}
       <div className="flex flex-col items-center gap-2">
         <button
           type="button"
@@ -57,7 +56,6 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         </button>
       </div>
 
-      {/* Center: go to start | ±1 beat | ±2 beats | ±4 beats (1 measure) | go to end */}
       <div className="flex items-center justify-center gap-3">
         <button
           type="button"
@@ -115,7 +113,6 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         </button>
       </div>
 
-      {/* Right: 8 cue buttons, jump mode */}
       <CueButtons
         mode="jump"
         cues={cues}

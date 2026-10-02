@@ -10,56 +10,23 @@ import { Playhead } from './Playhead';
 
 export enum WaveformDisplayMode {EDIT, CDJ};
 
-// --- CDJ windowing -------------------------------------------------------
-//
-// In CDJ mode the visible window slides continuously with playback. Naively
-// recomputing WaveformCanvas's viewStart/viewEnd every render means a full
-// canvas redraw every frame, which is expensive enough to visibly stutter.
-//
-// Instead, the big waveform canvas is rendered once across a window wider
-// than what's visible (CDJ_WINDOW_SPAN_MULTIPLIER × the visible span), and
-// that canvas is positioned with a CSS `transform: translateX(...)` that's
-// recalculated every render. The transform is pure compositing — no redraw —
-// so it stays smooth every frame. The rendered window itself (state, kept in
-// a ref) is only recomputed, triggering a real redraw, once the playhead
-// gets close to either edge of it, or the zoom level changes.
+// CDJ mode slides a wider offscreen canvas with transforms and redraws only
+// near its edges or when zoom changes, avoiding per-frame canvas redraws.
 
 // Width of the offscreen-rendered window, as a multiple of the visible span.
 const CDJ_WINDOW_SPAN_MULTIPLIER = 3;
-// Recompute (redraw) the window once the playhead is within this fraction of
-// the window's span from either edge. Must stay >= (1 - CDJ_PLAYHEAD_FRACTION)
-// / CDJ_WINDOW_SPAN_MULTIPLIER (0.75/3 = 0.25 for the values below) — below
-// that threshold, the *visible* viewport (which extends (1-fraction) *
-// visibleSpan past the playhead) can run past the edge of the rendered
-// offscreen window before a redraw is triggered, at which point the CSS
-// transform is asked to reveal canvas content that was never painted: the
-// waveform appears frozen/stuck rather than sliding, most noticeable during
-// fast scrubbing (e.g. platter drag) where the playhead can move a large
-// distance between renders.
+// Keep this at least (1 - playhead fraction) / window multiplier so fast
+// scrubbing cannot reveal unpainted canvas beyond the rendered window.
 const CDJ_REDRAW_MARGIN = 0.25;
 // Where the playhead sits, as a fraction of the visible width, in CDJ mode.
 const CDJ_PLAYHEAD_FRACTION = 0.25;
 
-// The rendered window is always exactly CDJ_WINDOW_SPAN_MULTIPLIER × the
-// visible span (computeCdjWindow guarantees this). Right after a redraw the
-// playhead sits at exactly CDJ_PLAYHEAD_FRACTION of the way into that
-// window — but the window then stays fixed while playback keeps advancing,
-// so that fraction drifts as time passes. The slide has to be recomputed
-// every render from the *live* playhead to track that drift; a constant
-// only happens to be correct in the instant right after a redraw. This is
-// still cheap: it's plain arithmetic on numbers already in hand (no DOM
-// measurement), driving a `transform` (compositor-only, not `left`, which
-// would force layout every frame).
+// Recompute the compositor-only slide from the live playhead each render;
+// the playhead's fraction drifts while the rendered window stays fixed.
 const CDJ_CANVAS_WIDTH_PERCENT = CDJ_WINDOW_SPAN_MULTIPLIER * 100;
 
-// The *visible* CDJ window (as opposed to cdjWindow/CdjWindow below, which is
-// the wider offscreen-rendered window for the big waveform canvas). This is
-// cheap plain arithmetic, safe to recompute every render, and is what
-// overlays (BeatGrid, CueMarkers, Playhead) are drawn against. Exported so
-// other display-only readouts of the CDJ view — e.g. MiniWaveform's viewport
-// indicator — can stay in sync with the same continuously-sliding window
-// instead of falling back to player.viewStart/viewEnd, which only updates in
-// occasional jumps (see useTrackPlayer's auto-follow effect).
+// Returns the live visible CDJ window for overlays and miniwaveform viewport
+// markers; player.viewStart/viewEnd update less often during auto-follow.
 export function computeCdjVisibleWindow(
   playhead: number | undefined,
   playerViewStart: number,
@@ -79,10 +46,8 @@ function computeCdjWindow(playhead: number, visibleSpan: number): CdjWindow {
   return { start, end: start + span, span };
 }
 
-// Synchronous (no effect lag): recomputed inline during render, in a ref, so
-// the canvas always gets an up-to-date window in the same render pass that
-// the playhead moved in. Only actually changes (and therefore redraws) when
-// the playhead nears the window's edge or the visible span changes.
+// Keep the render window in a ref and redraw only when its span changes or
+// the playhead approaches an edge.
 function useCdjWindow(playhead: number, visibleSpan: number): CdjWindow {
   const ref = useRef<CdjWindow | null>(null);
   if (!ref.current) {
@@ -108,6 +73,8 @@ export function StageWaveform({
   bands,
   onSeek,
   displayMode = WaveformDisplayMode.EDIT,
+  showZoomControls = true,
+  onZoomBy,
 }: {
   peaks: ThreeBandPeaks | null;
   player: TrackPlayer;
@@ -119,19 +86,19 @@ export function StageWaveform({
   // Not used in CDJ mode, since the big waveform there is a pure readout.
   onSeek?: (fraction: number) => void;
   displayMode?: WaveformDisplayMode;
+  showZoomControls?: boolean;
+  onZoomBy?: (factor: number) => void;
 }) {
   const { zoomBy } = useWaveformZoom(player, playhead);
+  const handleZoomBy = onZoomBy ?? zoomBy;
 
   const isCdj = displayMode === WaveformDisplayMode.CDJ;
 
-  // The visible span (in track-fraction units) is driven by player.zoom
-  // either way; only how it's centered differs between edit and CDJ mode.
+  // Zoom controls the span; CDJ mode centers its live viewport on playback.
   const visibleSpan = Math.max(1e-6, player.viewEnd - player.viewStart);
   const currentPlayhead = playhead ?? player.viewStart + visibleSpan / 2;
 
-  // True visible window: what BeatGrid/CueMarkers/Playhead are drawn against.
-  // In CDJ mode this slides every frame with playback, which is fine — those
-  // overlays are cheap to re-render, unlike the big waveform canvas.
+  // Overlays use the live CDJ viewport, which is cheap to update every frame.
   const { start: cdjViewStart, end: cdjViewEnd } = computeCdjVisibleWindow(
     playhead,
     player.viewStart,
@@ -141,12 +108,9 @@ export function StageWaveform({
   const viewStart = isCdj ? cdjViewStart : player.viewStart;
   const viewEnd = isCdj ? cdjViewEnd : player.viewEnd;
 
-  // Offscreen-rendered window + slide transform for the big waveform canvas,
-  // only used in CDJ mode.
+  // The wider rendered window and compositor slide are used only in CDJ mode.
   const cdjWindow = useCdjWindow(currentPlayhead, visibleSpan);
-  // Fraction of the way across the rendered window the playhead currently
-  // sits — exactly CDJ_PLAYHEAD_FRACTION right after a redraw, drifting
-  // above or below that as playback advances until the next redraw.
+  // Track the playhead's live position within the wider rendered window.
   const cdjLocalFraction = (currentPlayhead - cdjWindow.start) / cdjWindow.span;
   const cdjSlidePercent =
     (CDJ_PLAYHEAD_FRACTION / CDJ_WINDOW_SPAN_MULTIPLIER - cdjLocalFraction) * 100;
@@ -162,9 +126,7 @@ export function StageWaveform({
   return (
     <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
       {isCdj ? (
-        // Pure readout: no click-to-seek, no drag-to-pan, no view feedback —
-        // the window is driven entirely by the playhead (via cdjWindow above),
-        // and slid into place with a transform instead of being redrawn.
+        // CDJ readout: playback drives the window; a transform slides it.
         <div style={cdjSliderStyle}>
           <WaveformCanvas
             variant="zoomed"
@@ -211,27 +173,29 @@ export function StageWaveform({
         viewEnd={viewEnd}
       />
 
-      <div className="absolute right-4 top-4 z-10 flex flex-col overflow-hidden rounded-md border bg-zinc-900/80 backdrop-blur-sm">
-        <button
-          type="button"
-          onClick={() => zoomBy(ZOOM_STEP)}
-          className="flex h-8 w-8 items-center justify-center text-zinc-300 hover:bg-zinc-700 hover:text-white"
-          aria-label="Zoom in"
-          title="Zoom in"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </button>
-        <div className="h-px bg-zinc-700" />
-        <button
-          type="button"
-          onClick={() => zoomBy(1 / ZOOM_STEP)}
-          className="flex h-8 w-8 items-center justify-center text-zinc-300 hover:bg-zinc-700 hover:text-white"
-          aria-label="Zoom out"
-          title="Zoom out"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </button>
-      </div>
+      {showZoomControls ? (
+        <div className="absolute right-2 top-2 z-10 flex flex-row overflow-hidden rounded-md border bg-zinc-900/80 backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={() => handleZoomBy(ZOOM_STEP)}
+            className="flex h-7 w-7 items-center justify-center text-zinc-300 hover:bg-zinc-700 hover:text-white"
+            aria-label="Zoom in"
+            title="Zoom in"
+          >
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <div className="my-1 w-px bg-zinc-700" />
+          <button
+            type="button"
+            onClick={() => handleZoomBy(1 / ZOOM_STEP)}
+            className="flex h-7 w-7 items-center justify-center text-zinc-300 hover:bg-zinc-700 hover:text-white"
+            aria-label="Zoom out"
+            title="Zoom out"
+          >
+            <ZoomOut className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

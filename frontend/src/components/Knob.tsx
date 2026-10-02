@@ -12,6 +12,7 @@ type KnobProps = {
   defaultValue?: number;
   disabled?: boolean;
   size?: 'sm' | 'md';
+  labelPosition?: 'top' | 'bottom';
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -28,6 +29,7 @@ export function Knob({
   defaultValue = 0,
   disabled,
   size = 'md',
+  labelPosition = 'bottom',
 }: KnobProps) {
   const dragRef = useRef<{ lastY: number } | null>(null);
   const range = max - min;
@@ -52,7 +54,7 @@ export function Knob({
   );
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className={cn('flex items-center gap-1', labelPosition === 'top' ? 'flex-col-reverse' : 'flex-col')}>
       <div
         role="slider"
         tabIndex={disabled || automating ? -1 : 0}

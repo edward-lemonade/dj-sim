@@ -5,6 +5,7 @@ import { BandOptions, WaveformCanvas } from "./WaveformCanvas";
 import { peaksFromOverview, type ThreeBandPeaks } from "@/lib/utils/threeBandWaveform";
 import type { TrackPlayer } from "@/hooks/useTrackPlayer";
 import type { Track } from "@/lib/types/Track";
+import { cn } from 'cn';
 
 export function MiniWaveform({
   track,
@@ -14,25 +15,24 @@ export function MiniWaveform({
   onSeek,
   viewStart,
   viewEnd,
+  className = 'h-10',
 }: {
   track: Track;
   peaks: ThreeBandPeaks | null;
   player: TrackPlayer;
   playhead?: number;
   onSeek?: (fraction: number) => void;
-  // Overrides for the viewport indicator box. Defaults to player.viewStart/
-  // viewEnd (the plain pan/zoom state) when omitted. CDJ mode passes the
-  // continuously playhead-centered window instead — see CdjWaveformDisplay —
-  // since player.viewStart/viewEnd there only update in occasional jumps
-  // (useTrackPlayer's auto-follow effect), not every frame.
+  // CDJ mode passes the live playhead-centered window; other views use the
+  // player's pan/zoom window by default.
   viewStart?: number;
   viewEnd?: number;
+  className?: string;
 }) {
   const effectiveViewStart = viewStart ?? player.viewStart;
   const effectiveViewEnd = viewEnd ?? player.viewEnd;
 
   return (
-    <div className="relative h-10 overflow-hidden">
+    <div className={cn('relative overflow-hidden', className)}>
       <WaveformCanvas
         variant="overview"
         bands={BandOptions.Single}

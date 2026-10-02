@@ -4,8 +4,7 @@ export const FX_TYPES = ['echo', 'reverb', 'flanger'] as const;
 export type FxType = (typeof FX_TYPES)[number];
 
 // In beats: echo time = this many beats, flanger sweep = 4x this many beats
-export const FX_DIVISIONS = [0.25, 0.5, 0.75, 1, 2, 4] as const;
-export type FxDivision = (typeof FX_DIVISIONS)[number];
+export type FxDivision = number;
 
 export interface FxState {
   type: FxType;
@@ -27,15 +26,7 @@ const FLANGER_BASE_SECONDS = 0.004;
 const FLANGER_DEPTH_SECONDS = 0.0025;
 const FLANGER_SWEEP_BEATS = 4;
 
-/**
- * Shared send/return effects unit. Every deck's send sums into `input`;
- * the processed signal leaves through `output`, which is also the wet level.
- *
- * All three effects run in parallel behind gates, so switching type never
- * clicks and the old effect's tail rings out. The rack only returns wet
- * signal — the dry path is the channel's own, so the flanger's comb comes
- * from the delayed copy summing with the dry signal at the master.
- */
+/** Shared wet return for all decks; dry audio remains on each channel path. */
 export class FxRack {
   readonly input: GainNode;
   readonly output: GainNode;
