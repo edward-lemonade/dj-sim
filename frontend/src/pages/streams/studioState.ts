@@ -1,4 +1,4 @@
-import type { MixerState } from '@/pages/studio/useMixerState';
+import type { MixerState } from '@/hooks/useMixerState';
 import type { StreamDeckSnapshot, StudioSnapshot } from '@/lib/types/Stream';
 
 export type StreamDeckId = 'A' | 'B';

@@ -3,7 +3,7 @@ import { cn } from 'cn';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Track } from '@/lib/types/Track';
-import type { DeckId } from '../useAudioEngine';
+import type { DeckId } from '../hooks/useAudioEngine';
 import { KeyNotationType } from '@/constants/KeyNotation';
 import { formatKey } from '@/lib/utils/formatKey';
 import { keyColor } from '@/lib/utils/formatKey';

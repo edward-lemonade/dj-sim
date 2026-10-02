@@ -4,7 +4,7 @@ import { ENV } from '@/config/env';
 import API_ROUTES from '@/config/api';
 import type { StreamConnection, StreamEvent, StudioSnapshot } from '@/lib/types/Stream';
 import { endStream, joinStream } from '@/lib/api/StreamsAPI';
-import type { MixerAudioEngine } from '@/pages/studio/useAudioEngine';
+import type { MixerAudioEngine } from '@/hooks/useAudioEngine';
 import { ApiError, axiosClient } from '@/lib/clients/axios';
 import { diffStudioSnapshots, reduceStudioSnapshot, type StudioAction } from './studioState';
 

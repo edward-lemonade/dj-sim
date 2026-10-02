@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { cn } from 'cn';
 import { Knob } from '@/components/Knob';
 import { Slider } from '@/components/Slider';
-import { DECK_IDS, DeckId } from '../useAudioEngine';
-import { FX_TYPES, type FxState, type FxType } from '../fxRack';
+import { DECK_IDS, DeckId } from '../hooks/useAudioEngine';
+import { FX_TYPES, type FxState, type FxType } from '../lib/utils/fxRack';
 
 const TYPE_LABELS: Record<FxType, string> = {
   echo: 'Echo',

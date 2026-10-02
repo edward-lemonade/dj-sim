@@ -1,6 +1,6 @@
 import { Circle, Eye, Home, LoaderCircle, Radio, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ExitConfirmModal } from '@/pages/studio/components/ExitConfirmModal';
+import { ExitConfirmModal } from '@/components/ExitConfirmModal';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 

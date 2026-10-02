@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Track } from '@/lib/types/Track';
-import { DeckId } from '../useAudioEngine';
+import { DeckId } from '../hooks/useAudioEngine';
 
 // Audio-seconds moved per full platter rotation while scratching.
 const SECONDS_PER_REVOLUTION = 1.8;

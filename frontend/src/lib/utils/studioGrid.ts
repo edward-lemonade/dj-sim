@@ -1,4 +1,4 @@
-import { DECK_IDS, type DeckId } from '../useAudioEngine';
+import { DECK_IDS, type DeckId } from '../../hooks/useAudioEngine';
 
 export function getStudioDeckLayout(deckIds: DeckId[] = DECK_IDS) {
   const half = Math.ceil(deckIds.length / 2);

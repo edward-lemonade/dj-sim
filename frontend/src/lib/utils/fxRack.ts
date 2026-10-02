@@ -1,4 +1,4 @@
-import type { DeckId } from './useAudioEngine';
+import type { DeckId } from '../../hooks/useAudioEngine';
 
 export const FX_TYPES = ['echo', 'reverb', 'flanger'] as const;
 export type FxType = (typeof FX_TYPES)[number];

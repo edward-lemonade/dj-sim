@@ -1,4 +1,4 @@
-import type { MixerState } from '@/pages/studio/useMixerState';
+import type { MixerState } from '@/hooks/useMixerState';
 import type { WaveformOverview } from './Track';
 
 export type ListedStream = {

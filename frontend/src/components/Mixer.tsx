@@ -1,9 +1,9 @@
-import { ChannelStrip } from '@/pages/studio/components/ChannelStrip';
-import { EffectsUnit } from '@/pages/studio/components/EffectsUnit';
+import { ChannelStrip } from '@/components/ChannelStrip';
+import { EffectsUnit } from '@/components/EffectsUnit';
 import { Slider } from '@/components/Slider';
-import { DECK_IDS, DeckId } from '../useAudioEngine';
-import type { FxState } from '../fxRack';
-import type { ChannelState, MixerState } from '../useMixerState';
+import { DECK_IDS, DeckId } from '../hooks/useAudioEngine';
+import type { FxState } from '../lib/utils/fxRack';
+import type { ChannelState, MixerState } from '../hooks/useMixerState';
 
 export function Mixer({
   state,

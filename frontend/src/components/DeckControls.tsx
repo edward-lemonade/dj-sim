@@ -1,7 +1,7 @@
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { CueButtons } from '@/components/CueButtons';
 import type { TrackPlayer } from '@/hooks/useTrackPlayer';
-import type { DeckId } from '@/pages/studio/useAudioEngine';
+import type { DeckId } from '@/hooks/useAudioEngine';
 
 const BEAT_STEPS = [1, 2, 4] as const;
 

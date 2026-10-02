@@ -1,6 +1,6 @@
 import { Knob } from '@/components/Knob';
-import type { ChannelState } from '../useMixerState';
-import { DeckId } from '../useAudioEngine';
+import type { ChannelState } from '../hooks/useMixerState';
+import { DeckId } from '../hooks/useAudioEngine';
 import { Slider } from '@/components/Slider';
 
 export function ChannelStrip({

@@ -38,7 +38,7 @@
 import { useEffect, useRef } from "react";
 import type { MixerState } from "./useMixerState";
 import { createPitchCorrectNode, setPitchRatio } from "@/lib/utils/pitchCorrectNode";
-import { FxRack, type FxDivision, type FxState } from "./fxRack";
+import { FxRack, type FxDivision, type FxState } from "../lib/utils/fxRack";
 
 export enum DeckId {A,B}
 export const DECK_IDS: DeckId[] = [DeckId.A, DeckId.B];

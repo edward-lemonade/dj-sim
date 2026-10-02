@@ -1,5 +1,5 @@
 import type { ReactNode, PointerEventHandler } from 'react';
-import { DECK_IDS, DeckId } from '../useAudioEngine';
+import { DECK_IDS, DeckId } from '../hooks/useAudioEngine';
 
 export function StudioConsoleLayout({
   topbar,
