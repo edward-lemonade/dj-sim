@@ -55,6 +55,9 @@ Show only currently open streams. Each list item displays:
 
 - Streamer's profile picture and username.
 - Stream name.
+- Cover art for the two loaded decks, displayed as a split cover pill across the
+  right half of the card. Cover art can be sampled from the latest stream
+  snapshot when the directory refreshes; it does not need a live subscription.
 - Elapsed duration, derived from the stream start time and refreshed while
   visible.
 

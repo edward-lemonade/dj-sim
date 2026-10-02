@@ -26,16 +26,17 @@ func (s *Session) BeforeCreate(_ *gorm.DB) error {
 }
 
 type ListedSession struct {
-	ID        string    `json:"id"`
-	Username  string    `json:"username"`
-	AvatarURL string    `json:"avatarUrl"`
-	Name      string    `json:"name"`
-	StartedAt time.Time `json:"startedAt"`
+	ID        string     `json:"id"`
+	Username  string     `json:"username"`
+	AvatarURL string     `json:"avatarUrl"`
+	Name      string     `json:"name"`
+	StartedAt time.Time  `json:"startedAt"`
+	CoverArts [2]*string `json:"coverArts"`
 }
 
 func ToListed(s Session) ListedSession {
 	return ListedSession{
 		ID: s.ID, Username: s.Username, AvatarURL: s.AvatarURL,
-		Name: s.Name, StartedAt: s.StartedAt,
+		Name: s.Name, StartedAt: s.StartedAt, CoverArts: [2]*string{},
 	}
 }

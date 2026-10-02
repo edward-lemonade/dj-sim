@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,6 +35,12 @@ type Participant struct {
 	ConnectionID string
 	Owner        bool
 	Send         func(Event) error
+}
+
+type snapshotDeck struct {
+	Track *struct {
+		CoverURL string `json:"coverUrl"`
+	} `json:"track"`
 }
 
 type liveSession struct {
@@ -433,8 +441,8 @@ func validateTrackOrNull(payload json.RawMessage) bool {
 	if string(payload) == "null" {
 		return true
 	}
-	track, ok := objectWithFields(payload, "id", "title", "artist", "bpm", "beatOffset", "key", "durationSeconds", "cues", "waveformOverview")
-	if !ok || len(track) != 9 || !hasRequired(track, "id", "title", "artist", "bpm", "beatOffset", "key", "durationSeconds", "cues", "waveformOverview") {
+	track, ok := objectWithFields(payload, "id", "title", "artist", "bpm", "beatOffset", "key", "durationSeconds", "cues", "waveformOverview", "coverUrl")
+	if !ok || len(track) != 10 || !hasRequired(track, "id", "title", "artist", "bpm", "beatOffset", "key", "durationSeconds", "cues", "waveformOverview", "coverUrl") {
 		return false
 	}
 	if string(track["waveformOverview"]) != "null" {
@@ -443,7 +451,32 @@ func validateTrackOrNull(payload json.RawMessage) bool {
 			return false
 		}
 	}
-	return json.Valid(track["cues"])
+	return json.Valid(track["cues"]) && validateCoverURL(track["coverUrl"])
+}
+
+func validateCoverURL(payload json.RawMessage) bool {
+	if string(payload) == "null" {
+		return true
+	}
+	var value string
+	if json.Unmarshal(payload, &value) != nil || len(value) > 48<<10 {
+		return false
+	}
+	if value == "" {
+		return true
+	}
+	if strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://") {
+		parsed, err := url.ParseRequestURI(value)
+		return err == nil && (parsed.Scheme == "https" || parsed.Scheme == "http") && parsed.Host != ""
+	}
+	for _, mime := range []string{"image/jpeg", "image/png", "image/webp", "image/gif"} {
+		prefix := "data:" + mime + ";base64,"
+		if strings.HasPrefix(value, prefix) {
+			_, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, prefix))
+			return err == nil
+		}
+	}
+	return false
 }
 
 func objectWithFields(payload json.RawMessage, fields ...string) (map[string]json.RawMessage, bool) {
@@ -503,6 +536,35 @@ func (m *Manager) OwnerConnected(streamID string) bool {
 		}
 	}
 	return false
+}
+
+func (m *Manager) CoverArts(streamID string) [2]string {
+	m.mu.Lock()
+	live := m.sessions[streamID]
+	m.mu.Unlock()
+	if live == nil {
+		return [2]string{}
+	}
+	live.mu.Lock()
+	snapshot := append(json.RawMessage(nil), live.snapshot...)
+	live.mu.Unlock()
+	if len(snapshot) == 0 {
+		return [2]string{}
+	}
+	var current struct {
+		Decks map[string]snapshotDeck `json:"decks"`
+	}
+	if json.Unmarshal(snapshot, &current) != nil {
+		return [2]string{}
+	}
+	var covers [2]string
+	if deck := current.Decks["A"]; deck.Track != nil {
+		covers[0] = deck.Track.CoverURL
+	}
+	if deck := current.Decks["B"]; deck.Track != nil {
+		covers[1] = deck.Track.CoverURL
+	}
+	return covers
 }
 
 func (m *Manager) End(streamID string) {

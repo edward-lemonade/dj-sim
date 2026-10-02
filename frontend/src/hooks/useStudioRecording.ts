@@ -126,7 +126,7 @@ export function useStudioRecording(engine: MixerAudioEngine) {
 
     try {
       await engine.resume();
-      const worker = new Worker(new URL('./recordingEncoder.worker.ts', import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL('../lib/utils/recordingEncoder.worker.ts', import.meta.url), { type: 'module' });
       encoderRef.current = worker;
       worker.onmessage = (event: MessageEvent<EncoderMessage>) => {
         const message = event.data;

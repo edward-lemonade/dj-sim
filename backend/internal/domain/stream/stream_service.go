@@ -65,7 +65,15 @@ func (s *Service) List(ctx context.Context) ([]ListedSession, error) {
 	}
 	result := make([]ListedSession, 0, len(sessions))
 	for _, session := range sessions {
-		result = append(result, ToListed(session))
+		listed := ToListed(session)
+		covers := s.manager.CoverArts(session.ID)
+		for deck, cover := range covers {
+			if cover != "" {
+				value := cover
+				listed.CoverArts[deck] = &value
+			}
+		}
+		result = append(result, listed)
 	}
 	return result, nil
 }

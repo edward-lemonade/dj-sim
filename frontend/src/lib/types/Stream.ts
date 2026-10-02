@@ -34,6 +34,7 @@ export type ListedStream = {
   avatarUrl: string;
   name: string;
   startedAt: string;
+  coverArts: [string | null, string | null];
 };
 
 export type StreamDeckSnapshot = {
@@ -47,6 +48,7 @@ export type StreamDeckSnapshot = {
     durationSeconds: number;
     cues: Array<number | null>;
     waveformOverview: WaveformOverview | null;
+    coverUrl: string | null;
   };
   playing: boolean;
   positionSeconds: number;

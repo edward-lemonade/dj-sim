@@ -24,7 +24,7 @@ function toViewTrack(track: StreamDeckSnapshot['track']): Track | null {
     ...track,
     duration: `${Math.floor(track.durationSeconds / 60)}:${String(Math.floor(track.durationSeconds % 60)).padStart(2, '0')}`,
     coverLabel: '',
-    coverUrl: null,
+    coverUrl: track.coverUrl,
     libraryStatus: 'ready',
   };
 }

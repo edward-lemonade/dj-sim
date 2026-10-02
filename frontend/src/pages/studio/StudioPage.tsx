@@ -29,7 +29,64 @@ function parseTrackDuration(value: string): number {
   return parts.reduce((total, part) => total * 60 + part, 0);
 }
 
-function toStreamTrack(track: Track): StreamDeckSnapshot['track'] {
+const MAX_STREAM_COVER_URL_LENGTH = 48 * 1024;
+const STREAM_COVER_SIZE = 192;
+const streamCoverThumbnails = new Map<string, Promise<string | null>>();
+
+function toStreamCoverUrl(value: string | null): Promise<string | null> {
+  if (!value) return Promise.resolve(null);
+  const cached = streamCoverThumbnails.get(value);
+  if (cached) return cached;
+
+  const thumbnail = createStreamCoverThumbnail(value);
+  streamCoverThumbnails.set(value, thumbnail);
+  return thumbnail;
+}
+
+async function createStreamCoverThumbnail(value: string): Promise<string | null> {
+  if (!value.startsWith('data:image/')) {
+    if (value.length > MAX_STREAM_COVER_URL_LENGTH) return null;
+    return isSafeStreamImageUrl(value) ? value : null;
+  }
+  if (!/^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/]*={0,2}$/.test(value)) return null;
+
+  try {
+    const image = await createImageBitmap(await (await fetch(value)).blob());
+    const canvas = document.createElement('canvas');
+    canvas.width = STREAM_COVER_SIZE;
+    canvas.height = STREAM_COVER_SIZE;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+
+    const scale = Math.min(STREAM_COVER_SIZE / image.width, STREAM_COVER_SIZE / image.height);
+    const width = Math.round(image.width * scale);
+    const height = Math.round(image.height * scale);
+    context.drawImage(image, (STREAM_COVER_SIZE - width) / 2, (STREAM_COVER_SIZE - height) / 2, width, height);
+    image.close();
+
+    let quality = 0.78;
+    let thumbnail = canvas.toDataURL('image/jpeg', quality);
+    while (thumbnail.length > MAX_STREAM_COVER_URL_LENGTH && quality > 0.35) {
+      quality -= 0.1;
+      thumbnail = canvas.toDataURL('image/jpeg', quality);
+    }
+    return thumbnail.length <= MAX_STREAM_COVER_URL_LENGTH ? thumbnail : null;
+  } catch (cause) {
+    console.warn('Could not prepare track cover for streaming', cause);
+    return null;
+  }
+}
+
+function isSafeStreamImageUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+async function toStreamTrack(track: Track): Promise<StreamDeckSnapshot['track']> {
   return {
     id: track.id,
     title: track.title,
@@ -40,6 +97,7 @@ function toStreamTrack(track: Track): StreamDeckSnapshot['track'] {
     durationSeconds: parseTrackDuration(track.duration),
     cues: [...(track.cues ?? [])],
     waveformOverview: track.waveformOverview,
+    coverUrl: await toStreamCoverUrl(track.coverUrl),
   };
 }
 
@@ -127,20 +185,28 @@ function StudioPage() {
   // Auto-load the first N ready tracks into the N decks, in DECK_IDS order.
   useEffect(() => {
     const next = library.songs.filter((song) => song.libraryStatus === 'ready');
-    DECK_IDS.forEach((id, index) => {
-      const deck = id === DeckId.A ? StreamDeckId.A : StreamDeckId.B;
-      const currentTrackId = loadedTrackIds[id];
-      if (currentTrackId) {
-        const currentTrack = library.songs.find((song) => song.id === currentTrackId);
-        if (!currentTrack) return;
-        const updatedTrack = toStreamTrack(currentTrack);
-        if (JSON.stringify(studioState.decks[deck].track) !== JSON.stringify(updatedTrack)) {
-          dispatchStudio({ action: StudioActionType.TrackLoad, deck, value: updatedTrack });
+    let cancelled = false;
+
+    const syncTracks = async () => {
+      for (const [index, id] of DECK_IDS.entries()) {
+        const deck = id === DeckId.A ? StreamDeckId.A : StreamDeckId.B;
+        const currentTrackId = loadedTrackIds[id];
+        const track = currentTrackId
+          ? library.songs.find((song) => song.id === currentTrackId)
+          : next[index];
+        if (!track) continue;
+        const streamTrack = await toStreamTrack(track);
+        if (cancelled) return;
+        if (JSON.stringify(studioState.decks[deck].track) !== JSON.stringify(streamTrack)) {
+          dispatchStudio({ action: StudioActionType.TrackLoad, deck, value: streamTrack });
         }
-      } else if (next[index]) {
-        dispatchStudio({ action: StudioActionType.TrackLoad, deck, value: toStreamTrack(next[index]) });
       }
-    });
+    };
+
+    void syncTracks();
+    return () => {
+      cancelled = true;
+    };
   }, [library.songs, loadedTrackIds, studioState.decks]);
 
   const trackBpm = useCallback(
@@ -232,12 +298,12 @@ function StudioPage() {
       engine={engine}
       track={library.songs.find((song) => song.id === loadedTrackIds[id]) ?? null}
       tracks={ready}
-      onLoadTrack={(trackId: string) => {
+      onLoadTrack={async (trackId: string) => {
         const track = library.songs.find((song) => song.id === trackId);
         dispatchStudio({
           action: StudioActionType.TrackLoad,
           deck: id === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
-          value: track ? toStreamTrack(track) : null,
+          value: track ? await toStreamTrack(track) : null,
         });
       }}
       onPatch={library.patchTrack}

@@ -68,7 +68,7 @@ function StreamsPage() {
           <Button className="mt-4" variant="outline" onClick={() => window.location.reload()}>Try again</Button>
         </section>
       ) : streams.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] px-6 py-16 text-center">
+        <div className="rounded-2xl border border-dashed border-white/15 bg-white/3 px-6 py-16 text-center">
           <Radio className="mx-auto size-8 text-slate-500" />
           <h2 className="mt-3 text-lg font-medium text-white">No active streams</h2>
           <p className="mt-1 text-sm text-slate-400">Live sets will show up here when someone starts streaming.</p>
@@ -77,29 +77,46 @@ function StreamsPage() {
         <ul className="grid gap-3 sm:grid-cols-2">
           {streams.map((stream) => (
             <li key={stream.id}>
-              <Link to={`/streams/${stream.id}`} className="group block rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition hover:border-rose-300/50 hover:bg-white/[0.07]">
-                <div className="flex items-start gap-3">
-                  {stream.avatarUrl ? (
-                    <img src={stream.avatarUrl} alt="" className="size-11 rounded-full border border-white/15 object-cover" />
-                  ) : (
-                    <div aria-hidden="true" className="grid size-11 place-items-center rounded-full bg-gradient-to-br from-fuchsia-500 to-orange-400 font-semibold text-white">
-                      {stream.username.slice(0, 1).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate font-medium text-white">{stream.username}</p>
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-rose-500/15 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-rose-200">
-                        <span className="size-1.5 animate-pulse rounded-full bg-rose-400" />
-                        Live
-                      </span>
-                    </div>
-                    <h2 className="mt-2 truncate text-lg font-semibold text-white group-hover:text-rose-100">{stream.name}</h2>
-                    <p className="mt-2 flex items-center gap-1.5 text-sm tabular-nums text-slate-400">
-                      <Eye className="size-4" />
-                      Live for {durationLabel(stream.startedAt, now)}
-                    </p>
+              <Link
+                to={`/streams/${stream.id}`}
+                className="group grid min-h-44 grid-cols-2 overflow-hidden rounded-2xl border border-white/10 bg-white/4 transition hover:border-rose-300/50 hover:bg-white/[0.07]"
+              >
+                <div className="flex min-w-0 flex-col p-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {stream.avatarUrl ? (
+                      <img src={stream.avatarUrl} alt="" className="size-11 shrink-0 rounded-full border border-white/15 object-cover" />
+                    ) : (
+                      <div aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-full bg-linear-to-br from-fuchsia-500 to-orange-400 font-semibold text-white">
+                        {stream.username.slice(0, 1).toUpperCase()}
+                      </div>
+                    )}
+                    <p className="truncate font-medium text-white">{stream.username}</p>
                   </div>
+                  <h2 className="mt-3 truncate text-lg font-semibold text-white group-hover:text-rose-100">{stream.name}</h2>
+                  <p className="mt-auto flex items-center gap-1.5 pt-3 text-sm tabular-nums text-slate-400">
+                    <Eye className="size-4" />
+                    {durationLabel(stream.startedAt, now)}
+                  </p>
+                </div>
+                <div className="min-h-0 min-w-0 p-3">
+                  <span
+                    role="img"
+                    aria-label="Loaded track covers"
+                    className="grid h-full min-h-0 min-w-0 grid-cols-2 overflow-hidden rounded-full border border-white/20 bg-white/5"
+                  >
+                    {stream.coverArts.map((cover, index) => (
+                      <span
+                        key={index}
+                        className="relative min-h-0 min-w-0 overflow-hidden border-r border-white/20 last:border-r-0"
+                      >
+                        {cover ? (
+                          <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                        ) : (
+                          <span className="absolute inset-0 bg-linear-to-br from-zinc-700 to-zinc-900" />
+                        )}
+                      </span>
+                    ))}
+                  </span>
                 </div>
               </Link>
             </li>

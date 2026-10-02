@@ -125,13 +125,16 @@ func TestLateViewerGetsCurrentSnapshotAndPublisherEventsAreOwnerOnly(t *testing.
 			"tempoMaster":null,"master":0.9
 		},
 		"decks":{
-			"A":{"track":null,"playing":false,"positionSeconds":0,"durationSeconds":0,"rate":1},
+			"A":{"track":{"id":"track-a","title":"Track A","artist":"Artist","bpm":120,"beatOffset":0,"key":"C","durationSeconds":180,"cues":[],"waveformOverview":null,"coverUrl":"data:image/png;base64,aGVsbG8="},"playing":false,"positionSeconds":0,"durationSeconds":0,"rate":1},
 			"B":{"track":null,"playing":false,"positionSeconds":0,"durationSeconds":0,"rate":1}
 		},
 		"beatsPerView":32,"pointer":null,"popup":null,"capturedAt":0
 	}`)
 	if err := manager.Publish("stream-a", "owner-a", Event{Type: "snapshot", T: 1, Payload: snapshot}); err != nil {
 		t.Fatal(err)
+	}
+	if covers := manager.CoverArts("stream-a"); covers != [2]string{"data:image/png;base64,aGVsbG8=", ""} {
+		t.Fatalf("snapshot cover arts = %#v", covers)
 	}
 	action := json.RawMessage(`{"action":"waveform-view","value":16}`)
 	if err := manager.Publish("stream-a", "owner-a", Event{Type: "event", T: 1.25, Payload: action}); err != nil {
@@ -218,11 +221,13 @@ func TestTrackLoadEventAcceptsSafeWaveformPayload(t *testing.T) {
 			"id": "track-1", "title": "Track", "artist": "Artist", "bpm": 120,
 			"beatOffset": 0, "key": "C", "durationSeconds": 180, "cues": []any{},
 			"waveformOverview": map[string]any{"lows": peaks, "mids": peaks, "highs": peaks, "durationSeconds": 180},
+			"coverUrl":         nil,
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if len(payload) <= 8<<10 || len(payload) > 256<<10 {
 		t.Fatalf("waveform action size = %d bytes, want between 8 KiB and 256 KiB", len(payload))
 	}
@@ -230,5 +235,40 @@ func TestTrackLoadEventAcceptsSafeWaveformPayload(t *testing.T) {
 	manager.Start("stream-a", "owner-a")
 	if err := manager.Publish("stream-a", "owner-a", Event{Type: "event", Payload: payload}); err != nil {
 		t.Fatalf("publish safe track metadata and waveform: %v", err)
+	}
+}
+
+func TestTrackLoadCoverValidation(t *testing.T) {
+	tests := []struct {
+		name     string
+		coverURL any
+		valid    bool
+	}{
+		{name: "no cover", coverURL: nil, valid: true},
+		{name: "HTTPS cover", coverURL: "https://cdn.example.test/cover.jpg", valid: true},
+		{name: "HTTP cover", coverURL: "http://cdn.example.test/cover.jpg", valid: true},
+		{name: "image data URL", coverURL: "data:image/png;base64,aGVsbG8=", valid: true},
+		{name: "script URL", coverURL: "javascript:alert(1)"},
+		{name: "SVG data URL", coverURL: "data:image/svg+xml;base64,PHN2Zz4="},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]any{
+				"action": "track-load",
+				"deck":   "A",
+				"value": map[string]any{
+					"id": "track-1", "title": "Track", "artist": "Artist", "bpm": 120,
+					"beatOffset": 0, "key": "C", "durationSeconds": 180, "cues": []any{},
+					"waveformOverview": nil, "coverUrl": test.coverURL,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := validateAction(payload); got != test.valid {
+				t.Fatalf("validateAction() = %v, want %v", got, test.valid)
+			}
+		})
 	}
 }
