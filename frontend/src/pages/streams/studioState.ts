@@ -1,8 +1,13 @@
 import type { MixerState } from '@/hooks/useMixerState';
-import type { StreamDeckSnapshot, StudioSnapshot } from '@/lib/types/Stream';
+import {
+  StreamDeckId,
+  StreamPopupKind,
+  type StreamDeckSnapshot,
+  type StudioSnapshot,
+} from '@/lib/types/Stream';
 
-export type StreamDeckId = 'A' | 'B';
-export type StreamPopup = null | { kind: 'track-picker'; deck: StreamDeckId };
+export { StreamDeckId };
+export type StreamPopup = null | { kind: StreamPopupKind.TrackPicker; deck: StreamDeckId };
 export type StreamPointer = { x: number; y: number } | null;
 export const STREAM_PLAYBACK_BUFFER_SECONDS = 0.5;
 
@@ -88,17 +93,26 @@ export function interpolateDeckPosition(
   return Math.max(0, Math.min(transport.durationSeconds, position));
 }
 
+export enum StudioActionType {
+  MixerChange = 'mixer-change',
+  TrackLoad = 'track-load',
+  Transport = 'transport',
+  WaveformView = 'waveform-view',
+  Popup = 'popup',
+  Pointer = 'pointer',
+}
+
 export type StudioAction =
-  | { action: 'mixer-change'; value: MixerState }
-  | { action: 'track-load'; deck: StreamDeckId; value: StreamDeckSnapshot['track'] }
+  | { action: StudioActionType.MixerChange; value: MixerState }
+  | { action: StudioActionType.TrackLoad; deck: StreamDeckId; value: StreamDeckSnapshot['track'] }
   | {
-      action: 'transport';
+      action: StudioActionType.Transport;
       deck: StreamDeckId;
       value: Pick<StreamDeckSnapshot, 'playing' | 'positionSeconds' | 'durationSeconds' | 'rate'>;
     }
-  | { action: 'waveform-view'; value: number }
-  | { action: 'popup'; value: StreamPopup }
-  | { action: 'pointer'; value: StreamPointer };
+  | { action: StudioActionType.WaveformView; value: number }
+  | { action: StudioActionType.Popup; value: StreamPopup }
+  | { action: StudioActionType.Pointer; value: StreamPointer };
 
 export function createInitialStudioSnapshot(): StudioSnapshot {
   const channel = () => ({ high: 0, mid: 0, low: 0, filter: 0, volume: 0.8, tempo: 0 });
@@ -127,9 +141,9 @@ export function createInitialStudioSnapshot(): StudioSnapshot {
 
 export function reduceStudioSnapshot(state: StudioSnapshot, action: StudioAction): StudioSnapshot {
   switch (action.action) {
-    case 'mixer-change':
+    case StudioActionType.MixerChange:
       return { ...state, mixer: action.value };
-    case 'track-load': {
+    case StudioActionType.TrackLoad: {
       const currentDeck = state.decks[action.deck];
       const sameTrack = currentDeck.track?.id === action.value?.id;
       return {
@@ -146,18 +160,18 @@ export function reduceStudioSnapshot(state: StudioSnapshot, action: StudioAction
         },
       };
     }
-    case 'transport':
+    case StudioActionType.Transport:
       return {
         ...state,
         decks: { ...state.decks, [action.deck]: { ...state.decks[action.deck], ...action.value } },
       };
-    case 'waveform-view':
+    case StudioActionType.WaveformView:
       if (state.beatsPerView === action.value) return state;
       return { ...state, beatsPerView: action.value };
-    case 'popup':
+    case StudioActionType.Popup:
       if (JSON.stringify(state.popup) === JSON.stringify(action.value)) return state;
       return { ...state, popup: action.value };
-    case 'pointer':
+    case StudioActionType.Pointer:
       if (JSON.stringify(state.pointer) === JSON.stringify(action.value)) return state;
       return { ...state, pointer: action.value };
   }
@@ -166,11 +180,11 @@ export function reduceStudioSnapshot(state: StudioSnapshot, action: StudioAction
 export function diffStudioSnapshots(previous: StudioSnapshot, next: StudioSnapshot): StudioAction[] {
   const actions: StudioAction[] = [];
   if (JSON.stringify(previous.mixer) !== JSON.stringify(next.mixer)) {
-    actions.push({ action: 'mixer-change', value: next.mixer });
+    actions.push({ action: StudioActionType.MixerChange, value: next.mixer });
   }
-  for (const deck of ['A', 'B'] as const) {
+  for (const deck of [StreamDeckId.A, StreamDeckId.B]) {
     if (previous.decks[deck].track !== next.decks[deck].track) {
-      actions.push({ action: 'track-load', deck, value: next.decks[deck].track });
+      actions.push({ action: StudioActionType.TrackLoad, deck, value: next.decks[deck].track });
     }
     const before = previous.decks[deck];
     const after = next.decks[deck];
@@ -181,7 +195,7 @@ export function diffStudioSnapshots(previous: StudioSnapshot, next: StudioSnapsh
       before.rate !== after.rate
     ) {
       actions.push({
-        action: 'transport',
+        action: StudioActionType.Transport,
         deck,
         value: {
           playing: after.playing,
@@ -193,13 +207,13 @@ export function diffStudioSnapshots(previous: StudioSnapshot, next: StudioSnapsh
     }
   }
   if (previous.beatsPerView !== next.beatsPerView) {
-    actions.push({ action: 'waveform-view', value: next.beatsPerView });
+    actions.push({ action: StudioActionType.WaveformView, value: next.beatsPerView });
   }
   if (JSON.stringify(previous.popup) !== JSON.stringify(next.popup)) {
-    actions.push({ action: 'popup', value: next.popup });
+    actions.push({ action: StudioActionType.Popup, value: next.popup });
   }
   if (JSON.stringify(previous.pointer) !== JSON.stringify(next.pointer)) {
-    actions.push({ action: 'pointer', value: next.pointer });
+    actions.push({ action: StudioActionType.Pointer, value: next.pointer });
   }
   return actions;
 }

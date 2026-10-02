@@ -1,6 +1,33 @@
 import type { MixerState } from '@/hooks/useMixerState';
 import type { WaveformOverview } from './Track';
 
+export enum StreamDeckId {
+  A = 'A',
+  B = 'B',
+}
+
+export enum StreamPopupKind {
+  TrackPicker = 'track-picker',
+}
+
+export enum StreamEventType {
+  Joined = 'joined',
+  Snapshot = 'snapshot',
+  Event = 'event',
+  Pointer = 'pointer',
+  ViewerCount = 'viewer-count',
+  Ended = 'ended',
+  Error = 'error',
+  End = 'end',
+}
+
+export enum StreamConnectionStatus {
+  Joining = 'joining',
+  Live = 'live',
+  Ended = 'ended',
+  Error = 'error',
+}
+
 export type ListedStream = {
   id: string;
   username: string;
@@ -30,10 +57,10 @@ export type StreamDeckSnapshot = {
 export type StudioSnapshot = {
   version: 1;
   mixer: MixerState;
-  decks: Record<'A' | 'B', StreamDeckSnapshot>;
+  decks: Record<StreamDeckId, StreamDeckSnapshot>;
   beatsPerView: number;
   pointer: { x: number; y: number } | null;
-  popup: null | { kind: 'track-picker'; deck: 'A' | 'B' };
+  popup: null | { kind: StreamPopupKind.TrackPicker; deck: StreamDeckId };
   capturedAt: number;
 };
 
@@ -47,7 +74,7 @@ export type StreamConnection = {
 };
 
 export type StreamEvent = {
-  type: 'joined' | 'snapshot' | 'event' | 'pointer' | 'viewer-count' | 'ended' | 'error';
+  type: StreamEventType;
   seq?: number;
   t?: number;
   payload?: StudioSnapshot | Record<string, unknown>;

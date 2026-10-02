@@ -2,7 +2,14 @@ import { LocalAudioTrack, Room, RoomEvent, Track } from 'livekit-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ENV } from '@/config/env';
 import API_ROUTES from '@/config/api';
-import type { StreamConnection, StreamEvent, StudioSnapshot } from '@/lib/types/Stream';
+import {
+  StreamConnectionStatus,
+  StreamDeckId,
+  StreamEventType,
+  type StreamConnection,
+  type StreamEvent,
+  type StudioSnapshot,
+} from '@/lib/types/Stream';
 import { endStream, joinStream } from '@/lib/api/StreamsAPI';
 import type { MixerAudioEngine } from '@/hooks/useAudioEngine';
 import { ApiError, axiosClient } from '@/lib/clients/axios';
@@ -13,6 +20,7 @@ import {
   interpolatePointer,
   reduceStudioSnapshot,
   STREAM_PLAYBACK_BUFFER_SECONDS,
+  StudioActionType,
   type StudioAction,
   type MixerSample,
   type PointerSample,
@@ -25,7 +33,7 @@ function isStudioSnapshot(value: unknown): value is StudioSnapshot {
   return typeof value === 'object' && value !== null && 'decks' in value && 'mixer' in value;
 }
 
-function getSnapshotTransportSamples(snapshot: StudioSnapshot, time: number): Record<'A' | 'B', TransportSample> {
+function getSnapshotTransportSamples(snapshot: StudioSnapshot, time: number): Record<StreamDeckId, TransportSample> {
   return {
     A: { time, trackId: snapshot.decks.A.track?.id ?? null, transport: snapshot.decks.A },
     B: { time, trackId: snapshot.decks.B.track?.id ?? null, transport: snapshot.decks.B },
@@ -62,7 +70,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
   const publishSnapshot = useCallback((next: StudioSnapshot) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
-        type: 'snapshot',
+        type: StreamEventType.Snapshot,
         t: engine?.context.currentTime ?? 0,
         payload: { ...next, pointer: null },
       }));
@@ -114,8 +122,8 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
     socketRef.current = socket;
     socket.addEventListener('message', (message) => {
       const event = JSON.parse(String(message.data)) as StreamEvent;
-      if (event.type === 'viewer-count') setViewerCount(event.count ?? 0);
-      if (event.type === 'error') setError('The stream event relay rejected an update.');
+      if (event.type === StreamEventType.ViewerCount) setViewerCount(event.count ?? 0);
+      if (event.type === StreamEventType.Error) setError('The stream event relay rejected an update.');
     });
     socket.addEventListener('close', () => {
       if (!publisherActiveRef.current || socketRef.current !== socket) return;
@@ -141,7 +149,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
     });
     if (snapshotRef.current) {
       socket.send(JSON.stringify({
-        type: 'snapshot',
+        type: StreamEventType.Snapshot,
         t: engine?.context.currentTime ?? 0,
         payload: { ...snapshotRef.current, pointer: null },
       }));
@@ -158,7 +166,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       const socket = socketRef.current;
       const sessionId = sessionIdRef.current;
       if (sessionId && socket?.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'end' }));
+        socket.send(JSON.stringify({ type: StreamEventType.End }));
       }
       if (sessionId && exitTicketRef.current) {
         const url = axiosClient.getUri({ url: API_ROUTES.stream.endOnExit(sessionId) });
@@ -253,11 +261,11 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       const previous = lastSentSnapshotRef.current;
       if (previous) {
         for (const action of diffStudioSnapshots(previous, current)) {
-          if (action.action === 'pointer') {
-            socket.send(JSON.stringify({ type: 'pointer', t: engine?.context.currentTime ?? 0, payload: action.value }));
+          if (action.action === StudioActionType.Pointer) {
+            socket.send(JSON.stringify({ type: StreamEventType.Pointer, t: engine?.context.currentTime ?? 0, payload: action.value }));
           } else {
-            socket.send(JSON.stringify({ type: 'event', t: engine?.context.currentTime ?? 0, payload: action }));
-            if (action.action === 'track-load') {
+            socket.send(JSON.stringify({ type: StreamEventType.Event, t: engine?.context.currentTime ?? 0, payload: action }));
+            if (action.action === StudioActionType.TrackLoad) {
               publishSnapshot(current);
               lastCheckpointAtRef.current = Date.now();
             }
@@ -288,14 +296,17 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
 export function useStreamViewer(id: string) {
   const [session, setSession] = useState<StreamConnection['session'] | null>(null);
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
-  const [status, setStatus] = useState<'joining' | 'live' | 'ended' | 'error'>('joining');
+  const [status, setStatus] = useState<StreamConnectionStatus>(StreamConnectionStatus.Joining);
   const [error, setError] = useState<string | null>(null);
   const [needsAudioGesture, setNeedsAudioGesture] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [remotePointer, setRemotePointer] = useState<{ x: number; y: number } | null>(null);
   const snapshotRef = useRef<StudioSnapshot | null>(null);
   const eventQueueRef = useRef<StreamEvent[]>([]);
-  const transportSamplesRef = useRef<Record<'A' | 'B', TransportSample[]>>({ A: [], B: [] });
+  const transportSamplesRef = useRef<Record<StreamDeckId, TransportSample[]>>({
+    [StreamDeckId.A]: [],
+    [StreamDeckId.B]: [],
+  });
   const mixerSamplesRef = useRef<MixerSample[]>([]);
   const pointerSamplesRef = useRef<PointerSample[]>([]);
   const latestTimelineRef = useRef<{ time: number; receivedAt: number } | null>(null);
@@ -327,12 +338,12 @@ export function useStreamViewer(id: string) {
       if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
       retryTimerRef.current = window.setTimeout(() => void connectRef.current(), delay);
     };
-    setStatus('joining');
+    setStatus(StreamConnectionStatus.Joining);
     setError(null);
     endedRef.current = false;
     snapshotRef.current = null;
     eventQueueRef.current = [];
-    transportSamplesRef.current = { A: [], B: [] };
+    transportSamplesRef.current = { [StreamDeckId.A]: [], [StreamDeckId.B]: [] };
     mixerSamplesRef.current = [];
     pointerSamplesRef.current = [];
     latestTimelineRef.current = null;
@@ -360,19 +371,19 @@ export function useStreamViewer(id: string) {
           stopViewerAudio();
           snapshotRef.current = null;
           eventQueueRef.current = [];
-          transportSamplesRef.current = { A: [], B: [] };
+          transportSamplesRef.current = { [StreamDeckId.A]: [], [StreamDeckId.B]: [] };
           mixerSamplesRef.current = [];
           pointerSamplesRef.current = [];
           latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
-          setStatus('error');
+          setStatus(StreamConnectionStatus.Error);
           setError('Connection to this stream was lost.');
           queueReconnect(2000);
         }
       });
       connectedRoom.on(RoomEvent.Reconnected, () => {
-        if (!disposedRef.current && attempt === attemptRef.current) setStatus('live');
+        if (!disposedRef.current && attempt === attemptRef.current) setStatus(StreamConnectionStatus.Live);
       });
       await connectedRoom.connect(connection.liveKitUrl, connection.liveKitToken);
       roomRef.current = connectedRoom;
@@ -381,31 +392,34 @@ export function useStreamViewer(id: string) {
       socket.addEventListener('open', () => {
         if (!disposedRef.current && attempt === attemptRef.current) {
           if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
-          setStatus('live');
+          setStatus(StreamConnectionStatus.Live);
         }
       });
       socket.addEventListener('message', (message) => {
         if (disposedRef.current || attempt !== attemptRef.current) return;
         const event = JSON.parse(String(message.data)) as StreamEvent;
-        if (event.type === 'viewer-count') {
+        if (event.type === StreamEventType.ViewerCount) {
           setViewerCount(event.count ?? 0);
-        } else if (event.type === 'ended') {
+        } else if (event.type === StreamEventType.Ended) {
           endedRef.current = true;
           attemptRef.current++;
           eventQueueRef.current = [];
-          transportSamplesRef.current = { A: [], B: [] };
+          transportSamplesRef.current = { [StreamDeckId.A]: [], [StreamDeckId.B]: [] };
           mixerSamplesRef.current = [];
           pointerSamplesRef.current = [];
           latestTimelineRef.current = null;
           if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
-          setStatus('ended');
+          setStatus(StreamConnectionStatus.Ended);
           stopViewerAudio();
           socket.close();
-        } else if (event.type === 'error') {
-          setStatus('error');
+        } else if (event.type === StreamEventType.Error) {
+          setStatus(StreamConnectionStatus.Error);
           setError('The stream connection returned an error.');
         } else if (
-          (event.type === 'joined' || event.type === 'snapshot' || event.type === 'event' || event.type === 'pointer') &&
+          (event.type === StreamEventType.Joined ||
+            event.type === StreamEventType.Snapshot ||
+            event.type === StreamEventType.Event ||
+            event.type === StreamEventType.Pointer) &&
           Number.isFinite(event.t)
         ) {
           const time = event.t!;
@@ -414,16 +428,16 @@ export function useStreamViewer(id: string) {
           if (!latest || time > latest.time) latestTimelineRef.current = { time, receivedAt };
           eventQueueRef.current.push(event);
 
-          if ((event.type === 'joined' || event.type === 'snapshot') && isStudioSnapshot(event.payload)) {
+          if ((event.type === StreamEventType.Joined || event.type === StreamEventType.Snapshot) && isStudioSnapshot(event.payload)) {
             const snapshotSamples = getSnapshotTransportSamples(event.payload, time);
-            for (const deck of ['A', 'B'] as const) {
+            for (const deck of [StreamDeckId.A, StreamDeckId.B]) {
               transportSamplesRef.current[deck].push(snapshotSamples[deck]);
             }
             mixerSamplesRef.current.push({ time, value: event.payload.mixer });
             if (event.payload.pointer) pointerSamplesRef.current.push({ time, value: event.payload.pointer });
-          } else if (event.type === 'event' && event.payload && typeof event.payload === 'object') {
+          } else if (event.type === StreamEventType.Event && event.payload && typeof event.payload === 'object') {
             const action = event.payload as StudioAction;
-            if (action.action === 'transport') {
+            if (action.action === StudioActionType.Transport) {
               const samples = transportSamplesRef.current[action.deck];
               const previous = samples[samples.length - 1];
               samples.push({
@@ -431,7 +445,7 @@ export function useStreamViewer(id: string) {
                 trackId: snapshotRef.current?.decks[action.deck].track?.id ?? previous?.trackId ?? null,
                 transport: action.value,
               });
-            } else if (action.action === 'track-load') {
+            } else if (action.action === StudioActionType.TrackLoad) {
               const samples = transportSamplesRef.current[action.deck];
               samples.push({
                 time,
@@ -443,9 +457,9 @@ export function useStreamViewer(id: string) {
                   rate: 1,
                 },
               });
-            } else if (action.action === 'mixer-change') {
+            } else if (action.action === StudioActionType.MixerChange) {
               mixerSamplesRef.current.push({ time, value: action.value });
-            } else if (action.action === 'pointer') {
+            } else if (action.action === StudioActionType.Pointer) {
               pointerSamplesRef.current.push({ time, value: action.value });
             }
           }
@@ -462,7 +476,7 @@ export function useStreamViewer(id: string) {
           latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
-          setStatus('error');
+          setStatus(StreamConnectionStatus.Error);
           setError('Could not connect to the stream event relay.');
           queueReconnect(2000);
         }
@@ -478,7 +492,7 @@ export function useStreamViewer(id: string) {
           latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
-          setStatus('error');
+          setStatus(StreamConnectionStatus.Error);
           setError('The stream event connection closed.');
           queueReconnect(2000);
         }
@@ -490,7 +504,7 @@ export function useStreamViewer(id: string) {
         socketRef.current?.close();
         socketRef.current = null;
         endedRef.current = true;
-        setStatus('ended');
+        setStatus(StreamConnectionStatus.Ended);
         return;
       }
       room?.disconnect();
@@ -505,7 +519,7 @@ export function useStreamViewer(id: string) {
       eventQueueRef.current = [];
       transportSamplesRef.current = { A: [], B: [] };
       latestTimelineRef.current = null;
-      setStatus('error');
+      setStatus(StreamConnectionStatus.Error);
       setError(cause instanceof Error ? cause.message : 'Could not join this stream.');
       const retryable = !(cause instanceof ApiError && cause.status !== undefined && (cause.status < 500 || cause.status === 503));
       if (!disposedRef.current && retryable) {
@@ -531,11 +545,11 @@ export function useStreamViewer(id: string) {
 
       while (eventQueueRef.current[0] && (eventQueueRef.current[0].t ?? Infinity) <= presentationTime) {
         const event = eventQueueRef.current.shift()!;
-        if ((event.type === 'joined' || event.type === 'snapshot') && isStudioSnapshot(event.payload)) {
+        if ((event.type === StreamEventType.Joined || event.type === StreamEventType.Snapshot) && isStudioSnapshot(event.payload)) {
           const next = event.payload;
           snapshotRef.current = next;
           setRemotePointer(next.pointer);
-          for (const deck of ['A', 'B'] as const) {
+          for (const deck of [StreamDeckId.A, StreamDeckId.B]) {
             const samples = transportSamplesRef.current[deck];
             const sampleIndex = samples.findIndex((sample) => sample.time === event.t);
             if (sampleIndex >= 0) {
@@ -546,13 +560,16 @@ export function useStreamViewer(id: string) {
               };
             }
           }
-        } else if (event.type === 'event' && event.payload && snapshotRef.current) {
+        } else if (event.type === StreamEventType.Event && event.payload && snapshotRef.current) {
           snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, event.payload as StudioAction);
-        } else if (event.type === 'pointer') {
+        } else if (event.type === StreamEventType.Pointer) {
           const pointer = (event.payload as { x: number; y: number } | null) ?? null;
           setRemotePointer(pointer);
           if (snapshotRef.current) {
-            snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, { action: 'pointer', value: pointer });
+            snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, {
+              action: StudioActionType.Pointer,
+              value: pointer,
+            });
           }
         }
       }
@@ -561,7 +578,7 @@ export function useStreamViewer(id: string) {
       if (!current) return;
 
       const decks = { ...current.decks };
-      for (const deck of ['A', 'B'] as const) {
+      for (const deck of [StreamDeckId.A, StreamDeckId.B]) {
         const samples = transportSamplesRef.current[deck];
         let previousIndex = -1;
         let nextIndex = -1;

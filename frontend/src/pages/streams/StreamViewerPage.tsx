@@ -9,7 +9,12 @@ import { Mixer } from '@/components/Mixer';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';
 import { getStudioDeckLayout } from '@/lib/utils/studioGrid';
 import { DECK_IDS, DeckId } from '@/hooks/useAudioEngine';
-import type { StreamDeckSnapshot } from '@/lib/types/Stream';
+import {
+  StreamConnectionStatus,
+  StreamDeckId,
+  StreamPopupKind,
+  type StreamDeckSnapshot,
+} from '@/lib/types/Stream';
 import { createInitialStudioSnapshot } from './studioState';
 import { useStreamViewer } from './useStreamConnection';
 
@@ -39,7 +44,7 @@ function StreamViewerPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  if (stream.status === 'ended' && !stream.session) {
+  if (stream.status === StreamConnectionStatus.Ended && !stream.session) {
     return (
       <main className="flex h-svh flex-col items-center justify-center gap-4 bg-[#0b0d10] text-center text-zinc-100">
         <h1 className="text-2xl font-semibold">This stream has ended</h1>
@@ -51,7 +56,7 @@ function StreamViewerPage() {
   if (!stream.session) {
     return (
       <main className="grid h-svh place-items-center bg-[#0b0d10] text-zinc-300">
-        {stream.status === 'error' ? (
+        {stream.status === StreamConnectionStatus.Error ? (
           <div className="text-center">
             <p role="alert">{stream.error ?? 'Could not join this stream.'}</p>
             <div className="mt-4 flex justify-center gap-2">
@@ -68,7 +73,7 @@ function StreamViewerPage() {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(stream.session.startedAt)) / 1000));
   const masterId = snapshot.mixer.tempoMaster;
   const bpmForDeck = (id: DeckId) => {
-    const deck = snapshot.decks[id === DeckId.A ? 'A' : 'B'];
+    const deck = snapshot.decks[id === DeckId.A ? StreamDeckId.A : StreamDeckId.B];
     const baseBpm = deck.track?.bpm ?? 0;
     return baseBpm * (1 + snapshot.mixer.channelState[id].tempo / 100);
   };
@@ -77,7 +82,7 @@ function StreamViewerPage() {
 
   const { leftDeckIds, rightDeckIds, gridTemplateColumns } = getStudioDeckLayout(DECK_IDS);
   const renderDeck = (id: DeckId) => {
-    const deck = snapshot.decks[id === DeckId.A ? 'A' : 'B'];
+    const deck = snapshot.decks[id === DeckId.A ? StreamDeckId.A : StreamDeckId.B];
     const track = toViewTrack(deck.track);
     return (
       <CDJ
@@ -138,14 +143,14 @@ function StreamViewerPage() {
             />
           }
         >
-          {stream.status === 'error' && (
+          {stream.status === StreamConnectionStatus.Error && (
             <div role="alert" className="absolute left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-amber-950/95 px-4 py-2 text-sm text-amber-100 shadow-xl">
               {stream.error ?? 'Stream connection lost.'}
               <Button size="sm" variant="outline" onClick={() => void stream.connect()}>Reconnect</Button>
               <Button size="sm" variant="ghost" onClick={() => navigate('/streams')}>Back to Streams</Button>
             </div>
           )}
-          {stream.status === 'joining' && (
+          {stream.status === StreamConnectionStatus.Joining && (
             <div role="status" className="absolute left-1/2 top-12 z-50 -translate-x-1/2 rounded-lg bg-amber-950/95 px-4 py-2 text-sm text-amber-100 shadow-xl">
               Reconnecting to stream...
             </div>
@@ -163,13 +168,13 @@ function StreamViewerPage() {
               style={{ left: `${snapshot.pointer.x * 100}%`, top: `${snapshot.pointer.y * 100}%` }}
             />
           )}
-          {snapshot.popup?.kind === 'track-picker' && (
+          {snapshot.popup?.kind === StreamPopupKind.TrackPicker && (
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-40 w-72 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-white/15 bg-[#161a20] p-4 shadow-2xl">
               <p className="text-xs uppercase tracking-wider text-zinc-500">Deck {snapshot.popup.deck} · Track picker</p>
               <p className="mt-2 text-sm text-zinc-300">The streamer is choosing a track.</p>
             </div>
           )}
-          {stream.status === 'ended' && (
+          {stream.status === StreamConnectionStatus.Ended && (
             <div role="status" className="absolute bottom-5 left-1/2 z-60 flex w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-rose-300/30 bg-rose-950/95 p-4 text-sm text-rose-100 shadow-2xl">
               <span>This stream has ended.</span>
               <Button size="sm" variant="secondary" onClick={() => navigate('/streams')}>Back to Streams</Button>

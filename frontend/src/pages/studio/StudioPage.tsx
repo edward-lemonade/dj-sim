@@ -11,12 +11,12 @@ import { clamp, DECK_IDS, DeckId } from '../../hooks/useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import type { Track } from '@/lib/types/Track';
-import type { StreamDeckSnapshot } from '@/lib/types/Stream';
+import { StreamDeckId, StreamPopupKind, type StreamDeckSnapshot } from '@/lib/types/Stream';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { useStudioRecording } from '../../hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
 import { useStreamPublisher } from '@/pages/streams/useStreamConnection';
-import { createInitialStudioSnapshot, reduceStudioSnapshot } from '@/pages/streams/studioState';
+import { createInitialStudioSnapshot, reduceStudioSnapshot, StudioActionType } from '@/pages/streams/studioState';
 
 // Matches the tempo slider's range in CDJ
 const TEMPO_RANGE_PERCENT = 50;
@@ -70,7 +70,7 @@ function StudioPage() {
   const mixerState = studioState.mixer;
   const setChannel = useCallback((id: DeckId, patch: Partial<typeof mixerState.channelState[DeckId.A]>) => {
     dispatchStudio({
-      action: 'mixer-change',
+      action: StudioActionType.MixerChange,
       value: {
         ...mixerState,
         channelState: { ...mixerState.channelState, [id]: { ...mixerState.channelState[id], ...patch } },
@@ -78,13 +78,13 @@ function StudioPage() {
     });
   }, [mixerState]);
   const setFx = useCallback((patch: Partial<typeof mixerState.fx>) => {
-    dispatchStudio({ action: 'mixer-change', value: { ...mixerState, fx: { ...mixerState.fx, ...patch } } });
+    dispatchStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, fx: { ...mixerState.fx, ...patch } } });
   }, [mixerState]);
   const setMaster = useCallback((value: number) => {
-    dispatchStudio({ action: 'mixer-change', value: { ...mixerState, master: value } });
+    dispatchStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, master: value } });
   }, [mixerState]);
   const setTempoMaster = useCallback((id: DeckId | null) => {
-    dispatchStudio({ action: 'mixer-change', value: { ...mixerState, tempoMaster: id } });
+    dispatchStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, tempoMaster: id } });
   }, [mixerState]);
 
   const loadedBeatCounts = DECK_IDS
@@ -103,12 +103,12 @@ function StudioPage() {
 
   const adjustWaveformZoom = useCallback((factor: number) => {
     const next = Math.min(maxBeatsPerView, Math.max(minBeatsPerView, studioState.beatsPerView * factor));
-    dispatchStudio({ action: 'waveform-view', value: next });
+    dispatchStudio({ action: StudioActionType.WaveformView, value: next });
   }, [maxBeatsPerView, minBeatsPerView, studioState.beatsPerView]);
 
   useEffect(() => {
     const next = Math.min(maxBeatsPerView, Math.max(minBeatsPerView, studioState.beatsPerView));
-    dispatchStudio({ action: 'waveform-view', value: next });
+    dispatchStudio({ action: StudioActionType.WaveformView, value: next });
   }, [maxBeatsPerView, minBeatsPerView, studioState.beatsPerView]);
 
   useEffect(() => {
@@ -128,17 +128,17 @@ function StudioPage() {
   useEffect(() => {
     const next = library.songs.filter((song) => song.libraryStatus === 'ready');
     DECK_IDS.forEach((id, index) => {
-      const deck = id === DeckId.A ? 'A' : 'B';
+      const deck = id === DeckId.A ? StreamDeckId.A : StreamDeckId.B;
       const currentTrackId = loadedTrackIds[id];
       if (currentTrackId) {
         const currentTrack = library.songs.find((song) => song.id === currentTrackId);
         if (!currentTrack) return;
         const updatedTrack = toStreamTrack(currentTrack);
         if (JSON.stringify(studioState.decks[deck].track) !== JSON.stringify(updatedTrack)) {
-          dispatchStudio({ action: 'track-load', deck, value: updatedTrack });
+          dispatchStudio({ action: StudioActionType.TrackLoad, deck, value: updatedTrack });
         }
       } else if (next[index]) {
-        dispatchStudio({ action: 'track-load', deck, value: toStreamTrack(next[index]) });
+        dispatchStudio({ action: StudioActionType.TrackLoad, deck, value: toStreamTrack(next[index]) });
       }
     });
   }, [library.songs, loadedTrackIds, studioState.decks]);
@@ -157,8 +157,8 @@ function StudioPage() {
         previous.rate === next.rate
       ) return;
       dispatchStudio({
-        action: 'transport',
-        deck: id === DeckId.A ? 'A' : 'B',
+        action: StudioActionType.Transport,
+        deck: id === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
         value: next,
       });
   }, [studioState.decks]);
@@ -234,7 +234,11 @@ function StudioPage() {
       tracks={ready}
       onLoadTrack={(trackId: string) => {
         const track = library.songs.find((song) => song.id === trackId);
-        dispatchStudio({ action: 'track-load', deck: id === DeckId.A ? 'A' : 'B', value: track ? toStreamTrack(track) : null });
+        dispatchStudio({
+          action: StudioActionType.TrackLoad,
+          deck: id === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
+          value: track ? toStreamTrack(track) : null,
+        });
       }}
       onPatch={library.patchTrack}
       tempo={studioState.mixer.channelState[id].tempo}
@@ -248,8 +252,13 @@ function StudioPage() {
       onBeatCountChange={reportDeckBeatCount}
       onTransportUpdate={reportTransport}
       onPopupChange={(deckId, open) => dispatchStudio({
-        action: 'popup',
-        value: open ? { kind: 'track-picker', deck: deckId === DeckId.A ? 'A' : 'B' } : null,
+        action: StudioActionType.Popup,
+        value: open
+          ? {
+              kind: StreamPopupKind.TrackPicker,
+              deck: deckId === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
+            }
+          : null,
       })}
     />
   );
@@ -290,7 +299,7 @@ function StudioPage() {
           if (now - lastPointerUpdate.current < 50) return;
           lastPointerUpdate.current = now;
           const bounds = event.currentTarget.getBoundingClientRect();
-          dispatchStudio({ action: 'pointer', value: {
+          dispatchStudio({ action: StudioActionType.Pointer, value: {
             x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
             y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)),
           } });
