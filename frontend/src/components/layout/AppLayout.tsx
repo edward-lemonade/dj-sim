@@ -12,7 +12,7 @@ const navItems: NavItem[] = [
 
 function AppLayout() {
   const { pathname } = useLocation();
-  const isTracks = pathname === '/tracks';
+  const isTracks = pathname === '/tracks' || pathname === '/';
 
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.16),_transparent_45%),linear-gradient(180deg,#05070d_0%,#0a0e17_45%,#0d1119_100%)] text-slate-100">

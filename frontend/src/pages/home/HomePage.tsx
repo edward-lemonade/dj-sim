@@ -173,122 +173,164 @@ function HomePage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-8 pt-4">
-      <section className="flex justify-center">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden md:flex-row">
+      <section className="relative flex min-h-80 items-center justify-center overflow-hidden py-16 md:w-[60%] md:py-0 md:[clip-path:polygon(0_0,100%_0,73.33%_100%,0_100%)]">
+        <div aria-hidden className="absolute inset-0 bg-[linear-gradient(135deg,#030720_0%,#07135e_55%,#0d2a9e_100%)]" />
+        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(rgba(147,197,253,.22)_1.5px,transparent_1.5px)] bg-[length:16px_16px] [mask-image:linear-gradient(to_bottom_left,black,transparent_70%)]" />
+        <div aria-hidden className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-[#02040a] via-[#02040a]/50 to-transparent" />
+        <span aria-hidden className="pointer-events-none absolute -bottom-10 -left-6 select-none text-[22rem] font-black italic leading-none text-transparent [-webkit-text-stroke:2px_rgba(147,197,253,.12)]">
+          DJ
+        </span>
+        <div aria-hidden className="absolute size-72 animate-pulse rounded-full bg-blue-500/25 blur-3xl" />
+        <div aria-hidden className="absolute size-[26rem] animate-spin rounded-full border-2 border-dashed border-white/20 [animation-duration:40s]" />
+        <div aria-hidden className="absolute size-[20rem] animate-spin rounded-full border border-white/10 [animation-direction:reverse] [animation-duration:60s]" />
+
         <Link
           to="/studio"
-          className="inline-flex h-11 items-center gap-2 rounded-full bg-slate-900 px-5 text-white hover:bg-slate-800"
+          className="group relative -skew-x-[16deg] border-2 border-cyan-300/70 bg-[#0a1a7a] px-12 py-7 shadow-[10px_10px_0_#020617] transition hover:-translate-y-1 hover:shadow-[16px_16px_0_#020617] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white"
         >
-          <Play className="size-4 fill-current" />
-          Enter Studio
+          <span className="flex skew-x-[16deg] items-center gap-5 text-white">
+            <Play className="size-14 fill-current transition-transform group-hover:scale-110" />
+            <span className="text-6xl font-black italic tracking-tight">Studio</span>
+          </span>
         </Link>
       </section>
 
-      <section aria-labelledby="recordings-title" className="rounded-xl border border-white/10 bg-[#0c111b]/80 p-5">
-        <div className="mb-4 flex items-baseline justify-between gap-4">
-          <h1 id="recordings-title" className="text-lg font-semibold text-white">Your recordings</h1>
-          <span className="text-sm text-slate-400">{recordings.length} sets</span>
-        </div>
-        {!isLoaded || (isSignedIn && loading) ? (
-          <p className="py-6 text-center text-sm text-slate-400" role="status">Loading recordings...</p>
-        ) : !isSignedIn ? (
-          <p className="py-6 text-center text-sm text-slate-400">
-            <Link className="text-white underline" to="/login">Sign in</Link> to see and save your sets.
-          </p>
-        ) : error && recordings.length === 0 ? (
-          <div className="py-4 text-center">
-            <p className="text-sm text-red-300" role="alert">{error}</p>
-            <Button
-              className="mt-3"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setLoading(true);
-                void loadRecordings();
-              }}
-            >
-              Try again
-            </Button>
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-10 hidden md:block">
+        <div className="absolute inset-0 bg-white/70 [clip-path:polygon(59%_0,61%_0,45%_100%,43%_100%)]" />
+        <div className="absolute inset-0 bg-cyan-400/80 [clip-path:polygon(61%_0,61.6%_0,45.6%_100%,45%_100%)]" />
+      </div>
+
+      <section
+        aria-labelledby="recordings-title"
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#02040a] md:-ml-[16%] md:w-[56%] md:flex-none md:[clip-path:polygon(28.57%_0,100%_0,100%_100%,0_100%)]"
+      >
+        <div aria-hidden className="absolute inset-0 bg-[repeating-linear-gradient(115deg,transparent_0_22px,rgba(56,213,255,.05)_22px_24px)]" />
+        <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_85%_100%,rgba(29,91,255,.22),transparent_55%)]" />
+
+        <div className="relative flex min-h-0 flex-1 flex-col px-6 py-10 md:px-0 md:py-14 md:[clip-path:polygon(31.57%_0,100%_0,100%_100%,3%_100%)]">
+          <div className="mb-4 flex shrink-0 items-center justify-between gap-4 md:pl-[32%] md:pr-10">
+            <h1 id="recordings-title" className="text-4xl font-black italic tracking-tight text-white">Past sessions</h1>
+            <span className="-skew-x-12 bg-blue-900/70 px-3 py-1 text-sm font-bold text-cyan-200">{recordings.length} recordings</span>
           </div>
-        ) : recordings.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-400">
-            No recordings yet. Recorded sets will appear here.
-          </p>
-        ) : (
-          <ul className="divide-y divide-white/10">
-            {recordings.map((recording) => (
-              <li key={recording.id} className="flex flex-wrap items-center gap-3 py-3">
-                <div className="min-w-0 flex-1">
-                  {editingId === recording.id ? (
-                    <form
-                      className="flex flex-wrap items-center gap-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveRename(recording);
-                      }}
-                    >
-                      <input
-                        autoFocus
-                        aria-label="Recording title"
-                        className="h-8 min-w-40 flex-1 rounded border border-white/20 bg-black/30 px-2 text-sm text-white"
-                        maxLength={200}
-                        value={draftTitle}
-                        onChange={(event) => setDraftTitle(event.target.value)}
-                      />
-                      <Button type="submit" size="sm">Save</Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
-                    </form>
-                  ) : (
-                    <button
-                      type="button"
-                      className="max-w-full truncate text-left text-sm font-medium text-white hover:underline"
-                      onClick={() => {
-                        setDraftTitle(recording.title);
-                        setEditingId(recording.id);
-                      }}
-                      aria-label={`Rename ${recording.title}`}
-                    >
-                      {recording.title}
-                    </button>
-                  )}
-                  <p className="mt-1 text-xs text-slate-400">
-                    {new Date(recording.createdAt).toLocaleString()} · {formatDuration(recording.durationSeconds)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={loadingAudioId === recording.id}
-                    aria-label={playingId === recording.id ? `Pause ${recording.title}` : `Play ${recording.title}`}
-                    onClick={() => void togglePlayback(recording)}
+          {!isLoaded || (isSignedIn && loading) ? (
+            <p className="py-6 text-center text-sm text-slate-400" role="status">Loading recordings...</p>
+          ) : !isSignedIn ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              <Link className="text-white underline" to="/login">Sign in</Link> to see and save your sets.
+            </p>
+          ) : error && recordings.length === 0 ? (
+            <div className="py-4 text-center">
+              <p className="text-sm text-red-300" role="alert">{error}</p>
+              <Button
+                className="mt-3"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setLoading(true);
+                  void loadRecordings();
+                }}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : recordings.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              No recordings yet. Recorded sets will appear here.
+            </p>
+          ) : (
+            <ul className="min-h-0 max-h-[28rem] flex-1 space-y-2 overflow-y-auto py-6 [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none] md:max-h-none md:pr-28 md:[transform:skewX(-16deg)] [&::-webkit-scrollbar]:hidden">
+              {recordings.map((recording) => (
+                <li key={recording.id}>
+                  <div
+                    className={`flex flex-wrap items-center gap-3 px-4 py-3 transition-colors md:pl-[25%] [clip-path:polygon(0_0,100%_0,calc(100%-14px)_100%,0_100%)] ${
+                      playingId === recording.id
+                        ? 'bg-blue-900'
+                        : 'bg-white/5 hover:bg-white/10'
+                    }`}
                   >
-                    {playingId === recording.id ? <Pause /> : <Play />}
-                    {loadingAudioId === recording.id ? 'Loading...' : playingId === recording.id ? 'Pause' : 'Play'}
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Download ${recording.title}`} onClick={() => void downloadRecording(recording)}>
-                    <Download />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${recording.title}`} onClick={() => void deleteRecording(recording)}>
-                    <Trash2 />
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        {error && recordings.length > 0 && <p className="mt-3 text-sm text-red-300" role="alert">{error}</p>}
-        <audio
-          ref={audioRef}
-          className="hidden"
-          onEnded={() => setPlayingId(null)}
-          onError={() => {
-            if (audioRef.current?.getAttribute('src')) setError('Could not load this recording.');
-          }}
-        />
+                    <div className="min-w-0 flex-1 md:[transform:skewX(16deg)]">
+                      {editingId === recording.id ? (
+                        <form
+                          id="rename-form"
+                          className="h-6"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveRename(recording);
+                          }}
+                        >
+                          <input
+                            autoFocus
+                            aria-label="Recording title"
+                            className="h-6 w-full rounded border border-white/20 bg-black/30 px-2 text-sm text-white"
+                            maxLength={200}
+                            value={draftTitle}
+                            onChange={(event) => setDraftTitle(event.target.value)}
+                          />
+                        </form>
+                      ) : (
+                        <button
+                          type="button"
+                          className="max-w-full cursor-text truncate text-left text-base font-bold italic text-white hover:underline"
+                          onClick={() => {
+                            setDraftTitle(recording.title);
+                            setEditingId(recording.id);
+                          }}
+                          aria-label={`Rename ${recording.title}`}
+                        >
+                          {recording.title}
+                        </button>
+                      )}
+                      <p className="mt-1 text-xs text-slate-300">
+                        {new Date(recording.createdAt).toLocaleString()} · {formatDuration(recording.durationSeconds)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 md:[transform:skewX(16deg)]">
+                      {editingId === recording.id ? (
+                        <>
+                          <Button type="submit" form="rename-form" size="sm">Save</Button>
+                          <Button type="button" variant="ghost" size="sm" className="text-white" onClick={() => setEditingId(null)}>Cancel</Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-white"
+                            disabled={loadingAudioId === recording.id}
+                            aria-label={playingId === recording.id ? `Pause ${recording.title}` : `Play ${recording.title}`}
+                            onClick={() => void togglePlayback(recording)}
+                          >
+                            {playingId === recording.id ? <Pause /> : <Play />}
+                            {loadingAudioId === recording.id ? 'Loading...' : playingId === recording.id ? 'Pause' : 'Play'}
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label={`Download ${recording.title}`} onClick={() => void downloadRecording(recording)}>
+                            <Download />
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label={`Delete ${recording.title}`} onClick={() => void deleteRecording(recording)}>
+                            <Trash2 />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && recordings.length > 0 && <p className="mt-3 text-sm text-red-300 md:pl-[32%] md:pr-10" role="alert">{error}</p>}
+          <audio
+            ref={audioRef}
+            className="hidden"
+            onEnded={() => setPlayingId(null)}
+            onError={() => {
+              if (audioRef.current?.getAttribute('src')) setError('Could not load this recording.');
+            }}
+          />
+        </div>
       </section>
-    </main>
+    </div>
   );
 }
 
