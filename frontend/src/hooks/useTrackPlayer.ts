@@ -6,6 +6,7 @@ import {
   HIRES_COLUMNS,
   type ThreeBandPeaks,
 } from '@/lib/utils/threeBandWaveform';
+import { useToast } from '@/components/ui/toast';
 
 export type PlayerStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'error';
 
@@ -19,6 +20,7 @@ export function clampWaveformViewStart(start: number, width: number) {
 }
 
 export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?: (trackId: string) => Promise<Blob> }) {
+  const { showToast } = useToast();
   const enableSpacebar = options?.enableSpacebar !== false;
   const loadAudio = options?.loadAudio ?? fetchTrackAudioBlob;
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -137,9 +139,11 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
     } catch (error) {
       if (openedIdRef.current !== trackId) return;
       setStatus('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Could not open track');
+      const message = error instanceof Error ? error.message : 'Could not open track';
+      setErrorMessage(message);
+      showToast(message, 'error', { dedupeKey: `track-open-${trackId}` });
     }
-  }, [audioElement, loadAudio, revokeBlob, stopAudio]);
+  }, [audioElement, loadAudio, revokeBlob, showToast, stopAudio]);
 
   const seek = useCallback((seconds: number) => {
     if (!Number.isFinite(audioElement.duration) || audioElement.duration <= 0) return;

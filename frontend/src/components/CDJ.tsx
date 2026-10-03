@@ -19,6 +19,7 @@ import { MetaField } from '@/components/MetaField';
 import { TrackPicker } from './TrackPicker';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/Slider';
+import { useToast } from '@/components/ui/toast';
 
 const PLATTER_MIN_SIZE = 120;
 // Tempo column plus gap on each side, so the platter stays centered without crowding it
@@ -92,6 +93,7 @@ export function CDJ({
   onTransportCommand,
   onPopupChange,
 }: CDJProps) {
+  const { showToast } = useToast();
   const localPlayer = useTrackPlayer({ enableSpacebar: false, loadAudio });
   const player = useMemo(() => {
     if (!readOnlyState) return localPlayer;
@@ -265,7 +267,11 @@ export function CDJ({
     const index = next.findIndex((slot) => slot === null);
     if (index < 0) return;
     next[index] = Math.round(player.currentTime * 1000) / 1000;
-    void onPatch(track.id, { cues: next }).catch(console.error);
+    void onPatch(track.id, { cues: next }).catch((cause: unknown) => {
+      showToast(cause instanceof Error ? cause.message : 'Could not save cue points.', 'error', {
+        dedupeKey: `track-cues-${track.id}`,
+      });
+    });
   };
 
   const handleScratchStart = () => {

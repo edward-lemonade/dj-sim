@@ -7,6 +7,7 @@ import { router } from './config/router.tsx';
 import { ENV } from './config/env';
 import { setAuthTokenGetter } from '@/lib/clients/axios';
 import { TooltipProvider } from './components/ui/tooltip.tsx';
+import { ToastProvider } from './components/ui/toast.tsx';
 
 function ClerkAxiosBridge() {
   const { getToken } = useAuth();
@@ -24,7 +25,9 @@ createRoot(document.getElementById('root')!).render(
     <ClerkProvider publishableKey={ENV.clerk.publishableKey}>
       <ClerkAxiosBridge />
       <TooltipProvider delay={0.2}>
-        <RouterProvider router={router} />
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
       </TooltipProvider>
     </ClerkProvider>
   </StrictMode>,

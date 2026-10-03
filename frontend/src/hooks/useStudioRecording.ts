@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RecordingsAPI } from '@/lib/api/RecordingsAPI';
 import type { MixerAudioEngine } from './useAudioEngine';
+import { useToast } from '@/components/ui/toast';
 
 type RecordingStatus = 'idle' | 'starting' | 'recording' | 'saving' | 'error';
 type EncoderMessage =
@@ -17,6 +18,7 @@ function localRecordingTitle(date: Date): string {
 }
 
 export function useStudioRecording(engine: MixerAudioEngine) {
+  const { showToast } = useToast();
   const [status, setStatus] = useState<RecordingStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [hasPendingSave, setHasPendingSave] = useState(false);
@@ -64,13 +66,14 @@ export function useStudioRecording(engine: MixerAudioEngine) {
       chunksRef.current = [];
       setHasPendingSave(false);
       setStatus('idle');
+      showToast('Recording saved.', 'success');
       return true;
     } catch (cause) {
       setStatus('error');
       setError(cause instanceof Error ? cause.message : 'Could not save this recording. Retry or discard it.');
       return false;
     }
-  }, []);
+  }, [showToast]);
 
   const stopAndSave = useCallback(async (): Promise<boolean> => {
     if (savingPromiseRef.current) return savingPromiseRef.current;

@@ -8,6 +8,7 @@ import type { TrackDTO, TrackUpdateFields } from '@/lib/types/Track';
 import type { Track } from '@/lib/types/Track';
 import { useTrackUpload } from './useTrackUpload';
 import { normalizeCues } from '@/lib/types/Cues';
+import { useToast } from '@/components/ui/toast';
 
 export function trackToPool(track: TrackDTO): Track {
   const libraryStatus =
@@ -37,6 +38,7 @@ export function trackToPool(track: TrackDTO): Track {
 
 export function useTrackLibrary() {
   const { user, isLoaded, isSignedIn } = useUser();
+  const { showToast } = useToast();
   const [songs, setSongs] = useState<Track[]>([]);
   const [isLoadingTracks, setIsLoadingTracks] = useState(true);
   const songsRef = useRef<Track[]>([]);
@@ -70,8 +72,13 @@ export function useTrackLibrary() {
           const stillUploading = current.filter((song) => song.libraryStatus === 'uploading');
           return [...stillUploading, ...tracks.map(trackToPool)];
         });
-      } catch {
-        if (!cancelled) setSongs([]);
+      } catch (cause) {
+        if (!cancelled) {
+          setSongs([]);
+          showToast(cause instanceof Error ? cause.message : 'Could not load your tracks.', 'error', {
+            dedupeKey: 'tracks-library-load',
+          });
+        }
       }
     }
 
@@ -81,7 +88,7 @@ export function useTrackLibrary() {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, user?.id]);
+  }, [isLoaded, isSignedIn, showToast, user?.id]);
 
   // Poll while anything is still being analyzed server-side. The effect
   // re-runs whenever hasAnalyzing flips: React clears the previous
@@ -126,6 +133,7 @@ export function useTrackLibrary() {
       await deleteTrack(song.id);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Could not delete track';
+      showToast(message, 'error', { dedupeKey: `track-delete-${song.id}` });
       setSongs((current) =>
         current.map((item) =>
           item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
@@ -141,7 +149,7 @@ export function useTrackLibrary() {
       }
       return next;
     });
-  }, []);
+  }, [showToast]);
 
   const analyzeSong = useCallback(async (song: Track) => {
     if (song.libraryStatus === 'uploading' || song.libraryStatus === 'analyzing') return;
@@ -156,27 +164,31 @@ export function useTrackLibrary() {
       await analyzeTrack(song.id);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Could not start analysis';
+      showToast(message, 'error', { dedupeKey: `track-analysis-${song.id}` });
       setSongs((current) =>
         current.map((item) =>
           item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
         ),
       );
     }
-  }, []);
+  }, [showToast]);
 
   const cancelAnalysis = useCallback(async (song: Track) => {
     if (song.libraryStatus !== 'analyzing') return;
 
     try {
       await cancelTrackAnalysis(song.id);
-    } catch {
+    } catch (cause) {
+      showToast(cause instanceof Error ? cause.message : 'Could not cancel track analysis.', 'error', {
+        dedupeKey: `track-analysis-cancel-${song.id}`,
+      });
       return;
     }
 
     setSongs((current) =>
       current.map((item) => (item.id === song.id ? { ...item, libraryStatus: 'ready' } : item)),
     );
-  }, []);
+  }, [showToast]);
 
   const patchTrack = useCallback(async (id: string, fields: TrackUpdateFields) => {
     const previous = songsRef.current.find((song) => song.id === id);

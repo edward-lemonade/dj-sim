@@ -3,6 +3,7 @@ import { Download, Pause, Play, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
 import { joinRoomByCode } from '@/lib/api/RoomsAPI';
 import {
@@ -31,6 +32,7 @@ function HomePage() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +59,27 @@ function HomePage() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    showToast(error, 'error', {
+      dedupeKey: 'home-recordings',
+      actions: recordings.length === 0
+        ? [{
+            label: 'Retry',
+            onClick: () => {
+              setLoading(true);
+              setError(null);
+              void loadRecordings();
+            },
+          }]
+        : undefined,
+    });
+  }, [error, loadRecordings, recordings.length, showToast]);
+
+  useEffect(() => {
+    if (joinError) showToast(joinError, 'error', { dedupeKey: 'home-room-join' });
+  }, [joinError, showToast]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
@@ -157,7 +180,7 @@ function HomePage() {
       writeSessionValue(PENDING_ROOM_CODE_KEY, '');
       navigate('/studio', { state: { roomSession: createdRoomFromJoin(joined, code) } });
     } catch (cause) {
-      setJoinError(roomJoinErrorMessage(cause));
+      showToast(roomJoinErrorMessage(cause), 'error', { dedupeKey: 'home-room-join' });
     } finally {
       setJoining(false);
     }
@@ -235,6 +258,7 @@ function HomePage() {
       anchor.download = `${recording.title}.mp3`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('Recording download started.', 'success');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not download this recording.');
     }
@@ -255,6 +279,7 @@ function HomePage() {
       const updated = await RecordingsAPI.updateTitle(recording.id, title);
       setRecordings((current) => current.map((item) => item.id === updated.id ? updated : item));
       setEditingId(null);
+      showToast('Recording renamed.', 'success');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not rename this recording.');
     }
@@ -267,6 +292,7 @@ function HomePage() {
       await RecordingsAPI.remove(recording.id);
       if (playingId === recording.id) stopPlayback();
       setRecordings((current) => current.filter((item) => item.id !== recording.id));
+      showToast('Recording deleted.', 'success');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not delete this recording.');
     }
@@ -346,7 +372,7 @@ function HomePage() {
                 </div>
               </div>
               {joinError && (
-                <p id="home-room-code-error" role="alert" className="text-sm text-red-300">
+                <p id="home-room-code-error" aria-live="polite" className="text-sm text-red-300">
                   {joinError}
                 </p>
               )}
@@ -398,18 +424,7 @@ function HomePage() {
             </div>
           ) : error && recordings.length === 0 ? (
             <div className="py-4 text-center">
-              <p className="text-sm text-red-300" role="alert">{error}</p>
-              <Button
-                className="mt-3"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLoading(true);
-                  void loadRecordings();
-                }}
-              >
-                Try again
-              </Button>
+              <p className="text-sm text-slate-400">Recordings are temporarily unavailable.</p>
             </div>
           ) : recordings.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">
@@ -496,7 +511,6 @@ function HomePage() {
               ))}
             </ul>
           )}
-          {error && recordings.length > 0 && <p className="mt-3 text-sm text-red-300 md:pl-[32%] md:pr-10" role="alert">{error}</p>}
           <audio
             ref={audioRef}
             className="hidden"

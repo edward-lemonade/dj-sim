@@ -5,6 +5,7 @@ import { uploadTrack } from '@/lib/api/TrackAPI';
 import { ApiError } from '@/lib/clients/axios';
 import type { Track } from '@/lib/types/Track';
 import { emptyCues, normalizeCues } from '@/lib/types/Cues';
+import { useToast } from '@/components/ui/toast';
 
 export function useTrackUpload({
   setSongs,
@@ -14,10 +15,19 @@ export function useTrackUpload({
   isSignedIn: boolean | undefined;
 }) {
   const uploadRef = useRef<HTMLInputElement | null>(null);
+  const { showToast } = useToast();
 
   const uploadOne = useCallback(async (file: File) => {
     const pendingId = `upload-${crypto.randomUUID()}`;
-    const metadata = await readTrackMetadata(file);
+    let metadata: Awaited<ReturnType<typeof readTrackMetadata>>;
+    try {
+      metadata = await readTrackMetadata(file);
+    } catch (cause) {
+      showToast(`${file.name}: ${cause instanceof Error ? cause.message : 'Could not read track metadata.'}`, 'error', {
+        dedupeKey: `track-upload-${pendingId}`,
+      });
+      return;
+    }
     const pending: Track = {
       id: pendingId,
       title: metadata.title,
@@ -84,8 +94,10 @@ export function useTrackUpload({
             : song,
         ),
       );
+      showToast(`${metadata.title || file.name} uploaded.`, 'success');
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Upload failed';
+      showToast(`${file.name}: ${message}`, 'error', { dedupeKey: `track-upload-${pendingId}` });
       setSongs((current) =>
         current.map((song) =>
           song.id === pendingId
@@ -94,7 +106,7 @@ export function useTrackUpload({
         ),
       );
     }
-  }, [isSignedIn, setSongs]);
+  }, [isSignedIn, setSongs, showToast]);
 
   const handleUpload = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);

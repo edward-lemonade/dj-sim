@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useToast } from '@/components/ui/toast';
 
 export function MetaField({
   label,
@@ -15,6 +16,7 @@ export function MetaField({
   align?: 'left' | 'center';
   onCommit: (value: string) => Promise<unknown>;
 }) {
+  const { showToast } = useToast();
   const [draft, setDraft] = useState(value);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const draftRef = useRef(draft);
@@ -40,9 +42,11 @@ export function MetaField({
     try {
       await onCommit(draftRef.current);
       setFieldError(null);
-    } catch {
+    } catch (cause) {
       setDraft(valueRef.current);
-      setFieldError('Could not save');
+      const message = cause instanceof Error ? cause.message : `Could not save ${label.toLowerCase()}.`;
+      setFieldError(message);
+      showToast(message, 'error', { dedupeKey: `track-field-${label}` });
     }
   };
 

@@ -11,7 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import type { CreatedRoom } from '@/lib/types/Room';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useToast } from '@/components/ui/toast';
 
 const RecordingStatus = {
   Idle: 'idle',
@@ -63,6 +64,7 @@ export function StudioTopbar({
   onLeaveRoom: () => Promise<void>;
 }) {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
@@ -76,6 +78,23 @@ export function StudioTopbar({
     : collabRoom
       ? 'Leaving room...'
       : 'Exiting...';
+
+  useEffect(() => {
+    if (recordingError) {
+      showToast(recordingError, 'error', {
+        dedupeKey: 'studio-recording',
+        actions: hasPendingSave ? [{ label: 'Retry save', onClick: () => void onRetrySave() }] : undefined,
+      });
+    }
+  }, [hasPendingSave, onRetrySave, recordingError, showToast]);
+
+  useEffect(() => {
+    if (streamError) showToast(streamError, 'error', { dedupeKey: 'studio-stream' });
+  }, [showToast, streamError]);
+
+  useEffect(() => {
+    if (collabError) showToast(collabError, 'error', { dedupeKey: 'studio-collaboration' });
+  }, [collabError, showToast]);
 
   const confirmExit = async () => {
     setExiting(true);
@@ -195,12 +214,6 @@ export function StudioTopbar({
             Collab
           </Button>
         )}
-        {recordingError && (
-          <p role="alert" className="min-w-0 truncate text-xs text-red-300">
-            {recordingError}
-          </p>
-        )}
-        {streamError && <p role="alert" className="min-w-0 truncate text-xs text-red-300">{streamError}</p>}
       </header>
       <ExitConfirmModal
         open={confirmOpen}
@@ -252,7 +265,6 @@ export function StudioTopbar({
               <p role="status" className="text-xs text-muted-foreground">
                 Connected to the shared room. Access all members' tracks below.
               </p>
-              {collabError && <p role="alert" className="text-sm text-red-400">{collabError}</p>}
               <DialogFooter>
                 <Button
                   type="button"
@@ -299,7 +311,6 @@ export function StudioTopbar({
                 </label>
               </fieldset>
               <p className="text-xs text-slate-400">Any member can start a stream from the room.</p>
-              {collabError && <p role="alert" className="text-sm text-red-400">{collabError}</p>}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCollabOpen(false)} disabled={collabBusy}>
                   Cancel

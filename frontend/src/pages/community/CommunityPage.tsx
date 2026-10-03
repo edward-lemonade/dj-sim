@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/react';
 import { Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import { listStreams } from '@/lib/api/StreamsAPI';
 import { joinPublicRoom, listRooms } from '@/lib/api/RoomsAPI';
 import type { ListedRoom } from '@/lib/types/Room';
@@ -34,6 +35,7 @@ const UNSKEW = 'md:[transform:skewX(16deg)]';
 function CommunityPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [streams, setStreams] = useState<ListedStream[]>([]);
@@ -75,6 +77,18 @@ function CommunityPage() {
   const refresh = useCallback(async () => {
     await Promise.all([refreshStreams(), refreshRooms()]);
   }, [refreshRooms, refreshStreams]);
+
+  const retryStreams = useCallback(() => {
+    setStreamsLoading(true);
+    setStreamsError(null);
+    void refreshStreams();
+  }, [refreshStreams]);
+
+  const retryRooms = useCallback(() => {
+    setRoomsLoading(true);
+    setRoomsError(null);
+    void refreshRooms();
+  }, [refreshRooms]);
 
   const joinListedRoom = useCallback(async (room: ListedRoom) => {
     setJoinError(null);
@@ -121,6 +135,30 @@ function CommunityPage() {
   }, [isLoaded, isSignedIn, navigate, user?.imageUrl]);
 
   useEffect(() => {
+    if (!streamsError) return;
+    showToast(streamsError, 'error', {
+      dedupeKey: 'community-streams-load',
+      actions: [{ label: 'Retry', onClick: retryStreams }],
+    });
+  }, [retryStreams, showToast, streamsError]);
+
+  useEffect(() => {
+    if (!roomsError) return;
+    showToast(roomsError, 'error', {
+      dedupeKey: 'community-rooms-load',
+      actions: [{ label: 'Retry', onClick: retryRooms }],
+    });
+  }, [retryRooms, roomsError, showToast]);
+
+  useEffect(() => {
+    if (joinError) showToast(joinError, 'error', { dedupeKey: 'community-room-join' });
+  }, [joinError, showToast]);
+
+  useEffect(() => {
+    if (roomClosed) showToast('Room closed. Choose another live stream or public room.', 'info', { dedupeKey: 'community-room-closed' });
+  }, [roomClosed, showToast]);
+
+  useEffect(() => {
     const initialLoad = window.setTimeout(() => void refresh(), 0);
     const poll = window.setInterval(() => void refresh(), 10000);
     const clock = window.setInterval(() => setNow(Date.now()), 1000);
@@ -155,22 +193,13 @@ function CommunityPage() {
             count={`${streams.length} live`}
             className="md:items-end md:pr-[calc(9vw+1.5rem)] md:[transform:skewX(16deg)]"
           />
-          {roomClosed && (
-            <p role="status" className="mt-4 border-l-2 border-cyan-300/70 bg-white/5 px-4 py-2 text-sm text-white md:mr-[calc(9vw+1.5rem)] md:self-end md:[transform:skewX(16deg)]">
-              Room closed. Choose another live stream or public room.
-            </p>
-          )}
-
           {streamsLoading ? (
             <div className={`flex flex-1 items-center justify-center py-8 text-center md:-ml-[9vw] md:w-[50vw] ${UNSKEW}`}>
               <p className="text-5xl font-black italic tracking-tight text-white/40">Loading...</p>
             </div>
           ) : streamsError ? (
-            <div role="alert" className={`py-6 text-center md:pr-[calc(9vw+1.5rem)] ${UNSKEW}`}>
-              <p className="text-sm text-red-300">{streamsError}</p>
-              <Button className="mt-3" variant="outline" size="sm" onClick={() => void refreshStreams()}>
-                Try again
-              </Button>
+            <div className={`py-6 text-center md:pr-[calc(9vw+1.5rem)] ${UNSKEW}`}>
+              <p className="text-sm text-slate-300">Streams are temporarily unavailable.</p>
             </div>
           ) : streams.length === 0 ? (
             <div className={`flex flex-1 items-center justify-center py-8 text-center md:-ml-[9vw] md:w-[50vw] ${UNSKEW}`}>
@@ -241,11 +270,8 @@ function CommunityPage() {
               <p className="text-5xl font-black italic tracking-tight text-white/40">Loading...</p>
             </div>
           ) : roomsError ? (
-            <div role="alert" className="flex-1 py-6 text-center md:pl-[32%] md:pr-10">
-              <p className="text-sm text-red-300">{roomsError}</p>
-              <Button className="mt-3" variant="outline" size="sm" onClick={() => void refreshRooms()}>
-                Try again
-              </Button>
+            <div className="flex-1 py-6 text-center md:pl-[32%] md:pr-10">
+              <p className="text-sm text-slate-300">Public rooms are temporarily unavailable.</p>
             </div>
           ) : rooms.length === 0 ? (
             <div className="flex flex-1 items-center justify-center py-8 text-center md:ml-[9vw] md:w-[49vw]">
@@ -292,11 +318,6 @@ function CommunityPage() {
             </ul>
           )}
 
-          {joinError && (
-            <p role="alert" className="mt-3 text-sm text-red-300 md:pl-[14%] md:pr-10">
-              {joinError}
-            </p>
-          )}
         </div>
       </section>
     </main>

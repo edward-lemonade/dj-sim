@@ -10,6 +10,7 @@ import { useGridNudge } from '../../../hooks/useGridNudge';
 import { BandOptions } from '@/components/WaveformCanvas';
 import { EditWaveformDisplay } from '@/components/EditWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
+import { useToast } from '@/components/ui/toast';
 
 export function TrackPreview({
   track,
@@ -20,6 +21,7 @@ export function TrackPreview({
   player: TrackPlayer;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
 }) {
+  const { showToast } = useToast();
   const { nudge: nudgeGrid } = useGridNudge({
     trackId: track?.id ?? null,
     bpm: track?.bpm ?? 0,
@@ -37,14 +39,18 @@ export function TrackPreview({
 
   const cues = normalizeCues(track.cues);
   const setCues = (next: Array<number | null>) => {
-    void onPatch(track.id, { cues: next }).catch(console.error);
+    void onPatch(track.id, { cues: next }).catch((cause: unknown) => {
+      showToast(cause instanceof Error ? cause.message : 'Could not save cue points.', 'error', {
+        dedupeKey: `track-cues-${track.id}`,
+      });
+    });
   };
 
   return (
     <section className="flex min-h-0 shrink-0 flex-col bg-mist-900 border-b border-slate/40">
       {player.status === 'error' ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-red-400">
-          {player.errorMessage || 'Could not open track'}
+        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-zinc-400">
+          Track preview is unavailable.
         </div>
       ) : (
         <EditWaveformDisplay 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Home, LoaderCircle, Play, RotateCw } from 'lucide-react';
+import { Home, LoaderCircle, RotateCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/toast';
 import type { Track } from '@/lib/types/Track';
 import { CDJ } from '@/components/CDJ';
 import { Mixer } from '@/components/Mixer';
@@ -38,7 +39,48 @@ function StreamPage() {
   const { streamId = '' } = useParams();
   const navigate = useNavigate();
   const stream = useStreamViewer(streamId);
+  const { status, error, connect, session, needsAudioGesture, playAudio } = stream;
+  const { showToast } = useToast();
   const [now, setNow] = useState(0);
+  useEffect(() => {
+    if (status !== StreamConnectionStatus.Error) return;
+    showToast(error ?? 'Could not connect to this stream.', 'error', {
+      dedupeKey: `stream-viewer-${streamId}`,
+      actions: [
+        { label: 'Reconnect', onClick: () => void connect() },
+        { label: 'Community', onClick: () => navigate('/community') },
+      ],
+    });
+  }, [connect, error, navigate, showToast, status, streamId]);
+
+  useEffect(() => {
+    if (status === StreamConnectionStatus.Ended) {
+      showToast('This stream has ended.', 'info', {
+        dedupeKey: `stream-ended-${streamId}`,
+        actions: [{ label: 'Back to Community', onClick: () => navigate('/community') }],
+      });
+    }
+  }, [navigate, showToast, status, streamId]);
+
+  useEffect(() => {
+    if (session && status === StreamConnectionStatus.Joining) {
+      showToast('Reconnecting to stream...', 'info', {
+        dedupeKey: `stream-reconnecting-${streamId}`,
+        duration: 2500,
+      });
+    }
+  }, [session, showToast, status, streamId]);
+
+  useEffect(() => {
+    if (needsAudioGesture) {
+      showToast('Audio playback needs your permission.', 'info', {
+        dedupeKey: `stream-audio-${streamId}`,
+        duration: 12000,
+        actions: [{ label: 'Play stream', onClick: playAudio }],
+      });
+    }
+  }, [needsAudioGesture, playAudio, showToast, streamId]);
+
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 200);
     return () => window.clearInterval(timer);
@@ -58,7 +100,6 @@ function StreamPage() {
       <main className="grid h-svh place-items-center bg-[#0b0d10] text-zinc-300">
         {stream.status === StreamConnectionStatus.Error ? (
           <div className="text-center">
-            <p role="alert">{stream.error ?? 'Could not join this stream.'}</p>
             <div className="mt-4 flex justify-center gap-2">
               <Button onClick={() => void stream.connect()}><RotateCw /> Retry</Button>
               <Button variant="ghost" onClick={() => navigate('/community')}>Back to Community</Button>
@@ -143,24 +184,6 @@ function StreamPage() {
             />
           }
         >
-          {stream.status === StreamConnectionStatus.Error && (
-            <div role="alert" className="absolute left-1/2 top-12 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg bg-amber-950/95 px-4 py-2 text-sm text-amber-100 shadow-xl">
-              {stream.error ?? 'Stream connection lost.'}
-              <Button size="sm" variant="outline" onClick={() => void stream.connect()}>Reconnect</Button>
-              <Button size="sm" variant="ghost" onClick={() => navigate('/community')}>Back to Community</Button>
-            </div>
-          )}
-          {stream.status === StreamConnectionStatus.Joining && (
-            <div role="status" className="absolute left-1/2 top-12 z-50 -translate-x-1/2 rounded-lg bg-amber-950/95 px-4 py-2 text-sm text-amber-100 shadow-xl">
-              Reconnecting to stream...
-            </div>
-          )}
-          {stream.needsAudioGesture && (
-            <div className="absolute left-1/2 top-24 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-rose-950/95 px-4 py-2 shadow-xl">
-              <span className="text-sm">Audio playback needs your permission.</span>
-              <Button size="sm" onClick={stream.playAudio}><Play /> Play stream</Button>
-            </div>
-          )}
           {snapshot.pointer && (
             <div
               aria-hidden="true"
@@ -172,12 +195,6 @@ function StreamPage() {
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-40 w-72 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-white/15 bg-[#161a20] p-4 shadow-2xl">
               <p className="text-xs uppercase tracking-wider text-zinc-500">Deck {snapshot.popup.deck} · Track picker</p>
               <p className="mt-2 text-sm text-zinc-300">The streamer is choosing a track.</p>
-            </div>
-          )}
-          {stream.status === StreamConnectionStatus.Ended && (
-            <div role="status" className="absolute bottom-5 left-1/2 z-60 flex w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-rose-300/30 bg-rose-950/95 p-4 text-sm text-rose-100 shadow-2xl">
-              <span>This stream has ended.</span>
-              <Button size="sm" variant="secondary" onClick={() => navigate('/community')}>Back to Community</Button>
             </div>
           )}
         </StudioConsoleLayout>

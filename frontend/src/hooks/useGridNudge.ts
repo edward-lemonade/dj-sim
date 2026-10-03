@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '@/components/ui/toast';
 
 const STEP = 0.01; // seconds
 const FINE_STEP = 0.001;
@@ -17,6 +18,7 @@ export function useGridNudge({
   savedOffset: number;
   save: (id: string, offset: number) => Promise<unknown>;
 }) {
+  const { showToast } = useToast();
   const [pending, setPending] = useState<number | null>(null);
   const pendingRef = useRef<number | null>(null);
   const timer = useRef<number | null>(null);
@@ -31,13 +33,14 @@ export function useGridNudge({
     const value = pendingRef.current;
     if (value === null) return;
     pendingRef.current = null;
-    void saveRef
-      .current(id, value)
-      .catch(console.error)
-      .finally(() => {
+    void saveRef.current(id, value).catch((cause: unknown) => {
+      showToast(cause instanceof Error ? cause.message : 'Could not save beat-grid adjustment.', 'error', {
+        dedupeKey: `track-grid-${id}`,
+      });
+    }).finally(() => {
         if (pendingRef.current === null) setPending(null);
       });
-  }, []);
+  }, [showToast]);
 
   // Save any unsaved nudge when switching tracks or unmounting.
   useEffect(() => {
