@@ -31,10 +31,30 @@ const buttonVariants = cva(
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
       },
+      color: {
+        default: "",
+        purple: "",
+        sky: "",
+      },
     },
+    compoundVariants: [
+      {
+        variant: "destructive",
+        color: "sky",
+        className:
+          "bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 focus-visible:border-sky-500/40 focus-visible:ring-sky-500/20 dark:bg-sky-500/20 dark:hover:bg-sky-500/30 dark:focus-visible:ring-sky-500/40",
+      },
+      {
+        variant: "destructive",
+        color: "purple",
+        className:
+          "bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 focus-visible:border-purple-500/40 focus-visible:ring-purple-500/20 dark:bg-purple-500/20 dark:hover:bg-purple-500/30 dark:focus-visible:ring-purple-500/40",
+      },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",
+      color: "default",
     },
   }
 )
@@ -43,12 +63,13 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  color = "default",
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: Omit<ButtonPrimitive.Props, "color"> & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size, color, className }))}
       {...props}
     />
   )

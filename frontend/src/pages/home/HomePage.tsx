@@ -307,10 +307,6 @@ function HomePage() {
         <span aria-hidden className="pointer-events-none absolute -bottom-10 -left-6 select-none text-[22rem] font-black italic leading-none text-transparent [-webkit-text-stroke:2px_rgba(147,197,253,.12)]">
           DJ
         </span>
-        <div aria-hidden className="absolute size-72 animate-pulse rounded-full bg-blue-500/25 blur-3xl" />
-        <div aria-hidden className="absolute size-[26rem] animate-spin rounded-full border-2 border-dashed border-white/20 [animation-duration:40s]" />
-        <div aria-hidden className="absolute size-[20rem] animate-spin rounded-full border border-white/10 [animation-direction:reverse] [animation-duration:60s]" />
-
         <div className="relative z-10 flex flex-col items-center gap-5">
           <form
             className="flex w-[min(24rem,92vw)] flex-col items-center gap-5"

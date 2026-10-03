@@ -1,4 +1,4 @@
-import { Circle, Copy, Eye, Home, LoaderCircle, Radio, Square, Users } from 'lucide-react';
+import { Circle, Copy, Eye, Home, Info, LoaderCircle, Radio, Square, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ExitConfirmModal } from '@/components/ExitConfirmModal';
 import {
@@ -155,42 +155,49 @@ export function StudioTopbar({
           )}
         </div>
         {streamLive ? (
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="destructive" size="sm" onClick={onStopStream}>
-              <Radio /> Stop streaming
-            </Button>
-            <span className="inline-flex items-center gap-1.5 text-xs text-rose-200" aria-label={`${streamViewerCount} viewers`}>
-              <Eye className="size-4" />
-              <span>{streamViewerCount} {streamViewerCount === 1 ? 'viewer' : 'viewers'}</span>
+          <Button
+            type="button"
+            variant="destructive"
+            color="purple"
+            size="sm"
+            aria-label={`Stop streaming, ${streamViewerCount} ${streamViewerCount === 1 ? 'viewer' : 'viewers'}`}
+            onClick={onStopStream}
+          >
+            <Square />
+            Stop streaming
+            <span className="ml-1 inline-flex items-center gap-1 tabular-nums" aria-hidden="true">
+              <Eye />
+              {streamViewerCount}
             </span>
-            <span role="status" className="rounded-full bg-rose-500/15 px-2 py-1 text-[10px] font-semibold uppercase text-rose-200">Live</span>
-          </div>
+          </Button>
         ) : (
           <Button type="button" size="sm" className={controlHover} onClick={onStartStream}>
             <Radio className="text-purple-500" /> Stream
           </Button>
         )}
         {collabRoom ? (
-          <div className="flex min-w-0 items-center gap-2">
+          <Button type="button" variant="destructive" color="sky" size="sm" onClick={() => setCollabOpen(true)}>
+            <Info />
+            Room
             {collabRoom.members && collabRoom.members.length > 0 && (
               <span
                 role="img"
                 aria-label={`Room members: ${collabRoom.members.map((member) => member.username).filter(Boolean).join(', ')}`}
-                className="flex shrink-0 items-center pl-1"
+                className="ml-1 flex shrink-0 items-center"
               >
-                {collabRoom.members.slice(0, 3).map((member, index) => (
+                {collabRoom.members.map((member, index) => (
                   member.avatarUrl ? (
                     <img
                       key={`${member.username}-${index}`}
                       src={member.avatarUrl}
                       alt=""
-                      className="-ml-2 size-6 rounded-full border bg-slate-800 object-cover first:ml-0"
+                      className="-ml-1.5 size-5 rounded-full border bg-slate-800 object-cover first:ml-0"
                     />
                   ) : (
                     <span
                       key={`${member.username}-${index}`}
                       aria-hidden="true"
-                      className="-ml-2 grid size-6 place-items-center rounded-full border text-[10px] font-semibold first:ml-0"
+                      className="-ml-1.5 grid size-5 place-items-center rounded-full border bg-slate-800 text-[9px] font-semibold first:ml-0"
                     >
                       {member.username.slice(0, 1).toUpperCase() || '?'}
                     </span>
@@ -198,16 +205,7 @@ export function StudioTopbar({
                 ))}
               </span>
             )}
-            {collabRoom.code && (
-              <span className="font-mono text-xs tracking-[0.2em]" aria-label={`${collabRoom.visibility} room code ${collabRoom.code}`}>
-                {collabRoom.code}
-              </span>
-            )}
-            <Button type="button" size="sm" className={controlHover} onClick={() => setCollabOpen(true)}>
-              <Users className="text-sky-400" />
-              Room
-            </Button>
-          </div>
+          </Button>
         ) : (
           <Button type="button" size="sm" className={controlHover} onClick={() => setCollabOpen(true)}>
             <Users className="text-sky-400" />
@@ -223,10 +221,12 @@ export function StudioTopbar({
         onYes={() => void confirmExit()}
       />
       <Dialog open={collabOpen} onOpenChange={setCollabOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md border border-white/10 bg-[#101419] text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,.65)] ring-white/10 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{collabRoom ? 'Collaborative room' : 'Create a room'}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-lg font-bold tracking-tight text-white">
+              {collabRoom ? 'Collaborative room' : 'Create a room'}
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
               {collabRoom
                 ? 'Share this six-digit code with someone you want to invite.'
                 : 'Create a public room listed in Community or a private room joined by code.'}
@@ -234,18 +234,19 @@ export function StudioTopbar({
           </DialogHeader>
           {collabRoom ? (
             <div className="grid gap-3">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-zinc-400">
                 {collabRoom.visibility === 'public' ? 'Public room' : 'Private room'} · up to {collabRoom.capacity} members
               </p>
               {collabRoom.code ? (
-                <div className="flex items-center justify-between rounded-md border px-3 py-2">
-                  <span className="font-mono text-lg tracking-[0.25em]" aria-label={`Room code ${collabRoom.code}`}>
+                <div className="flex items-center justify-between rounded-lg border border-cyan-300/20 bg-[#080b10] px-3 py-2">
+                  <span className="font-mono text-lg tracking-[0.25em] text-cyan-100" aria-label={`Room code ${collabRoom.code}`}>
                     {collabRoom.code}
                   </span>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="border-white/15 bg-white/5 text-zinc-100 hover:bg-white/10 hover:text-white"
                     onClick={() => {
                       void navigator.clipboard.writeText(collabRoom.code).then(() => {
                         setCopiedCode(true);
@@ -258,14 +259,14 @@ export function StudioTopbar({
                   </Button>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-zinc-400">
                   Invite code is shown after it is issued to this session.
                 </p>
               )}
-              <p role="status" className="text-xs text-muted-foreground">
+              <p role="status" className="text-xs text-zinc-400">
                 Connected to the shared room. Access all members' tracks below.
               </p>
-              <DialogFooter>
+              <DialogFooter className="border-white/10 bg-[#0b0e13]">
                 <Button
                   type="button"
                   variant="destructive"
@@ -288,34 +289,42 @@ export function StudioTopbar({
               }}
             >
               <fieldset className="grid gap-2">
-                <legend className="mb-1 text-sm font-medium">Room visibility</legend>
-                <label className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <legend className="mb-1 text-sm font-semibold text-zinc-200">Room visibility</legend>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-[#0b0e13] px-3 py-2.5 text-sm text-zinc-200 transition-colors hover:border-cyan-300/30 hover:bg-white/5">
                   <input
                     type="radio"
                     name="room-visibility"
                     value="public"
                     checked={visibility === 'public'}
                     onChange={() => setVisibility('public')}
+                    className="accent-cyan-400"
                   />
                   <span>Public — listed in Community</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-[#0b0e13] px-3 py-2.5 text-sm text-zinc-200 transition-colors hover:border-cyan-300/30 hover:bg-white/5">
                   <input
                     type="radio"
                     name="room-visibility"
                     value="private"
                     checked={visibility === 'private'}
                     onChange={() => setVisibility('private')}
+                    className="accent-cyan-400"
                   />
                   <span>Private — join by code only</span>
                 </label>
               </fieldset>
               <p className="text-xs text-slate-400">Any member can start a stream from the room.</p>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setCollabOpen(false)} disabled={collabBusy}>
+              <DialogFooter className="border-white/10 bg-[#0b0e13]">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10 hover:text-white"
+                  onClick={() => setCollabOpen(false)}
+                  disabled={collabBusy}
+                >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={collabBusy}>
+                <Button type="submit" disabled={collabBusy} className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
                   {collabBusy ? <LoaderCircle className="animate-spin" /> : <Users />}
                   {collabBusy ? 'Connecting...' : 'Create room'}
                 </Button>

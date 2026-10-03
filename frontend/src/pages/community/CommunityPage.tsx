@@ -183,8 +183,6 @@ function CommunityPage() {
         <span aria-hidden className="pointer-events-none absolute -bottom-10 -left-6 select-none text-[20rem] font-black italic leading-none text-transparent [-webkit-text-stroke:2px_rgba(147,197,253,.10)]">
           LIVE
         </span>
-        <div aria-hidden className="absolute -left-20 top-1/3 size-72 animate-pulse rounded-full bg-blue-500/25 blur-3xl" />
-
         {/* The whole column is skewed so its right edge runs parallel to the divider; content is un-skewed inside. */}
         <div className="relative z-10 flex min-h-0 flex-1 flex-col md:pl-[9vw] md:[transform:skewX(-16deg)]">
           <SectionHeader
