@@ -4,8 +4,8 @@ import AppLayout from '@/components/layout/AppLayout';
 import HomePage from '@/pages/home/HomePage';
 import TracksPage from '@/pages/tracks/TracksPage';
 import StudioPage from '@/pages/studio/StudioPage';
-import StreamsPage from '@/pages/streams/StreamsPage';
-import StreamViewerPage from '@/pages/streams/StreamViewerPage';
+import CommunityPage from '@/pages/community/CommunityPage';
+import StreamPage from '@/pages/stream/StreamPage';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 
@@ -30,7 +30,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: 'tracks', element: <TracksPage /> },
-      { path: 'community', element: <StreamsPage /> },
+      { path: 'community', element: <CommunityPage /> },
       { path: 'streams', element: <Navigate to="/community" replace /> },
       { path: 'skills', element: <Navigate to="/community" replace /> },
     ],
@@ -40,8 +40,8 @@ export const router = createBrowserRouter([
     element: <StudioPage />,
   },
   {
-    path: '/streams/:streamId',
-    element: <StreamViewerPage />,
+    path: '/stream/:streamId',
+    element: <StreamPage />,
   },
   {
     path: '/',

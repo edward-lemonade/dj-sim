@@ -34,7 +34,7 @@ function formatTime(seconds: number) {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 }
 
-function StreamViewerPage() {
+function StreamPage() {
   const { streamId = '' } = useParams();
   const navigate = useNavigate();
   const stream = useStreamViewer(streamId);
@@ -191,4 +191,4 @@ function StreamViewerPage() {
   );
 }
 
-export default StreamViewerPage;
+export default StreamPage;

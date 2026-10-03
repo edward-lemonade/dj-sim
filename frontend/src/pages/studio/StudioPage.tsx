@@ -21,13 +21,13 @@ import { fetchTrackAudioBlob } from '@/lib/api/TrackAPI';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { useStudioRecording } from '../../hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
-import { useStreamPublisher } from '@/pages/streams/useStreamConnection';
+import { useStreamPublisher } from '@/pages/stream/useStreamConnection';
 import {
   createInitialStudioSnapshot,
   reduceStudioSnapshot,
   StudioActionType,
   type StudioAction,
-} from '@/pages/streams/studioState';
+} from '@/pages/stream/studioState';
 
 // Matches the tempo slider's range in CDJ
 const TEMPO_RANGE_PERCENT = 50;

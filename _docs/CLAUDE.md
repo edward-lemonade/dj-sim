@@ -6,5 +6,4 @@ NEVER leave comment blocks larger than 3 lines. Keep things concise.
 
 DON'T worry about lint errors.
 
-
-
+NEVER use union strings for types, ALWAYS use enums

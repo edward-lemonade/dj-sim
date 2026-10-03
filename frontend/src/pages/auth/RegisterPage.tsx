@@ -1,6 +1,6 @@
 import { SignUp } from '@clerk/react';
 import { useSearchParams } from 'react-router-dom';
-import { safeAuthRedirect } from '@/lib/rooms/join';
+import { safeAuthRedirect } from '@/lib/utils/joinRoom';
 
 export function RegisterPage() {
   const [params] = useSearchParams();

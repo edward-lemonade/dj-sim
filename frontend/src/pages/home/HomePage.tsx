@@ -13,7 +13,7 @@ import {
   roomCodeInputError,
   roomJoinErrorMessage,
   writeSessionValue,
-} from '@/lib/rooms/join';
+} from '@/lib/utils/joinRoom';
 
 const ROOM_CODE_LENGTH = 6;
 

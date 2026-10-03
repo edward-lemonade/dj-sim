@@ -10,9 +10,12 @@ const navItems: NavItem[] = [
   { to: '/community', label: 'Community' },
 ];
 
+// Routes that fill the space under the top bar edge-to-edge.
+const FULL_BLEED_PATHS = ['/', '/tracks', '/community'];
+
 function AppLayout() {
   const { pathname } = useLocation();
-  const isTracks = pathname === '/tracks' || pathname === '/';
+  const isFullBleed = FULL_BLEED_PATHS.includes(pathname);
 
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.16),_transparent_45%),linear-gradient(180deg,#05070d_0%,#0a0e17_45%,#0d1119_100%)] text-slate-100">
@@ -47,12 +50,12 @@ function AppLayout() {
         </div>
       </header>
 
-      {/* Content: tracks page fills the remaining space edge-to-edge, other
-          pages get a centered readable column. Neither is a floating "bubble". */}
-      <div className={cn('flex min-h-0 flex-1 flex-col', isTracks ? 'overflow-hidden' : 'overflow-y-auto')}>
+      {/* Content: home, tracks and community fill the remaining space edge-to-edge,
+          other pages get a centered readable column. Neither is a floating "bubble". */}
+      <div className={cn('flex min-h-0 flex-1 flex-col', isFullBleed ? 'overflow-hidden' : 'overflow-y-auto')}>
         <div
           className={cn(
-            isTracks
+            isFullBleed
               ? 'flex h-full min-h-0 flex-1 flex-col'
               : 'mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8',
           )}
