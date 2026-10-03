@@ -210,7 +210,7 @@ function CommunityPage() {
               {streams.map((stream) => (
                 <li key={stream.id}>
                   <Link
-                    to={`/streams/${stream.id}`}
+                    to={`/stream/${stream.id}`}
                     className="group flex items-center gap-4 bg-white/5 px-4 py-3 transition-colors hover:bg-white/10 md:pr-[calc(9vw+1.5rem)]"
                   >
                     <div className={`flex min-w-0 flex-1 items-center gap-4 ${UNSKEW}`}>
