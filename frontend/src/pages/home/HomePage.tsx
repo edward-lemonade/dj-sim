@@ -1,6 +1,6 @@
 import { useAuth, useUser } from '@clerk/react';
 import { Download, Pause, Play, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
@@ -14,6 +14,8 @@ import {
   roomJoinErrorMessage,
   writeSessionValue,
 } from '@/lib/rooms/join';
+
+const ROOM_CODE_LENGTH = 6;
 
 function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -32,7 +34,9 @@ function HomePage() {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [joinCode, setJoinCode] = useState('');
+  const [digits, setDigits] = useState<string[]>(() => Array(ROOM_CODE_LENGTH).fill(''));
+  const joinCode = digits.join('');
+  const digitRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -80,11 +84,61 @@ function HomePage() {
 
   useEffect(() => {
     const saved = normalizeRoomCode(readSessionValue(PENDING_ROOM_CODE_KEY));
-    if (saved) setJoinCode(saved);
+    if (saved) {
+      setDigits(Array.from({ length: ROOM_CODE_LENGTH }, (_, i) => saved[i] ?? ''));
+    }
   }, []);
 
-  const submitJoinCode = async () => {
+  const fillDigitsFrom = (index: number, raw: string) => {
+    const chars = raw.replace(/\D/g, '').split('').slice(0, ROOM_CODE_LENGTH - index);
+    if (chars.length === 0) return;
+    const next = [...digits];
+    chars.forEach((char, offset) => {
+      next[index + offset] = char;
+    });
+    setDigits(next);
+    setJoinError(null);
+    digitRefs.current[Math.min(index + chars.length, ROOM_CODE_LENGTH - 1)]?.focus();
+  };
+
+  const handleDigitChange = (index: number, value: string) => {
+    const digit = value.replace(/\D/g, '').slice(-1);
+    if (!digit) {
+      const next = [...digits];
+      next[index] = '';
+      setDigits(next);
+      setJoinError(null);
+      return;
+    }
+    fillDigitsFrom(index, digit);
+  };
+
+  const handleDigitKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Backspace' && !digits[index] && index > 0) {
+      event.preventDefault();
+      const next = [...digits];
+      next[index - 1] = '';
+      setDigits(next);
+      setJoinError(null);
+      digitRefs.current[index - 1]?.focus();
+    } else if (event.key === 'ArrowLeft' && index > 0) {
+      event.preventDefault();
+      digitRefs.current[index - 1]?.focus();
+    } else if (event.key === 'ArrowRight' && index < ROOM_CODE_LENGTH - 1) {
+      event.preventDefault();
+      digitRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const launchStudio = async () => {
     const code = normalizeRoomCode(joinCode);
+
+    // No room code entered: just open the studio
+    if (!code) {
+      navigate('/studio');
+      return;
+    }
+
     const validation = roomCodeInputError(joinCode);
     if (validation) {
       setJoinError(validation);
@@ -232,50 +286,71 @@ function HomePage() {
         <div aria-hidden className="absolute size-[20rem] animate-spin rounded-full border border-white/10 [animation-direction:reverse] [animation-duration:60s]" />
 
         <div className="relative z-10 flex flex-col items-center gap-5">
-          <Link
-            to="/studio"
-            className="group relative -skew-x-[16deg] border-2 border-cyan-300/70 bg-[#0a1a7a] px-12 py-7 shadow-[10px_10px_0_#020617] transition hover:-translate-y-1 hover:shadow-[16px_16px_0_#020617] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white"
-          >
-            <span className="flex skew-x-[16deg] items-center gap-5 text-white">
-              <Play className="size-14 fill-current transition-transform group-hover:scale-110" />
-              <span className="text-6xl font-black italic tracking-tight">Studio</span>
-            </span>
-          </Link>
           <form
-            className="flex w-[min(20rem,90vw)] flex-col items-center gap-2"
+            className="flex w-[min(24rem,92vw)] flex-col items-center gap-5"
             onSubmit={(event) => {
               event.preventDefault();
-              void submitJoinCode();
+              void launchStudio();
             }}
           >
-            <label htmlFor="home-room-code" className="text-sm font-medium text-cyan-100">
-              Join a room
-            </label>
-            <div className="flex w-full items-center gap-2">
-              <input
-                id="home-room-code"
-                name="roomCode"
-                inputMode="numeric"
-                autoComplete="off"
-                spellCheck={false}
-                aria-describedby={joinError ? 'home-room-code-error' : undefined}
-                className="h-10 min-w-0 flex-1 rounded-md border bg-black/40 px-3 text-center font-mono text-lg tracking-[0.35em] text-white"
-                placeholder="000000"
-                value={joinCode}
-                onChange={(event) => {
-                  setJoinCode(event.target.value);
-                  setJoinError(null);
-                }}
-              />
-              <Button type="submit" disabled={joining || !isLoaded}>
-                {joining ? 'Joining...' : 'Join room'}
-              </Button>
+            <button
+              type="submit"
+              disabled={joining}
+              className="group relative -skew-x-[16deg] border-2 border-cyan-300/70 bg-[#0a1a7a] px-12 py-7 shadow-[10px_10px_0_#020617] transition hover:-translate-y-1 hover:shadow-[16px_16px_0_#020617] focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-70"
+            >
+              <span className="flex skew-x-[16deg] items-center gap-5 text-white">
+                <Play className="size-14 fill-current transition-transform group-hover:scale-110" />
+                <span className="text-6xl font-black italic tracking-tight">
+                  {joining ? 'Joining...' : 'Studio'}
+                </span>
+              </span>
+            </button>
+
+            <div className="flex w-full flex-col items-center gap-2">
+              <div
+                role="group"
+                aria-labelledby="home-room-code-label"
+                className="flex items-center justify-center gap-3"
+              >
+                <span id="home-room-code-label" className="whitespace-nowrap text-sm font-medium text-cyan-100">
+                  Room Code:
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {digits.map((digit, index) => (
+                    <div
+                      key={index}
+                      className="h-11 w-8 -skew-x-[16deg] bg-black/40 transition-colors focus-within:bg-blue-900/70"
+                    >
+                      <input
+                        ref={(element) => {
+                          digitRefs.current[index] = element;
+                        }}
+                        aria-label={`Room code digit ${index + 1}`}
+                        aria-describedby={joinError ? 'home-room-code-error' : undefined}
+                        inputMode="numeric"
+                        autoComplete="off"
+                        spellCheck={false}
+                        disabled={joining}
+                        className="block h-full w-full skew-x-[16deg] bg-transparent text-center font-mono text-xl font-bold text-white outline-none"
+                        value={digit}
+                        onChange={(event) => handleDigitChange(index, event.target.value)}
+                        onKeyDown={(event) => handleDigitKeyDown(index, event)}
+                        onFocus={(event) => event.target.select()}
+                        onPaste={(event) => {
+                          event.preventDefault();
+                          fillDigitsFrom(index, event.clipboardData.getData('text'));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {joinError && (
+                <p id="home-room-code-error" role="alert" className="text-sm text-red-300">
+                  {joinError}
+                </p>
+              )}
             </div>
-            {joinError && (
-              <p id="home-room-code-error" role="alert" className="text-sm text-red-300">
-                {joinError}
-              </p>
-            )}
           </form>
         </div>
       </section>
@@ -296,7 +371,9 @@ function HomePage() {
           {isSignedIn && (
             <div className="mb-4 flex shrink-0 items-center justify-between gap-4 md:pl-[32%] md:pr-10">
               <h1 id="recordings-title" className="text-4xl font-black italic tracking-tight text-white">Past sessions</h1>
-              <span className="-skew-x-12 bg-blue-900/70 px-3 py-1 text-sm font-bold text-cyan-200">{recordings.length} recordings</span>
+              <span className="-skew-x-[16deg] bg-blue-900/70 px-3 py-1 text-sm font-bold text-cyan-200">
+                <span className="block skew-x-[16deg]">{recordings.length} recordings</span>
+              </span>
             </div>
           )}
           {!isLoaded || (isSignedIn && loading) ? (
