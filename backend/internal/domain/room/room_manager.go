@@ -18,17 +18,17 @@ var (
 )
 
 const (
-	LeaseTimeout            = 30 * time.Second
-	LeaseRenewalCadence     = 10 * time.Second
-	MaxLeaseHoldTime        = 5 * time.Minute
-	ExtrapolationHorizon    = 2 * time.Second
-	CorrectionBlendSpeed     = 200 * time.Millisecond
-	TrackAccessTokenTTL     = 15 * time.Minute
-	RelayTicketTTL          = 5 * time.Minute
-	S3URLExpiration         = 5 * time.Minute
-	RecentEventWindow       = 100
-	MaxRateWindow           = 10
-	MaxRateWindowDuration   = time.Minute
+	LeaseTimeout          = 30 * time.Second
+	LeaseRenewalCadence   = 10 * time.Second
+	MaxLeaseHoldTime      = 5 * time.Minute
+	ExtrapolationHorizon  = 2 * time.Second
+	CorrectionBlendSpeed  = 200 * time.Millisecond
+	TrackAccessTokenTTL   = 15 * time.Minute
+	RelayTicketTTL        = 5 * time.Minute
+	S3URLExpiration       = 5 * time.Minute
+	RecentEventWindow     = 100
+	MaxRateWindow         = 10
+	MaxRateWindowDuration = time.Minute
 )
 
 type RelayTicket struct {
@@ -84,6 +84,7 @@ type RoomParticipant struct {
 
 type roomRelay struct {
 	mu           sync.Mutex
+	ownerID      string
 	seq          uint64
 	snapshotSeq  uint64
 	snapshotTime float64
@@ -100,12 +101,12 @@ type rateWindow struct {
 }
 
 type RoomManager struct {
-	mu            sync.Mutex
-	rooms         map[string]*roomRelay
-	tickets       map[string]RelayTicket
-	inviteCodes   map[string]string
-	trackTokens   map[string]TrackAccessToken
-	trackOwners   map[string]map[string]string
+	mu          sync.Mutex
+	rooms       map[string]*roomRelay
+	tickets     map[string]RelayTicket
+	inviteCodes map[string]string
+	trackTokens map[string]TrackAccessToken
+	trackOwners map[string]map[string]string
 }
 
 func NewRoomManager() *RoomManager {
@@ -118,16 +119,47 @@ func NewRoomManager() *RoomManager {
 	}
 }
 
-func (m *RoomManager) Ensure(roomID string) {
+func (m *RoomManager) Ensure(roomID string, ownerIDs ...string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.rooms[roomID] == nil {
 		m.rooms[roomID] = &roomRelay{
 			participants: make(map[string]RoomParticipant),
-			rates: make(map[string]rateWindow),
-			leases: make(map[string]ControlLease),
+			rates:        make(map[string]rateWindow),
+			leases:       make(map[string]ControlLease),
 		}
 	}
+	if len(ownerIDs) > 0 && ownerIDs[0] != "" {
+		m.rooms[roomID].ownerID = ownerIDs[0]
+	}
+}
+
+func (m *RoomManager) IsOwner(roomID, userID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	live := m.rooms[roomID]
+	return live != nil && live.ownerID == userID
+}
+
+func (m *RoomManager) OwnerConnected(roomID string) bool {
+	m.mu.Lock()
+	live := m.rooms[roomID]
+	ownerID := ""
+	if live != nil {
+		ownerID = live.ownerID
+	}
+	m.mu.Unlock()
+	if live == nil || ownerID == "" {
+		return false
+	}
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	for _, participant := range live.participants {
+		if participant.UserID == ownerID {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *RoomManager) IssueTicket(roomID, userID, username string) (string, error) {
@@ -449,7 +481,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 	case "control-cancel":
 		var payload struct {
 			ControlID string `json:"controlId"`
-			Reason     string `json:"reason"`
+			Reason    string `json:"reason"`
 		}
 		if err := json.Unmarshal(incoming.Payload, &payload); err != nil {
 			return errors.New("invalid control cancel payload")
@@ -474,7 +506,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 			live.recent = append([]RoomEvent(nil), live.recent[len(live.recent)-200:]...)
 		}
 	}
-	
+
 	if strings.HasPrefix(incoming.Type, "control-") {
 		leases := m.GetLeases(roomID)
 		leasesPayload, _ := json.Marshal(leases)
@@ -561,7 +593,7 @@ func (m *RoomManager) ejectTracksForUser(roomID, userID string) []RoomEvent {
 		}
 	}
 	m.mu.Unlock()
-	
+
 	for _, trackID := range trackIDs {
 		ejectPayload, _ := json.Marshal(map[string]any{
 			"action":  "eject",
@@ -631,17 +663,17 @@ func (m *RoomManager) AcquireLease(roomID, userID, username, controlID string) b
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
-	
+
 	existing, ok := live.leases[controlID]
 	if ok && time.Now().Before(existing.ExpiresAt) && existing.OwnerID != userID {
 		return false
 	}
-	
+
 	live.leases[controlID] = ControlLease{
-		ControlID:    controlID,
-		OwnerID:      userID,
+		ControlID:     controlID,
+		OwnerID:       userID,
 		OwnerUsername: username,
-		ExpiresAt:    time.Now().Add(leaseTimeout),
+		ExpiresAt:     time.Now().Add(leaseTimeout),
 	}
 	return true
 }
@@ -655,12 +687,12 @@ func (m *RoomManager) RenewLease(roomID, userID, controlID string) bool {
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
-	
+
 	existing, ok := live.leases[controlID]
 	if !ok || existing.OwnerID != userID {
 		return false
 	}
-	
+
 	existing.ExpiresAt = time.Now().Add(leaseTimeout)
 	live.leases[controlID] = existing
 	return true
@@ -675,7 +707,7 @@ func (m *RoomManager) ReleaseLease(roomID, userID, controlID string) {
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
-	
+
 	existing, ok := live.leases[controlID]
 	if ok && existing.OwnerID == userID {
 		delete(live.leases, controlID)
@@ -691,7 +723,7 @@ func (m *RoomManager) ReleaseAllLeases(roomID, userID string) {
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
-	
+
 	for controlID, lease := range live.leases {
 		if lease.OwnerID == userID {
 			delete(live.leases, controlID)
@@ -720,7 +752,7 @@ func (m *RoomManager) validateLease(roomID, userID, controlID string) bool {
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
-	
+
 	lease, ok := live.leases[controlID]
 	if !ok {
 		return false

@@ -23,8 +23,8 @@ and may also be streamed.
   platter.
 - Allow any member to start and stop a stream of the room, and show the room's
   members in the stream list (and the join code for public rooms).
-- Close a room when its last member leaves; the creator leaving alone does not
-  close it.
+- The creator owns the room. If the owner leaves or disconnects, close the
+      room and kick all members; other members may leave without ending it.
 
 ## Non-goals
 
@@ -53,9 +53,10 @@ from current member count and avoid two-member assumptions in room member
 collections, event attribution, avatars, and library aggregation. This allows
 raising the cap to three without redesigning the room protocol.
 
-The creator is a member, not a permanent owner whose presence controls room
-lifetime. If the creator leaves while another member remains, the room and its
-code stay active. The room closes atomically when the last member leaves.
+The creator is the room's permanent owner. If the owner leaves or disconnects,
+the room closes atomically, its code is invalidated, all memberships are
+removed, and all connected members are kicked out. Other members may leave
+without ending the room; if the final non-owner leaves, the empty room closes.
 
 ### Room versus stream
 
@@ -159,11 +160,12 @@ reserve a membership slot, and return room state plus short-lived connection
 authorization. A room that fills between directory render and click must show
 a **Room full** state rather than partially connecting.
 
-Leaving releases the member's controls, closes their room event connection,
-and removes their tracks from the collaborative library. If members remain,
 the room continues even if its creator has left. When membership reaches zero,
-mark the room closed, invalidate its code, discard ephemeral state, and end
-its room stream.
+Leaving releases the member's controls, closes their room event connection,
+and removes their tracks from the collaborative library. If the owner leaves,
+close the room, invalidate its code, discard ephemeral state, end its room
+stream, and kick all connected members. A non-owner may leave while the room
+continues; if that was the final member, close the now-empty room.
 
 If a user opens a room that has just ended, show a **Room closed** message and
 provide a clear return to Community. Do not leave the user on a dead Studio or
@@ -292,8 +294,8 @@ require a signed-in user, and a member's slot is keyed by user ID:
   (and public preview fields where applicable).
 - `POST /rooms/join` — join by six-digit code.
 - `POST /rooms/:id/join` — join a public room from its listing.
-- `POST /rooms/:id/leave` — leave and release leases; close the room if this
-  was its last member.
+- `POST /rooms/:id/leave` — leave and release leases; close the room if the
+      owner leaves or the final non-owner leaves.
 - Room event WebSocket — member publishing/subscription, ordered events,
   snapshots, presence, leases, and room-closed notification.
 - Existing stream endpoints — support solo streams and room broadcasts;
@@ -307,6 +309,15 @@ Keep live membership, control leases, snapshots, recent events, and presence
 in the room service's live state (or a shared store if the backend is
 multi-instance). Closing a room removes it from listings, revokes join
 authorization, releases provider resources, and notifies remaining clients.
+
+Runtime storage decision (implemented): active rooms and stream sessions are
+owned by the live backend process and stored in process-local in-memory maps
+keyed by room/session ID, not in PostgreSQL. This matches the ephemeral,
+server-live nature of room membership, stream lifecycle, code allocation, and
+provider associations: they are recreated on backend restart and are not meant
+to outlive the current server instance. The database-backed repository path is
+kept only as a compatibility fallback for tests, while the app startup now uses
+in-memory repositories for live room and stream state.
 
 Generate codes uniformly from the six-digit decimal space, including leading
 zeroes (`000000` through `999999`), using a cryptographically secure random
@@ -357,9 +368,9 @@ only in the UI.
 6. **Same user in several tabs or devices.** Decide whether a second tab takes
    over, is rejected, or only spectates, and whether a user can be in only one
    room or stream at a time.
-7. **Disconnect versus leave.** Decide whether a short reconnect grace period
-   applies before the last member's disconnect closes the room and its code,
-   and what a backend restart does to active rooms.
+7. **Disconnect versus leave.** Owner disconnect closes the room immediately;
+      non-owner disconnect cleanup and backend restart behavior still need
+      definition.
 8. **Moderation and code limits.** Decide how members remove a disruptive
    stranger from a public room, and set concrete rate limits for code guessing.
 9. **Community access.** Decide whether browsing Community requires sign-in
@@ -385,8 +396,8 @@ only in the UI.
 - V0 allows at most two concurrent users and rejects an additional join
   atomically. A user with several tabs occupies one slot. The room
   schema/protocol does not assume exactly two members.
-- Either member can leave; the creator leaving does not end an occupied room.
-  The last member leaving closes it and ends any room stream.
+- The owner leaving or disconnecting closes the room, ends its room stream, and
+      kicks all members. Non-owners may leave without ending an occupied room.
 - Current members see a union of their libraries. A departing member's tracks
   disappear and their loaded tracks are ejected; room-scoped access is revoked.
 - A held knob/slider/platter is exclusively writable by its lease owner;
@@ -447,6 +458,9 @@ progresses.
 - [x] Define room, membership, visibility, lifecycle, and stream-reference
       types; represent members as a collection and capacity as data (v0 value
       two) rather than fixed member fields.
+- [x] Keep active rooms and streams in process-local in-memory maps keyed by
+      ID, rather than persisting them in PostgreSQL. This matches the
+      ephemeral, server-live lifecycle of room membership and stream state.
 - [x] Add database migration(s) for room identity, creator, visibility,
       capacity, lifecycle timestamps, protected code lookup, and stream
       association.
@@ -477,10 +491,9 @@ progresses.
 - [x] Implement atomic join-by-public-room-ID with active/public checks and the
       same per-user slot and capacity rules.
 - [x] Implement persistent membership leave with idempotent repeated leave,
-      including a retry after the room closes; creator departure has no special
-      behavior.
-- [x] Close the room atomically when its final distinct user leaves; invalidate
-      its code and remove it from discovery.
+      including a retry after the room closes; owner departure closes the room.
+- [x] Close the room atomically when its owner leaves or its final non-owner
+      leaves; invalidate its code and remove it from discovery.
 - [x] Release live control leases, remove shared tracks, and end any associated
       room stream when a member leaves or a room closes.
 - [x] Notify connected room members when a member leaves or the room closes.
@@ -681,9 +694,8 @@ progresses.
 - [ ] Verify a third user is rejected atomically in v0 and that member,
       avatar, event, and library data structures still support a future cap of
       three.
-- [ ] Verify creator departure leaves an occupied room running and the final
-      member leaving closes the room, releases provider state, and invalidates
-      its code.
+- [ ] Verify owner departure/disconnect kicks all members, while non-owner
+      departure leaves the room running unless they are the final member.
 - [ ] Verify disconnect grace, restart recovery, same-user tabs, and stale
       directory entries follow the resolved policies.
 - [ ] Verify lease enforcement, release, extrapolation/interpolation, and

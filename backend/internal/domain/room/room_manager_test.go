@@ -74,6 +74,31 @@ func TestRoomRelayTicketsAreScopedAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestRoomManagerTracksOwnerConnections(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a", "owner")
+	if !manager.IsOwner("room-a", "owner") || manager.IsOwner("room-a", "member") {
+		t.Fatal("room owner identity was not preserved")
+	}
+	if manager.OwnerConnected("room-a") {
+		t.Fatal("owner was reported connected before attaching")
+	}
+
+	detach, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", ConnectionID: "owner-connection", Send: func(RoomEvent) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !manager.OwnerConnected("room-a") {
+		t.Fatal("attached owner was not reported connected")
+	}
+	detach()
+	if manager.OwnerConnected("room-a") {
+		t.Fatal("detached owner was still reported connected")
+	}
+}
+
 func TestRoomRelayLeaveAndCloseNotifyMembersAndRevokeTickets(t *testing.T) {
 	t.Skip("test hangs - implementation verified separately")
 }

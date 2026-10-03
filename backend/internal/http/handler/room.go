@@ -261,7 +261,15 @@ func (h *RoomHandler) Events(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer detach()
+	isOwner := manager.IsOwner(roomID, ticket.UserID)
+	defer func() {
+		detach()
+		if isOwner && !manager.OwnerConnected(roomID) {
+			if _, err := h.Rooms.Leave(context.Background(), roomID, ticket.UserID); err != nil {
+				log.Printf("end room after owner disconnect %s: %v", roomID, err)
+			}
+		}
+	}()
 
 	done := make(chan struct{})
 	go func() {

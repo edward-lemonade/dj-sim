@@ -69,6 +69,13 @@ export function StudioTopbar({
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
   const [leavingRoom, setLeavingRoom] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const exitBusyLabel = recordingStatus === RecordingStatus.Recording
+    || recordingStatus === RecordingStatus.Saving
+    || hasPendingSave
+    ? 'Saving recording...'
+    : collabRoom
+      ? 'Leaving room...'
+      : 'Exiting...';
 
   const confirmExit = async () => {
     setExiting(true);
@@ -198,6 +205,7 @@ export function StudioTopbar({
       <ExitConfirmModal
         open={confirmOpen}
         busy={exiting}
+        busyLabel={exitBusyLabel}
         onNo={() => setConfirmOpen(false)}
         onYes={() => void confirmExit()}
       />

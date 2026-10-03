@@ -6,11 +6,13 @@ export function ExitConfirmModal({
   onYes,
   onNo,
   busy = false,
+  busyLabel = 'Working...',
 }: {
   open: boolean;
   onYes: () => void;
   onNo: () => void;
   busy?: boolean;
+  busyLabel?: string;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -46,7 +48,7 @@ export function ExitConfirmModal({
             No
           </Button>
           <Button type="button" disabled={busy} onClick={onYes}>
-            {busy ? 'Saving recording...' : 'Yes'}
+            {busy ? busyLabel : 'Yes'}
           </Button>
         </div>
       </div>

@@ -39,11 +39,11 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	recordingRepo := recording.NewRepository(db)
 	recordingSvc := recording.NewService(recordingRepo, store)
 	recordingHandler := &handler.RecordingHandler{Recordings: recordingSvc}
-	streamRepo := stream.NewRepository(db)
+	streamRepo := stream.NewInMemoryRepository()
 	streamManager := stream.NewManager()
 	streamSvc := stream.NewService(streamRepo, streamManager, liveKitURL, liveKitAPIKey, liveKitSecret)
 	streamHandler := handler.NewStreamHandler(streamSvc, corsOrigin)
-	roomRepo := room.NewRepository(db)
+	roomRepo := room.NewInMemoryRepository()
 	roomManager := room.NewRoomManager()
 	roomSvc := room.NewService(roomRepo, roomCodePepper, roomManager)
 	roomHandler := handler.NewRoomHandler(roomSvc, corsOrigin)
@@ -60,12 +60,6 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	}
 	if err := recordingRepo.Migrate(ctx); err != nil {
 		log.Fatalf("recording migration failed: %v", err)
-	}
-	if err := streamRepo.Migrate(ctx); err != nil {
-		log.Fatalf("stream migration failed: %v", err)
-	}
-	if err := roomRepo.Migrate(ctx); err != nil {
-		log.Fatalf("room migration failed: %v", err)
 	}
 	if err := streamSvc.EndAllActive(ctx); err != nil {
 		if errors.Is(err, stream.ErrCleanupStorage) {

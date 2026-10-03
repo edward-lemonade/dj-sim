@@ -151,13 +151,9 @@ func (h *StreamHandler) Events(c *gin.Context) {
 	defer func() {
 		detach()
 		if ticket.Owner {
-			time.AfterFunc(20*time.Second, func() {
-				if !manager.OwnerConnected(streamID) {
-					if err := h.Streams.End(context.Background(), streamID, ticket.UserID); err != nil && !errors.Is(err, stream.ErrNotFound) {
-						log.Printf("end disconnected stream %s: %v", streamID, err)
-					}
-				}
-			})
+			if err := h.Streams.End(context.Background(), streamID, ticket.UserID); err != nil && !errors.Is(err, stream.ErrNotFound) {
+				log.Printf("end disconnected stream %s: %v", streamID, err)
+			}
 		}
 	}()
 

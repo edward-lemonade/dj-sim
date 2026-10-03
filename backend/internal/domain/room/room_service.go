@@ -108,7 +108,7 @@ func (s *Service) Create(ctx context.Context, creatorID, username, avatarURL, vi
 	if item.ID == "" {
 		return nil, errors.New("room creation returned no room ID")
 	}
-	s.manager.Ensure(item.ID)
+	s.manager.Ensure(item.ID, creatorID)
 	s.manager.RememberInviteCode(item.ID, code)
 	ticket, err := s.manager.IssueTicket(item.ID, creatorID, username)
 	if err != nil {

@@ -8,19 +8,19 @@ import (
 )
 
 type roomRepositoryStub struct {
-	create          func(context.Context, *Room, string, string, string, []byte) (string, error)
-	list            func(context.Context) ([]ListedRoom, error)
-	get             func(context.Context, string, string) (*ListedRoom, error)
+	create           func(context.Context, *Room, string, string, string, []byte) (string, error)
+	list             func(context.Context) ([]ListedRoom, error)
+	get              func(context.Context, string, string) (*ListedRoom, error)
 	getMemberUserIDs func(context.Context, string) ([]string, error)
-	getStreamID     func(context.Context, string) (string, error)
-	joinByCode      func(context.Context, string, string, string, string, []byte) (*JoinResult, error)
-	joinPublic      func(context.Context, string, string, string, string) (*JoinResult, error)
-	leave           func(context.Context, string, string) (*LeaveResult, error)
-	associate       func(context.Context, string, string, string) error
-	detach          func(context.Context, string) error
-	broadcasts      func(context.Context, []string) (map[string]BroadcastListing, error)
-	canControl      func(context.Context, string, string) (bool, error)
-	closeNoMembers  func(context.Context) error
+	getStreamID      func(context.Context, string) (string, error)
+	joinByCode       func(context.Context, string, string, string, string, []byte) (*JoinResult, error)
+	joinPublic       func(context.Context, string, string, string, string) (*JoinResult, error)
+	leave            func(context.Context, string, string) (*LeaveResult, error)
+	associate        func(context.Context, string, string, string) error
+	detach           func(context.Context, string) error
+	broadcasts       func(context.Context, []string) (map[string]BroadcastListing, error)
+	canControl       func(context.Context, string, string) (bool, error)
+	closeNoMembers   func(context.Context) error
 }
 
 func (r roomRepositoryStub) CreateWithCode(ctx context.Context, item *Room, creatorID, username, avatarURL string, pepper []byte) (string, error) {
@@ -98,11 +98,11 @@ func (r roomRepositoryStub) CloseRoomsNoMembers(ctx context.Context) error {
 
 func newRoomRepositoryStub() roomRepositoryStub {
 	return roomRepositoryStub{
-		create: func(context.Context, *Room, string, string, string, []byte) (string, error) { return "", nil },
-		list:   func(context.Context) ([]ListedRoom, error) { return []ListedRoom{}, nil },
-		get:    func(context.Context, string, string) (*ListedRoom, error) { return &ListedRoom{}, nil },
+		create:           func(context.Context, *Room, string, string, string, []byte) (string, error) { return "", nil },
+		list:             func(context.Context) ([]ListedRoom, error) { return []ListedRoom{}, nil },
+		get:              func(context.Context, string, string) (*ListedRoom, error) { return &ListedRoom{}, nil },
 		getMemberUserIDs: func(context.Context, string) ([]string, error) { return []string{}, nil },
-		getStreamID: func(context.Context, string) (string, error) { return "", nil },
+		getStreamID:      func(context.Context, string) (string, error) { return "", nil },
 		joinByCode: func(context.Context, string, string, string, string, []byte) (*JoinResult, error) {
 			return &JoinResult{Room: ListedRoom{ID: "room-1"}}, nil
 		},
@@ -316,19 +316,65 @@ func TestServiceJoinPublicRejectsInvalidAvatar(t *testing.T) {
 }
 
 func TestServiceLeave(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-1", "user-1")
+	var events []RoomEvent
+	closed := false
+	_, err := manager.Attach("room-1", RoomParticipant{
+		UserID: "user-2", ConnectionID: "connection-2",
+		Send: func(event RoomEvent) error {
+			events = append(events, event)
+			return nil
+		},
+		Close: func() { closed = true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	repository := newRoomRepositoryStub()
 	repository.leave = func(_ context.Context, roomID, userID string) (*LeaveResult, error) {
-		if roomID != "room-1" || userID != "user-2" {
+		if roomID != "room-1" || userID != "user-1" {
 			t.Errorf("Leave() args = (%q, %q)", roomID, userID)
 		}
 		return &LeaveResult{RoomClosed: true}, nil
 	}
-	result, err := NewService(repository, nil).Leave(context.Background(), "room-1", "user-2")
+	result, err := NewService(repository, nil, manager).Leave(context.Background(), "room-1", "user-1")
 	if err != nil {
 		t.Fatalf("Leave() error = %v", err)
 	}
 	if !result.RoomClosed {
 		t.Errorf("Leave() = %+v, want closed room", result)
+	}
+	if len(events) < 2 || events[len(events)-1].Type != "closed" || !closed {
+		t.Errorf("room close did not notify and disconnect participants: events=%+v closed=%v", events, closed)
+	}
+}
+
+func TestInMemoryRepositoryOwnerLeaveClosesOccupiedRoom(t *testing.T) {
+	ctx := context.Background()
+	pepper := []byte("0123456789abcdef0123456789abcdef")
+	repository := NewInMemoryRepository()
+	item := &Room{CreatorUserID: "owner", Visibility: VisibilityPublic, Capacity: 2}
+	code, err := repository.CreateWithCode(ctx, item, "owner", "owner", "", pepper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.JoinByCode(ctx, code, "member", "member", "", pepper); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.AssociateStream(ctx, item.ID, "owner", "stream-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := repository.Leave(ctx, item.ID, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RoomClosed || result.StreamID != "stream-1" {
+		t.Fatalf("Leave() = %+v, want closed room and associated stream", result)
+	}
+	if _, err := repository.JoinByCode(ctx, code, "late-joiner", "late-joiner", "", pepper); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("JoinByCode() error = %v, want ErrUnavailable", err)
 	}
 }
 
