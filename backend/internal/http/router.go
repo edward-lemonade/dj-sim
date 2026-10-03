@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -37,7 +37,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	trackHandler := &handler.TrackHandler{Tracks: trackSvc}
 
 	recordingRepo := recording.NewRepository(db)
-	recordingSvc := recording.NewService(recordingRepo, store)
+	recordingSvc := recording.NewService(recordingRepo, store, recordingsPrefix)
 	recordingHandler := &handler.RecordingHandler{Recordings: recordingSvc}
 	streamRepo := stream.NewInMemoryRepository()
 	streamManager := stream.NewManager()

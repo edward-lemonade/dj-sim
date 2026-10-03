@@ -17,6 +17,18 @@ export async function getRoomLibrary(roomId: string): Promise<RoomTrack[]> {
   return data ?? [];
 }
 
+export async function fetchRoomTrackAudioBlob(roomId: string, trackId: string): Promise<Blob> {
+  const { data: tokenResponse } = await axiosClient.post<{ token: string }>(
+    API_ROUTES.room.trackToken(roomId, trackId),
+    { trackId },
+  );
+  const { data } = await axiosClient.get<Blob>(
+    API_ROUTES.room.trackAudio(roomId, trackId),
+    { params: { token: tokenResponse.token }, responseType: 'blob' },
+  );
+  return data;
+}
+
 export async function createRoom(
   visibility: 'public' | 'private',
   avatarUrl: string,

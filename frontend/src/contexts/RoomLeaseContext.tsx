@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import type { ControlId, ControlLease } from '@/lib/types/Control';
 
 type RoomLeaseContextType = {
-  leases: Record<ControlId, ControlLease>;
+  leases: Partial<Record<ControlId, ControlLease>>;
   updateLease: (controlId: ControlId, lease: ControlLease | null) => void;
   isLeasedByOther: (controlId: ControlId, myUserId: string) => boolean;
   getLeaseOwner: (controlId: ControlId) => string | null;
@@ -11,7 +12,7 @@ type RoomLeaseContextType = {
 const RoomLeaseContext = createContext<RoomLeaseContextType | null>(null);
 
 export function RoomLeaseProvider({ children }: { children: ReactNode }) {
-  const [leases, setLeases] = useState<Record<ControlId, ControlLease>>({});
+  const [leases, setLeases] = useState<Partial<Record<ControlId, ControlLease>>>({});
 
   const updateLease = useCallback((controlId: ControlId, lease: ControlLease | null) => {
     setLeases((prev) => {

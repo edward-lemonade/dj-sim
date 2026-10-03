@@ -94,8 +94,7 @@ const SORT_LABELS: Record<SortField, string> = {
 function sortValue(song: Track, field: Exclude<SortField, 'custom'>): string | number | null {
   switch (field) {
     case 'added':
-      // NOTE: assumes Track carries a timestamp. Point this at whatever field you have.
-      return song.addedAt ?? null;
+      return song.createdAt ?? null;
     case 'title':
       return song.title;
     case 'artist':

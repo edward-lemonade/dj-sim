@@ -18,7 +18,7 @@ type Config struct {
 	S3Bucket           string
 	S3TracksKey        string
 	S3AnalysisPrefix   string
-	S3RecordingsPrefix string
+	S3RecordingsKey    string
 	S3Region           string
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
@@ -47,7 +47,7 @@ func Load() Config {
 		S3Bucket:           getEnv("AWS_S3_BUCKET", ""),
 		S3TracksKey:        getEnv("AWS_S3_TRACKS_KEY", ""),
 		S3AnalysisPrefix:   getEnv("AWS_S3_ANALYSIS_PREFIX", ""),
-		S3RecordingsPrefix: getEnv("AWS_S3_RECORDINGS_PREFIX", ""),
+		S3RecordingsKey:    getEnv("AWS_S3_RECORDINGS_KEY", ""),
 		S3Region:           getEnv("AWS_REGION", ""),
 		AWSAccessKeyID:     getEnv("AWS_ACCESS_KEY_ID", ""),
 		AWSSecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),

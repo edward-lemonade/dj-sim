@@ -33,6 +33,7 @@ export function Platter({
   onScratchStart,
   onScratchMove,
   onScratchEnd,
+  syncedAngle,
   controlId,
   leaseOwner,
   isLeasedByOther,
@@ -46,8 +47,9 @@ export function Platter({
   disabled?: boolean;
   onScratchStart?: () => void;
   /** deltaSeconds: signed audio-seconds moved; deltaRealSeconds: wall time elapsed since the last move. */
-  onScratchMove?: (deltaSeconds: number, deltaRealSeconds: number) => void;
-  onScratchEnd?: () => void;
+  onScratchMove?: (deltaSeconds: number, deltaRealSeconds: number, angleDegrees: number) => void;
+  onScratchEnd?: (angleDegrees: number) => void;
+  syncedAngle?: number;
   controlId?: ControlId;
   leaseOwner?: string;
   isLeasedByOther?: boolean;
@@ -56,9 +58,11 @@ export function Platter({
 }) {
   const ringRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ lastAngle: number; lastTime: number } | null>(null);
+  const angleRef = useRef(0);
 
   // Visual angle changes only while the user drags the platter.
   const [angle, setAngle] = useState(0);
+  const visibleAngle = typeof syncedAngle === 'number' && Number.isFinite(syncedAngle) ? syncedAngle : angle;
 
   const coverUrl = isImageCover(track?.coverUrl) ? track.coverUrl : null;
 
@@ -67,6 +71,8 @@ export function Platter({
     event.preventDefault();
     if (controlId) onLeaseAcquire?.(controlId);
     ringRef.current.setPointerCapture(event.pointerId);
+    angleRef.current = visibleAngle;
+    setAngle(visibleAngle);
     dragRef.current = { lastAngle: angleFromPointer(event.nativeEvent, ringRef.current), lastTime: performance.now() };
     onScratchStart?.();
   };
@@ -83,16 +89,18 @@ export function Platter({
     dragRef.current = { lastAngle: nextAngle, lastTime: now };
 
     // Keep the visual rotation 1:1 with pointer movement.
-    setAngle((prev) => (prev + (deltaAngle * 180) / Math.PI) % 360);
+    const nextVisualAngle = (angleRef.current + (deltaAngle * 180) / Math.PI) % 360;
+    angleRef.current = nextVisualAngle;
+    setAngle(nextVisualAngle);
 
-    onScratchMove?.(deltaSeconds, deltaRealSeconds);
+    onScratchMove?.(deltaSeconds, deltaRealSeconds, nextVisualAngle);
   };
 
   const endDrag = () => {
     if (!dragRef.current) return;
     if (controlId) onLeaseRelease?.(controlId);
     dragRef.current = null;
-    onScratchEnd?.();
+    onScratchEnd?.(angleRef.current);
   };
 
   return (
@@ -112,7 +120,7 @@ export function Platter({
       >
         <div
           className="absolute inset-0 rounded-full"
-          style={{ transform: `rotate(${angle}deg)` }}
+          style={{ transform: `rotate(${visibleAngle}deg)` }}
         >
           {coverUrl ? (
             <img

@@ -32,10 +32,11 @@ const (
 )
 
 type RelayTicket struct {
-	RoomID   string
-	UserID   string
-	Username string
-	Expires  time.Time
+	RoomID    string
+	UserID    string
+	Username  string
+	AvatarURL string
+	Expires   time.Time
 }
 
 type TrackAccessToken struct {
@@ -46,13 +47,14 @@ type TrackAccessToken struct {
 }
 
 type RoomEvent struct {
-	RoomID   string          `json:"roomId"`
-	Type     string          `json:"type"`
-	Seq      uint64          `json:"seq,omitempty"`
-	T        float64         `json:"t,omitempty"`
-	Payload  json.RawMessage `json:"payload,omitempty"`
-	UserID   string          `json:"userId,omitempty"`
-	Username string          `json:"username,omitempty"`
+	RoomID    string          `json:"roomId"`
+	Type      string          `json:"type"`
+	Seq       uint64          `json:"seq,omitempty"`
+	T         float64         `json:"t,omitempty"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	UserID    string          `json:"userId,omitempty"`
+	Username  string          `json:"username,omitempty"`
+	AvatarURL string          `json:"avatarUrl,omitempty"`
 }
 
 type RoomMessage struct {
@@ -62,8 +64,9 @@ type RoomMessage struct {
 }
 
 type RoomPresence struct {
-	UserID   string `json:"userId"`
-	Username string `json:"username"`
+	UserID    string `json:"userId"`
+	Username  string `json:"username"`
+	AvatarURL string `json:"avatarUrl"`
 }
 
 type JoinedState struct {
@@ -77,6 +80,7 @@ type JoinedState struct {
 type RoomParticipant struct {
 	UserID       string
 	Username     string
+	AvatarURL    string
 	ConnectionID string
 	Send         func(RoomEvent) error
 	Close        func()
@@ -93,6 +97,7 @@ type roomRelay struct {
 	participants map[string]RoomParticipant
 	rates        map[string]rateWindow
 	leases       map[string]ControlLease
+	trackOwners  map[string]string
 }
 
 type rateWindow struct {
@@ -106,7 +111,6 @@ type RoomManager struct {
 	tickets     map[string]RelayTicket
 	inviteCodes map[string]string
 	trackTokens map[string]TrackAccessToken
-	trackOwners map[string]map[string]string
 }
 
 func NewRoomManager() *RoomManager {
@@ -115,7 +119,6 @@ func NewRoomManager() *RoomManager {
 		tickets:     make(map[string]RelayTicket),
 		inviteCodes: make(map[string]string),
 		trackTokens: make(map[string]TrackAccessToken),
-		trackOwners: make(map[string]map[string]string),
 	}
 }
 
@@ -127,6 +130,7 @@ func (m *RoomManager) Ensure(roomID string, ownerIDs ...string) {
 			participants: make(map[string]RoomParticipant),
 			rates:        make(map[string]rateWindow),
 			leases:       make(map[string]ControlLease),
+			trackOwners:  make(map[string]string),
 		}
 	}
 	if len(ownerIDs) > 0 && ownerIDs[0] != "" {
@@ -162,7 +166,7 @@ func (m *RoomManager) OwnerConnected(roomID string) bool {
 	return false
 }
 
-func (m *RoomManager) IssueTicket(roomID, userID, username string) (string, error) {
+func (m *RoomManager) IssueTicket(roomID, userID, username string, avatarURLs ...string) (string, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return "", err
@@ -178,8 +182,12 @@ func (m *RoomManager) IssueTicket(roomID, userID, username string) (string, erro
 			delete(m.tickets, existingToken)
 		}
 	}
+	avatarURL := ""
+	if len(avatarURLs) > 0 {
+		avatarURL = avatarURLs[0]
+	}
 	m.tickets[token] = RelayTicket{
-		RoomID: roomID, UserID: userID, Username: username, Expires: time.Now().Add(RelayTicketTTL),
+		RoomID: roomID, UserID: userID, Username: username, AvatarURL: avatarURL, Expires: time.Now().Add(RelayTicketTTL),
 	}
 	return token, nil
 }
@@ -208,20 +216,29 @@ func (m *RoomManager) InviteCode(roomID string) string {
 }
 
 func (m *RoomManager) RecordTrackLoad(roomID, trackID, userID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.trackOwners[roomID] == nil {
-		m.trackOwners[roomID] = make(map[string]string)
+	live := m.room(roomID)
+	if live == nil {
+		return
 	}
-	m.trackOwners[roomID][trackID] = userID
+	live.mu.Lock()
+	live.trackOwners[trackID] = userID
+	live.mu.Unlock()
 }
 
 func (m *RoomManager) RecordTrackEject(roomID, trackID string) {
+	live := m.room(roomID)
+	if live == nil {
+		return
+	}
+	live.mu.Lock()
+	delete(live.trackOwners, trackID)
+	live.mu.Unlock()
+}
+
+func (m *RoomManager) room(roomID string) *roomRelay {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if owners := m.trackOwners[roomID]; owners != nil {
-		delete(owners, trackID)
-	}
+	return m.rooms[roomID]
 }
 
 func (m *RoomManager) IssueTrackToken(roomID, userID, trackID string, ttl time.Duration) (string, error) {
@@ -305,6 +322,13 @@ func (m *RoomManager) Attach(roomID string, participant RoomParticipant) (func()
 	if len(snapshot) == 0 {
 		snapshot = json.RawMessage("null")
 	}
+	alreadyConnected := false
+	for _, existing := range live.participants {
+		if existing.UserID == participant.UserID {
+			alreadyConnected = true
+			break
+		}
+	}
 	leases := m.getLeasesLocked(live)
 	joinedPayload, err := json.Marshal(JoinedState{
 		Snapshot:    snapshot,
@@ -330,11 +354,47 @@ func (m *RoomManager) Attach(roomID string, participant RoomParticipant) (func()
 		}
 	}
 	live.participants[key] = participant
+	if !alreadyConnected && participant.UserID != "" {
+		joinedEvent := RoomEvent{
+			RoomID: roomID, Type: "member-joined", UserID: participant.UserID,
+			Username: participant.Username, AvatarURL: participant.AvatarURL,
+		}
+		for connectedKey, connected := range live.participants {
+			if connectedKey == key {
+				continue
+			}
+			if err := connected.Send(joinedEvent); err != nil {
+				delete(live.participants, connectedKey)
+				if connected.Close != nil {
+					connected.Close()
+				}
+			}
+		}
+	}
 	live.mu.Unlock()
 
 	return func() {
 		live.mu.Lock()
+		_, attached := live.participants[key]
 		delete(live.participants, key)
+		stillConnected := false
+		for _, existing := range live.participants {
+			if existing.UserID == participant.UserID {
+				stillConnected = true
+				break
+			}
+		}
+		if attached && !stillConnected && participant.UserID != "" {
+			leftEvent := RoomEvent{RoomID: roomID, Type: "member-left", UserID: participant.UserID}
+			for connectedKey, connected := range live.participants {
+				if err := connected.Send(leftEvent); err != nil {
+					delete(live.participants, connectedKey)
+					if connected.Close != nil {
+						connected.Close()
+					}
+				}
+			}
+		}
 		live.mu.Unlock()
 	}, nil
 }
@@ -382,10 +442,14 @@ func presenceWith(participants map[string]RoomParticipant, joining RoomParticipa
 		if participant.UserID == "" {
 			continue
 		}
-		seen[participant.UserID] = RoomPresence{UserID: participant.UserID, Username: participant.Username}
+		seen[participant.UserID] = RoomPresence{
+			UserID: participant.UserID, Username: participant.Username, AvatarURL: participant.AvatarURL,
+		}
 	}
 	if joining.UserID != "" {
-		seen[joining.UserID] = RoomPresence{UserID: joining.UserID, Username: joining.Username}
+		seen[joining.UserID] = RoomPresence{
+			UserID: joining.UserID, Username: joining.Username, AvatarURL: joining.AvatarURL,
+		}
 	}
 	members := make([]RoomPresence, 0, len(seen))
 	for _, member := range seen {
@@ -433,7 +497,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 	}
 	rate.count++
 	live.rates[participant.UserID] = rate
-	if rate.count > 60 {
+	if rate.count > 120 {
 		return errors.New("room event rate exceeded")
 	}
 	if incoming.T < 0 || math.IsNaN(incoming.T) || math.IsInf(incoming.T, 0) || len(incoming.Payload) == 0 || len(incoming.Payload) > 256<<10 || !json.Valid(incoming.Payload) {
@@ -450,15 +514,15 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		}
 		controlID := extractControlIDFromAction(incoming.Payload)
 		if controlID != "" {
-			if !m.validateLease(roomID, participant.UserID, controlID) {
+			if !validateLeaseLocked(live, participant.UserID, controlID) {
 				return errors.New("control not leased to this user")
 			}
 		}
 		if trackID := extractTrackIDFromLoadAction(incoming.Payload); trackID != "" {
-			m.RecordTrackLoad(roomID, trackID, participant.UserID)
+			live.trackOwners[trackID] = participant.UserID
 		}
 		if trackID := extractTrackIDFromEjectAction(incoming.Payload); trackID != "" {
-			m.RecordTrackEject(roomID, trackID)
+			delete(live.trackOwners, trackID)
 		}
 	case "control-acquire":
 		var payload struct {
@@ -467,7 +531,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		if err := json.Unmarshal(incoming.Payload, &payload); err != nil {
 			return errors.New("invalid control acquire payload")
 		}
-		if !m.AcquireLease(roomID, participant.UserID, participant.Username, payload.ControlID) {
+		if !acquireLeaseLocked(live, participant.UserID, participant.Username, payload.ControlID) {
 			return errors.New("control already leased")
 		}
 	case "control-release":
@@ -477,7 +541,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		if err := json.Unmarshal(incoming.Payload, &payload); err != nil {
 			return errors.New("invalid control release payload")
 		}
-		m.ReleaseLease(roomID, participant.UserID, payload.ControlID)
+		releaseLeaseLocked(live, participant.UserID, payload.ControlID)
 	case "control-cancel":
 		var payload struct {
 			ControlID string `json:"controlId"`
@@ -486,7 +550,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		if err := json.Unmarshal(incoming.Payload, &payload); err != nil {
 			return errors.New("invalid control cancel payload")
 		}
-		m.ReleaseLease(roomID, participant.UserID, payload.ControlID)
+		releaseLeaseLocked(live, participant.UserID, payload.ControlID)
 	default:
 		return errors.New("unsupported room event type")
 	}
@@ -508,7 +572,7 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 	}
 
 	if strings.HasPrefix(incoming.Type, "control-") {
-		leases := m.GetLeases(roomID)
+		leases := m.getLeasesLocked(live)
 		leasesPayload, _ := json.Marshal(leases)
 		live.seq++
 		leaseEvent := RoomEvent{
@@ -540,13 +604,17 @@ func (m *RoomManager) RemoveMember(roomID, userID string) {
 			delete(m.tickets, token)
 		}
 	}
-	m.RevokeTrackTokens(roomID, userID)
-	ejectEvents := m.ejectTracksForUser(roomID, userID)
+	for token, trackToken := range m.trackTokens {
+		if trackToken.RoomID == roomID && trackToken.UserID == userID {
+			delete(m.trackTokens, token)
+		}
+	}
 	m.mu.Unlock()
 	if live == nil {
 		return
 	}
 	live.mu.Lock()
+	ejectEvents := ejectTracksForUserLocked(roomID, live, userID)
 	var departing []RoomParticipant
 	for key, participant := range live.participants {
 		if participant.UserID == userID {
@@ -578,21 +646,15 @@ func (m *RoomManager) RemoveMember(roomID, userID string) {
 	live.mu.Unlock()
 }
 
-func (m *RoomManager) ejectTracksForUser(roomID, userID string) []RoomEvent {
+func ejectTracksForUserLocked(roomID string, live *roomRelay, userID string) []RoomEvent {
 	var events []RoomEvent
-	m.mu.Lock()
-	owners := m.trackOwners[roomID]
-	if owners == nil {
-		m.mu.Unlock()
-		return events
-	}
 	var trackIDs []string
-	for trackID, ownerID := range owners {
+	for trackID, ownerID := range live.trackOwners {
 		if ownerID == userID {
 			trackIDs = append(trackIDs, trackID)
+			delete(live.trackOwners, trackID)
 		}
 	}
-	m.mu.Unlock()
 
 	for _, trackID := range trackIDs {
 		ejectPayload, _ := json.Marshal(map[string]any{
@@ -600,10 +662,10 @@ func (m *RoomManager) ejectTracksForUser(roomID, userID string) []RoomEvent {
 			"trackId": trackID,
 		})
 		events = append(events, RoomEvent{
+			RoomID:  roomID,
 			Type:    "event",
 			Payload: json.RawMessage(ejectPayload),
 		})
-		m.RecordTrackEject(roomID, trackID)
 	}
 	return events
 }
@@ -625,7 +687,6 @@ func (m *RoomManager) Close(roomID string) {
 	live := m.rooms[roomID]
 	delete(m.rooms, roomID)
 	delete(m.inviteCodes, roomID)
-	delete(m.trackOwners, roomID)
 	for token, ticket := range m.tickets {
 		if ticket.RoomID == roomID {
 			delete(m.tickets, token)
@@ -649,21 +710,23 @@ func (m *RoomManager) Close(roomID string) {
 	}
 	live.participants = make(map[string]RoomParticipant)
 	live.leases = make(map[string]ControlLease)
+	live.trackOwners = make(map[string]string)
 	live.mu.Unlock()
 }
 
 const leaseTimeout = 30 * time.Second
 
 func (m *RoomManager) AcquireLease(roomID, userID, username, controlID string) bool {
-	m.mu.Lock()
-	live := m.rooms[roomID]
-	m.mu.Unlock()
+	live := m.room(roomID)
 	if live == nil {
 		return false
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
+	return acquireLeaseLocked(live, userID, username, controlID)
+}
 
+func acquireLeaseLocked(live *roomRelay, userID, username, controlID string) bool {
 	existing, ok := live.leases[controlID]
 	if ok && time.Now().Before(existing.ExpiresAt) && existing.OwnerID != userID {
 		return false
@@ -699,15 +762,16 @@ func (m *RoomManager) RenewLease(roomID, userID, controlID string) bool {
 }
 
 func (m *RoomManager) ReleaseLease(roomID, userID, controlID string) {
-	m.mu.Lock()
-	live := m.rooms[roomID]
-	m.mu.Unlock()
+	live := m.room(roomID)
 	if live == nil {
 		return
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
+	releaseLeaseLocked(live, userID, controlID)
+}
 
+func releaseLeaseLocked(live *roomRelay, userID, controlID string) {
 	existing, ok := live.leases[controlID]
 	if ok && existing.OwnerID == userID {
 		delete(live.leases, controlID)
@@ -732,9 +796,7 @@ func (m *RoomManager) ReleaseAllLeases(roomID, userID string) {
 }
 
 func (m *RoomManager) GetLeases(roomID string) []ControlLease {
-	m.mu.Lock()
-	live := m.rooms[roomID]
-	m.mu.Unlock()
+	live := m.room(roomID)
 	if live == nil {
 		return nil
 	}
@@ -744,15 +806,16 @@ func (m *RoomManager) GetLeases(roomID string) []ControlLease {
 }
 
 func (m *RoomManager) validateLease(roomID, userID, controlID string) bool {
-	m.mu.Lock()
-	live := m.rooms[roomID]
-	m.mu.Unlock()
+	live := m.room(roomID)
 	if live == nil {
 		return false
 	}
 	live.mu.Lock()
 	defer live.mu.Unlock()
+	return validateLeaseLocked(live, userID, controlID)
+}
 
+func validateLeaseLocked(live *roomRelay, userID, controlID string) bool {
 	lease, ok := live.leases[controlID]
 	if !ok {
 		return false

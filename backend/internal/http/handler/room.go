@@ -14,6 +14,7 @@ import (
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/room"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/app_error"
 	"github.com/edward-lemonade/dj-sim-backend/internal/http/middleware"
+	"github.com/edward-lemonade/dj-sim-backend/internal/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -29,7 +30,7 @@ type RoomCreator interface {
 	Leave(ctx context.Context, roomID, userID string) (*room.LeaveResult, error)
 	RelayManager() *room.RoomManager
 	IssueTrackAccessToken(ctx context.Context, roomID, userID, trackID string) (string, error)
-	GetTrackAudioURL(ctx context.Context, roomID, trackID, token string) (string, error)
+	GetTrackAudio(ctx context.Context, roomID, trackID, token string) (*storage.S3Object, error)
 	CleanupRoomsNoMembers(ctx context.Context) error
 }
 
@@ -207,14 +208,16 @@ func (h *RoomHandler) GetTrackAudio(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "access token is required"})
 		return
 	}
-	url, err := h.Rooms.GetTrackAudioURL(
+	obj, err := h.Rooms.GetTrackAudio(
 		c.Request.Context(), c.Param("id"), c.Param("trackId"), token,
 	)
 	if err != nil {
 		app_error.WriteError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"url": url})
+	defer obj.Body.Close()
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.DataFromReader(http.StatusOK, obj.ContentLength, obj.ContentType, obj.Body, nil)
 }
 
 func (h *RoomHandler) Events(c *gin.Context) {
@@ -255,7 +258,7 @@ func (h *RoomHandler) Events(c *gin.Context) {
 	}
 	connectionID := uuid.NewString()
 	detach, err := manager.Attach(roomID, room.RoomParticipant{
-		UserID: ticket.UserID, Username: ticket.Username, ConnectionID: connectionID, Send: send,
+		UserID: ticket.UserID, Username: ticket.Username, AvatarURL: ticket.AvatarURL, ConnectionID: connectionID, Send: send,
 		Close: func() { _ = conn.Close() },
 	})
 	if err != nil {
@@ -312,11 +315,13 @@ func (h *RoomHandler) Events(c *gin.Context) {
 		if err := manager.Publish(roomID, connectionID, event); err != nil {
 			if errors.Is(err, room.ErrRoomNotFound) {
 				_ = send(room.RoomEvent{RoomID: roomID, Type: "closed"})
+				return
 			} else {
 				_ = send(room.RoomEvent{RoomID: roomID, Type: "error", Payload: []byte(`{"message":"invalid room event"}`)})
 			}
 			log.Printf("reject room event for %s from %s: %v", roomID, ticket.UserID, err)
-			return
+			_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			continue
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	}

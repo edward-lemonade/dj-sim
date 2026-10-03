@@ -19,6 +19,7 @@ export function trackToPool(track: TrackDTO): Track {
 
   return {
     id: track.id,
+    createdAt: track.createdAt,
     title: track.title,
     artist: track.artist,
     bpm: track.bpm,

@@ -18,8 +18,9 @@ export function clampWaveformViewStart(start: number, width: number) {
   return Math.min(maximum, Math.max(minimum, start));
 }
 
-export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
+export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?: (trackId: string) => Promise<Blob> }) {
   const enableSpacebar = options?.enableSpacebar !== false;
+  const loadAudio = options?.loadAudio ?? fetchTrackAudioBlob;
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [status, setStatus] = useState<PlayerStatus>('idle');
   const [currentTime, setCurrentTime] = useState(0);
@@ -92,7 +93,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
     try {
       // Use a same-origin blob URL; Web Audio can silently mute a media source
       // loaded directly from a cross-origin URL without permissive CORS.
-      const blob = await fetchTrackAudioBlob(trackId);
+      const blob = await loadAudio(trackId);
       if (openedIdRef.current !== trackId) return;
 
       const blobUrl = URL.createObjectURL(blob);
@@ -138,7 +139,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean }) {
       setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Could not open track');
     }
-  }, [audioElement, revokeBlob, stopAudio]);
+  }, [audioElement, loadAudio, revokeBlob, stopAudio]);
 
   const seek = useCallback((seconds: number) => {
     if (!Number.isFinite(audioElement.duration) || audioElement.duration <= 0) return;

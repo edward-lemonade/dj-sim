@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState } from 'react';
 import { useUser } from '@clerk/react';
 import { useBlocker, useLocation, useNavigate } from 'react-router-dom';
 import { CDJ } from '../../components/CDJ';
 import { Mixer } from '@/components/Mixer';
+import type { MixerState } from '@/hooks/useMixerState';
 import { StudioTopbar } from '@/components/StudioTopbar';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';
 import { getStudioDeckLayout } from '@/lib/utils/studioGrid';
@@ -11,10 +12,12 @@ import { clamp, DECK_IDS, DeckId } from '../../hooks/useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import type { Track } from '@/lib/types/Track';
+import { normalizeCues } from '@/lib/types/Cues';
 import { StreamDeckId, StreamPopupKind, type StreamDeckSnapshot, type StudioSnapshot } from '@/lib/types/Stream';
-import type { CreatedRoom } from '@/lib/types/Room';
+import type { CreatedRoom, RoomTrack } from '@/lib/types/Room';
 import { ENV } from '@/config/env';
-import { createRoom, leaveRoom } from '@/lib/api/RoomsAPI';
+import { createRoom, fetchRoomTrackAudioBlob, getRoomLibrary, leaveRoom } from '@/lib/api/RoomsAPI';
+import { fetchTrackAudioBlob } from '@/lib/api/TrackAPI';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { useStudioRecording } from '../../hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
@@ -49,6 +52,22 @@ function roomSocketUrl(room: CreatedRoom): string {
 }
 
 type StudioCommand = StudioAction | { action: 'hydrate'; value: StudioSnapshot };
+type RoomTransportCommand = {
+  id: string;
+  platterRevision?: string;
+  command: 'play' | 'pause' | 'seek' | 'sync';
+  playing?: boolean;
+  positionSeconds?: number;
+  platterAngleDegrees?: number;
+  receivedAtMs: number;
+};
+type RoomTransportCommandPayload = {
+  action: 'transport-command';
+  deck: StreamDeckId;
+  command: 'play' | 'pause' | 'seek';
+  positionSeconds?: number;
+  platterAngleDegrees?: number;
+};
 
 function reduceStudio(state: StudioSnapshot, command: StudioCommand): StudioSnapshot {
   if (command.action === 'hydrate') return command.value;
@@ -72,9 +91,29 @@ function isStudioAction(value: unknown): value is StudioAction {
   return typeof value === 'object' && value !== null && 'action' in value;
 }
 
+function isRoomTransportCommand(value: unknown): value is RoomTransportCommandPayload {
+  if (typeof value !== 'object' || value === null || !('action' in value) || !('deck' in value) || !('command' in value)) {
+    return false;
+  }
+  const command = value as Partial<RoomTransportCommandPayload>;
+  return command.action === 'transport-command'
+    && (command.deck === StreamDeckId.A || command.deck === StreamDeckId.B)
+    && (command.command === 'play' || command.command === 'pause' || command.command === 'seek')
+    && (command.platterAngleDegrees === undefined || Number.isFinite(command.platterAngleDegrees));
+}
+
 function connectRoomRelay(room: CreatedRoom): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(roomSocketUrl(room));
+    const buffered = {
+      messages: [] as MessageEvent[],
+      closeEvent: null as CloseEvent | null,
+      onMessage: (event: MessageEvent) => buffered.messages.push(event),
+      onClose: (event: CloseEvent) => { buffered.closeEvent = event; },
+    };
+    socket.addEventListener('message', buffered.onMessage);
+    socket.addEventListener('close', buffered.onClose);
+    pendingRoomSocketEvents.set(socket, buffered);
     const timeout = window.setTimeout(() => {
       socket.close();
       reject(new Error('Timed out connecting to the room event relay.'));
@@ -93,6 +132,13 @@ function connectRoomRelay(room: CreatedRoom): Promise<WebSocket> {
     }, { once: true });
   });
 }
+
+const pendingRoomSocketEvents = new WeakMap<WebSocket, {
+  messages: MessageEvent[];
+  closeEvent: CloseEvent | null;
+  onMessage: (event: MessageEvent) => void;
+  onClose: (event: CloseEvent) => void;
+}>();
 
 function toStreamCoverUrl(value: string | null): Promise<string | null> {
   if (!value) return Promise.resolve(null);
@@ -162,6 +208,34 @@ async function toStreamTrack(track: Track): Promise<StreamDeckSnapshot['track']>
   };
 }
 
+function trackFromSnapshot(track: StreamDeckSnapshot['track']): Track | null {
+  if (!track) return null;
+  const duration = Math.max(0, Math.floor(track.durationSeconds));
+  return {
+    ...track,
+    duration: `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}`,
+    coverLabel: '',
+    libraryStatus: 'ready',
+  };
+}
+
+function trackFromRoomLibrary(track: RoomTrack): Track {
+  return {
+    id: track.id,
+    title: track.title,
+    artist: track.artist,
+    bpm: track.bpm,
+    beatOffset: 0,
+    key: track.key,
+    waveformOverview: null,
+    cues: normalizeCues(null),
+    duration: '0:00',
+    coverLabel: '',
+    coverUrl: track.coverUrl,
+    libraryStatus: 'ready',
+  };
+}
+
 function StudioPage() {
   const { user } = useUser();
   const navigate = useNavigate();
@@ -188,18 +262,33 @@ function StudioPage() {
   });
   const [streamStartError, setStreamStartError] = useState<string | null>(null);
   const [collabRoom, setCollabRoom] = useState<CreatedRoom | null>(null);
+  const [roomLibraryState, setRoomLibraryState] = useState<{ roomId: string; tracks: RoomTrack[] } | null>(null);
   const [collabBusy, setCollabBusy] = useState(false);
   const [collabError, setCollabError] = useState<string | null>(null);
+  const roomMemberKey = collabRoom?.members?.map((member) => member.userId).sort().join(',') ?? '';
+  const roomLibrary = roomLibraryState && roomLibraryState.roomId === collabRoom?.id
+    ? roomLibraryState.tracks
+    : [];
   const roomSocketRef = useRef<WebSocket | null>(null);
+  const roomEventsReadyRef = useRef(false);
   const publishRoomSnapshotsRef = useRef(false);
+  const [roomTransportCommands, setRoomTransportCommands] = useState<Record<StreamDeckId, RoomTransportCommand | null>>({
+    [StreamDeckId.A]: null,
+    [StreamDeckId.B]: null,
+  });
   const incomingRoomRef = useRef((location.state as { roomSession?: CreatedRoom } | null)?.roomSession);
   const applyingRemoteRef = useRef(false);
   const studioSnapshotRef = useRef(studioState);
   const commitStudio = useCallback((command: StudioCommand) => {
+    if (command.action === 'hydrate') {
+      studioSnapshotRef.current = command.value;
+    } else {
+      studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, command);
+    }
     dispatchStudio(command);
     if (command.action === 'hydrate' || applyingRemoteRef.current) return;
     const socket = roomSocketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({
       type: 'event',
       t: engine?.context.currentTime ?? 0,
@@ -207,25 +296,28 @@ function StudioPage() {
     }));
   }, [engine]);
   const lastPointerUpdate = useRef(0);
-  const mixerState = studioState.mixer;
-  const setChannel = useCallback((id: DeckId, patch: Partial<typeof mixerState.channelState[DeckId.A]>) => {
+  const setChannel = useCallback((id: DeckId, patch: Partial<MixerState['channelState'][DeckId.A]>) => {
+    const current = studioSnapshotRef.current.mixer;
     commitStudio({
       action: StudioActionType.MixerChange,
       value: {
-        ...mixerState,
-        channelState: { ...mixerState.channelState, [id]: { ...mixerState.channelState[id], ...patch } },
+        ...current,
+        channelState: { ...current.channelState, [id]: { ...current.channelState[id], ...patch } },
       },
     });
-  }, [commitStudio, mixerState]);
-  const setFx = useCallback((patch: Partial<typeof mixerState.fx>) => {
-    commitStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, fx: { ...mixerState.fx, ...patch } } });
-  }, [commitStudio, mixerState]);
+  }, [commitStudio]);
+  const setFx = useCallback((patch: Partial<MixerState['fx']>) => {
+    const current = studioSnapshotRef.current.mixer;
+    commitStudio({ action: StudioActionType.MixerChange, value: { ...current, fx: { ...current.fx, ...patch } } });
+  }, [commitStudio]);
   const setMaster = useCallback((value: number) => {
-    commitStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, master: value } });
-  }, [commitStudio, mixerState]);
+    const current = studioSnapshotRef.current.mixer;
+    commitStudio({ action: StudioActionType.MixerChange, value: { ...current, master: value } });
+  }, [commitStudio]);
   const setTempoMaster = useCallback((id: DeckId | null) => {
-    commitStudio({ action: StudioActionType.MixerChange, value: { ...mixerState, tempoMaster: id } });
-  }, [commitStudio, mixerState]);
+    const current = studioSnapshotRef.current.mixer;
+    commitStudio({ action: StudioActionType.MixerChange, value: { ...current, tempoMaster: id } });
+  }, [commitStudio]);
 
   const loadedBeatCounts = DECK_IDS
     .map((id) => deckBeatCounts[id])
@@ -300,8 +392,8 @@ function StudioPage() {
   }, [library.songs, loadedTrackIds, studioState.decks, collabRoom]);
 
   const trackBpm = useCallback(
-    (id: DeckId) => library.songs.find((song) => song.id === loadedTrackIds[id])?.bpm ?? 0,
-    [library.songs, loadedTrackIds],
+    (id: DeckId) => studioState.decks[id === DeckId.A ? StreamDeckId.A : StreamDeckId.B].track?.bpm ?? 0,
+    [studioState.decks],
   );
 
   const reportTransport = useCallback((id: DeckId, next: { playing: boolean; positionSeconds: number; durationSeconds: number; rate: number }) => {
@@ -322,13 +414,50 @@ function StudioPage() {
   const streaming = useStreamPublisher(engine, studioState);
   const { start: startStream, stop: stopStream } = streaming;
   const avatarUrl = user?.imageUrl ?? '';
+  const collabRoomId = collabRoom?.id;
+  const sendRoomTransportCommand = useCallback((
+    deck: DeckId,
+    command: 'play' | 'pause' | 'seek',
+    positionSeconds?: number,
+    platterAngleDegrees?: number,
+  ) => {
+    const socket = roomSocketRef.current;
+    if (!collabRoomId || !roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: 'event',
+      t: engine?.context.currentTime ?? 0,
+      payload: {
+        action: 'transport-command',
+        deck: deck === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
+        command,
+        positionSeconds,
+        platterAngleDegrees,
+      },
+    }));
+  }, [collabRoomId, engine]);
+  const loadTrackAudio = useCallback((trackId: string) => (
+    collabRoomId
+      ? fetchRoomTrackAudioBlob(collabRoomId, trackId)
+      : fetchTrackAudioBlob(trackId)
+  ), [collabRoomId]);
+
+  useEffect(() => {
+    const roomId = collabRoom?.id;
+    if (!roomId) return;
+    let active = true;
+    void getRoomLibrary(roomId).then((tracks) => {
+      if (active) setRoomLibraryState({ roomId, tracks });
+    }).catch((cause: unknown) => {
+      if (active) setCollabError(cause instanceof Error ? cause.message : 'Could not load the room library.');
+    });
+    return () => { active = false; };
+  }, [collabRoom?.id, roomMemberKey]);
 
   useEffect(() => {
     studioSnapshotRef.current = studioState;
   }, [studioState]);
 
-  useEffect(() => {
-    const handleBeforeUnload = () => {
+  const cleanupStudioSession = useEffectEvent(() => {
       if (streaming.live) {
         stopStream().catch((cause: unknown) => {
           console.error('Failed to stop stream on beforeunload', cause);
@@ -339,30 +468,32 @@ function StudioPage() {
           console.error('Failed to leave room on beforeunload', cause);
         });
       }
-    };
+  });
+
+  useEffect(() => {
+    const handleBeforeUnload = () => cleanupStudioSession();
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (streaming.live) {
-        void stopStream().catch((cause: unknown) => {
-          console.error('Failed to stop stream on unmount', cause);
-        });
-      }
-      if (collabRoom) {
-        void leaveRoom(collabRoom.id).catch((cause: unknown) => {
-          console.error('Failed to leave room on unmount', cause);
-        });
-      }
+      cleanupStudioSession();
     };
-  }, [streaming.live, stopStream, collabRoom]);
+  }, []);
 
   const attachRoomSession = useCallback(async (room: CreatedRoom, publishSnapshots: boolean) => {
     const socket = await connectRoomRelay(room);
-    socket.addEventListener('message', (message) => {
+    const handleMessage = (message: MessageEvent) => {
       try {
-        const event = JSON.parse(String(message.data)) as { type?: string; payload?: unknown };
+        const event = JSON.parse(String(message.data)) as {
+          type?: string;
+          payload?: unknown;
+          seq?: number;
+          userId?: string;
+          username?: string;
+          avatarUrl?: string;
+        };
         if (event.type === 'closed') {
           roomSocketRef.current = null;
+          roomEventsReadyRef.current = false;
           publishRoomSnapshotsRef.current = false;
           setCollabRoom(null);
           socket.close();
@@ -375,25 +506,137 @@ function StudioPage() {
         }
         if ((event.type === 'joined' || event.type === 'snapshot')) {
           const snapshot = snapshotFromRoomEvent(event.type, event.payload);
-          if (snapshot) dispatchStudio({ action: 'hydrate', value: snapshot });
+          if (event.type === 'joined' && typeof event.payload === 'object' && event.payload !== null && 'members' in event.payload) {
+            const members = (event.payload as { members?: CreatedRoom['members'] }).members;
+            if (members) {
+              setCollabRoom((current) => current ? { ...current, members } : current);
+            }
+          }
+          if (snapshot) {
+            studioSnapshotRef.current = snapshot;
+            dispatchStudio({ action: 'hydrate', value: snapshot });
+            if (event.type === 'joined') {
+              const commandId = String(event.seq ?? Date.now());
+              setRoomTransportCommands({
+                [StreamDeckId.A]: {
+                  id: `${commandId}:A`, command: 'sync',
+                  playing: snapshot.decks[StreamDeckId.A].playing,
+                  positionSeconds: snapshot.decks[StreamDeckId.A].positionSeconds,
+                  receivedAtMs: performance.now(),
+                },
+                [StreamDeckId.B]: {
+                  id: `${commandId}:B`, command: 'sync',
+                  playing: snapshot.decks[StreamDeckId.B].playing,
+                  positionSeconds: snapshot.decks[StreamDeckId.B].positionSeconds,
+                  receivedAtMs: performance.now(),
+                },
+              });
+            } else {
+              const commandId = String(event.seq ?? Date.now());
+              const receivedAtMs = performance.now();
+              setRoomTransportCommands((currentCommands) => ({
+                ...currentCommands,
+                ...(snapshot.decks[StreamDeckId.A].playing ? {
+                  [StreamDeckId.A]: {
+                    id: `${commandId}:A`, command: 'sync', playing: true,
+                    positionSeconds: snapshot.decks[StreamDeckId.A].positionSeconds, receivedAtMs,
+                    platterRevision: currentCommands[StreamDeckId.A]?.platterRevision,
+                    platterAngleDegrees: currentCommands[StreamDeckId.A]?.platterAngleDegrees,
+                  },
+                } : {}),
+                ...(snapshot.decks[StreamDeckId.B].playing ? {
+                  [StreamDeckId.B]: {
+                    id: `${commandId}:B`, command: 'sync', playing: true,
+                    positionSeconds: snapshot.decks[StreamDeckId.B].positionSeconds, receivedAtMs,
+                    platterRevision: currentCommands[StreamDeckId.B]?.platterRevision,
+                    platterAngleDegrees: currentCommands[StreamDeckId.B]?.platterAngleDegrees,
+                  },
+                } : {}),
+              }));
+            }
+          }
+          return;
+        }
+        if (event.type === 'member-joined' && event.userId) {
+          const member = {
+            userId: event.userId,
+            username: event.username ?? '',
+            avatarUrl: event.avatarUrl ?? '',
+          };
+          setCollabRoom((current) => current ? {
+            ...current,
+            members: [...(current.members ?? []).filter((existing) => existing.userId !== member.userId), member],
+          } : current);
+          return;
+        }
+        if (event.type === 'member-left' && event.userId) {
+          setCollabRoom((current) => current ? {
+            ...current,
+            members: (current.members ?? []).filter((member) => member.userId !== event.userId),
+          } : current);
+          return;
+        }
+        if (event.type === 'event' && isRoomTransportCommand(event.payload)) {
+          const command = event.payload;
+          const current = studioSnapshotRef.current.decks[command.deck];
+          const action: StudioAction = {
+            action: StudioActionType.Transport,
+            deck: command.deck,
+            value: {
+              ...current,
+              playing: command.command === 'play' ? true : command.command === 'pause' ? false : current.playing,
+              positionSeconds: command.command === 'seek' && Number.isFinite(command.positionSeconds)
+                ? command.positionSeconds!
+                : current.positionSeconds,
+            },
+          };
+          studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, action);
+          dispatchStudio(action);
+          setRoomTransportCommands((currentCommands) => ({
+            ...currentCommands,
+            [command.deck]: {
+              id: String(event.seq ?? Date.now()),
+              platterRevision: command.platterAngleDegrees === undefined
+                ? currentCommands[command.deck]?.platterRevision
+                : String(event.seq ?? Date.now()),
+              command: command.command,
+              positionSeconds: command.positionSeconds,
+              platterAngleDegrees: command.platterAngleDegrees ?? currentCommands[command.deck]?.platterAngleDegrees,
+              receivedAtMs: performance.now(),
+            },
+          }));
           return;
         }
         if (event.type === 'event' && isStudioAction(event.payload)) {
+          studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, event.payload);
           dispatchStudio(event.payload);
         }
       } catch {
         setCollabError('The room relay returned an unreadable message.');
       }
-    });
-    socket.addEventListener('close', () => {
+    };
+    const handleClose = () => {
       if (roomSocketRef.current === socket) {
         roomSocketRef.current = null;
+        roomEventsReadyRef.current = false;
         publishRoomSnapshotsRef.current = false;
         setCollabError('Room connection lost. The last shared state is still playing locally.');
       }
-    });
+    };
+    const buffered = pendingRoomSocketEvents.get(socket);
+    if (buffered) {
+      socket.removeEventListener('message', buffered.onMessage);
+      socket.removeEventListener('close', buffered.onClose);
+    }
+    socket.addEventListener('message', handleMessage);
+    socket.addEventListener('close', handleClose);
     roomSocketRef.current = socket;
-    publishRoomSnapshotsRef.current = true;
+    roomEventsReadyRef.current = true;
+    publishRoomSnapshotsRef.current = publishSnapshots;
+    setCollabRoom(room);
+    pendingRoomSocketEvents.delete(socket);
+    for (const message of buffered?.messages ?? []) handleMessage(message);
+    if (buffered?.closeEvent) handleClose();
     if (publishSnapshots) {
       socket.send(JSON.stringify({
         type: 'snapshot',
@@ -401,7 +644,6 @@ function StudioPage() {
         payload: { ...studioSnapshotRef.current, pointer: null },
       }));
     }
-    setCollabRoom(room);
   }, [engine, navigate]);
 
   const startCollabRoom = useCallback(async (visibility: 'public' | 'private') => {
@@ -413,7 +655,7 @@ function StudioPage() {
       await attachRoomSession({
         ...created,
         members: user
-          ? [{ username: user.username ?? user.fullName ?? 'You', avatarUrl }]
+          ? [{ userId: user.id, username: user.username ?? user.fullName ?? 'You', avatarUrl }]
           : created.members,
       }, true);
     } catch (cause) {
@@ -549,6 +791,11 @@ function StudioPage() {
   }, [engine]);
 
   const ready = library.songs.filter((song) => song.libraryStatus === 'ready');
+  const roomLibraryTracks = roomLibrary.map(trackFromRoomLibrary);
+  const availableTracks = [
+    ...ready,
+    ...roomLibraryTracks.filter((track) => !ready.some((localTrack) => localTrack.id === track.id)),
+  ];
 
   const { leftDeckIds, rightDeckIds, gridTemplateColumns } = getStudioDeckLayout();
 
@@ -558,11 +805,16 @@ function StudioPage() {
       deckId={id}
       label={id}
       engine={engine}
-      track={library.songs.find((song) => song.id === loadedTrackIds[id]) ?? null}
-      tracks={ready}
+      loadAudio={loadTrackAudio}
+      roomTransportCommand={collabRoom ? roomTransportCommands[id === DeckId.A ? StreamDeckId.A : StreamDeckId.B] ?? undefined : undefined}
+      roomTracks={collabRoom ? roomLibrary : undefined}
+      currentUserId={user?.id}
+      track={library.songs.find((song) => song.id === loadedTrackIds[id])
+        ?? trackFromSnapshot(studioState.decks[id === DeckId.A ? StreamDeckId.A : StreamDeckId.B].track)}
+      tracks={availableTracks}
       onLoadTrack={async (trackId: string) => {
-        const track = library.songs.find((song) => song.id === trackId);
-        dispatchStudio({
+        const track = availableTracks.find((song) => song.id === trackId);
+        commitStudio({
           action: StudioActionType.TrackLoad,
           deck: id === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
           value: track ? await toStreamTrack(track) : null,
@@ -579,6 +831,9 @@ function StudioPage() {
       onSharedZoomBy={adjustWaveformZoom}
       onBeatCountChange={reportDeckBeatCount}
       onTransportUpdate={reportTransport}
+      onTransportCommand={(deck, command, positionSeconds, platterAngleDegrees) => (
+        sendRoomTransportCommand(deck, command, positionSeconds, platterAngleDegrees)
+      )}
       onPopupChange={(deckId, open) => dispatchStudio({
         action: StudioActionType.Popup,
         value: open

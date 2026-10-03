@@ -76,7 +76,6 @@ export function useRemoteControlExtrapolation(controlId: ControlId) {
   }, [controlId]);
 
   const onAuthoritativeUpdate = useCallback((value: number, timestamp: number) => {
-    const state = stateRef.current;
     const now = Date.now();
     const predicted = getPredictedValue(now);
     

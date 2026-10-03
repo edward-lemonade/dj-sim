@@ -9,6 +9,7 @@ import {
 } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
 import type { Track, TrackUpdateFields } from '@/lib/types/Track';
+import type { RoomTrack } from '@/lib/types/Room';
 import type { StreamDeckSnapshot } from '@/lib/types/Stream';
 import { DeckControls } from '@/components/DeckControls';
 import { Platter } from '@/components/Platter';
@@ -32,8 +33,20 @@ export type CDJProps = {
     capturedAt: number;
     currentTime: number;
   };
+  roomTransportCommand?: {
+    id: string;
+    platterRevision?: string;
+    command: 'play' | 'pause' | 'seek' | 'sync';
+    playing?: boolean;
+    positionSeconds?: number;
+    platterAngleDegrees?: number;
+    receivedAtMs: number;
+  };
   tracks?: Track[];
+  roomTracks?: RoomTrack[];
+  currentUserId?: string;
   playedIds?: Set<string>;
+  loadAudio?: (trackId: string) => Promise<Blob>;
   onLoadTrack?: (id: string) => void;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
   tempo: number;
@@ -48,6 +61,7 @@ export type CDJProps = {
   onSharedZoomBy: (factor: number) => void;
   onBeatCountChange: (id: DeckId, count: number | null) => void;
   onTransportUpdate?: (id: DeckId, state: { playing: boolean; positionSeconds: number; durationSeconds: number; rate: number }) => void;
+  onTransportCommand?: (id: DeckId, command: 'play' | 'pause' | 'seek', positionSeconds?: number, platterAngleDegrees?: number) => void;
   onPopupChange?: (id: DeckId, open: boolean) => void;
 };
 
@@ -57,8 +71,12 @@ export function CDJ({
   label,
   engine,
   readOnlyState,
+  roomTransportCommand,
   tracks,
+  roomTracks,
+  currentUserId,
   playedIds,
+  loadAudio,
   onLoadTrack,
   onPatch,
   tempo,
@@ -71,9 +89,10 @@ export function CDJ({
   onSharedZoomBy,
   onBeatCountChange,
   onTransportUpdate,
+  onTransportCommand,
   onPopupChange,
 }: CDJProps) {
-  const localPlayer = useTrackPlayer({ enableSpacebar: false });
+  const localPlayer = useTrackPlayer({ enableSpacebar: false, loadAudio });
   const player = useMemo(() => {
     if (!readOnlyState) return localPlayer;
     const durationSeconds = readOnlyState.durationSeconds;
@@ -98,6 +117,10 @@ export function CDJ({
 
   // Remember playback state so scratching resumes only decks that were playing.
   const wasPlayingRef = useRef(false);
+  const lastRoomTransportCommandIdRef = useRef<string | undefined>(undefined);
+  const pendingRoomTransportCommandRef = useRef<typeof roomTransportCommand>(undefined);
+  const lastScratchRoomSentAtRef = useRef(0);
+  const [localPlatterOverrideRevision, setLocalPlatterOverrideRevision] = useState<string | undefined>();
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [platterSize, setPlatterSize] = useState(PLATTER_MIN_SIZE);
@@ -138,6 +161,55 @@ export function CDJ({
     player.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnlyState, track?.id]);
+
+  const applyRoomTransport = useEffectEvent(() => {
+    if (!roomTransportCommand) {
+      lastRoomTransportCommandIdRef.current = undefined;
+      pendingRoomTransportCommandRef.current = undefined;
+      return;
+    }
+
+    if (lastRoomTransportCommandIdRef.current !== roomTransportCommand.id) {
+      lastRoomTransportCommandIdRef.current = roomTransportCommand.id;
+      pendingRoomTransportCommandRef.current = roomTransportCommand;
+    }
+    const pendingTransport = pendingRoomTransportCommandRef.current;
+    if (!pendingTransport || readOnlyState || !track || !player.audioElement.src || (player.status !== 'ready' && player.status !== 'playing')) return;
+
+    const audio = player.audioElement;
+    const isAdvancing = pendingTransport.command === 'play'
+      || (pendingTransport.command === 'sync' && pendingTransport.playing === true);
+    const loadDelaySeconds = isAdvancing
+      ? Math.max(0, performance.now() - pendingTransport.receivedAtMs) / 1000
+      : 0;
+    const positionSeconds = typeof pendingTransport.positionSeconds === 'number'
+      ? pendingTransport.positionSeconds + loadDelaySeconds
+      : undefined;
+    const seekThreshold = pendingTransport.command === 'seek' ? 0.01 : 0.75;
+    if (
+      typeof positionSeconds === 'number' && Number.isFinite(positionSeconds) &&
+      Math.abs(audio.currentTime - positionSeconds) > seekThreshold
+    ) {
+      player.seek(positionSeconds);
+    }
+    const shouldPlay = pendingTransport.command === 'play'
+      || (pendingTransport.command === 'sync' && pendingTransport.playing === true);
+    const shouldPause = pendingTransport.command === 'pause'
+      || (pendingTransport.command === 'sync' && pendingTransport.playing === false);
+    if (shouldPlay && audio.paused) {
+      void player.play().catch((cause: unknown) => {
+        console.warn('Could not follow room playback', cause);
+      });
+    } else if (shouldPause && !audio.paused) {
+      player.pause();
+    }
+    pendingRoomTransportCommandRef.current = undefined;
+  });
+
+  useEffect(() => {
+    applyRoomTransport();
+  }, [roomTransportCommand?.id, player.status, readOnlyState, track?.id]);
+
   useEffect(() => {
     const beatCount = track?.bpm && player.durationSeconds > 0
       ? player.durationSeconds * track.bpm / 60
@@ -199,12 +271,16 @@ export function CDJ({
   const handleScratchStart = () => {
     if (!engine || readOnlyState || transportDisabled) return;
     wasPlayingRef.current = player.status === 'playing';
+    setLocalPlatterOverrideRevision(roomTransportCommand?.platterRevision);
     player.setInteracting(true);
     // Pause element playback while scratch grains use the decoded buffer.
-    if (wasPlayingRef.current) player.pause();
+    if (wasPlayingRef.current) {
+      onTransportCommand?.(deckId, 'pause', player.currentTime);
+      player.pause();
+    }
   };
 
-  const handleScratchMove = (deltaSeconds: number, deltaRealSeconds: number) => {
+  const handleScratchMove = (deltaSeconds: number, deltaRealSeconds: number, angleDegrees: number) => {
     const base = player.currentTime;
     const next = clamp(base + deltaSeconds, 0, player.durationSeconds || base);
     if (engine && wasPlayingRef.current && player.audioBuffer) {
@@ -212,14 +288,23 @@ export function CDJ({
     }
     // Seek on every move so the platter and waveform follow the drag.
     player.seek(next);
+    const now = performance.now();
+    if (now - lastScratchRoomSentAtRef.current >= 33) {
+      lastScratchRoomSentAtRef.current = now;
+      onTransportCommand?.(deckId, 'seek', next, angleDegrees);
+    }
   };
 
-  const handleScratchEnd = () => {
+  const handleScratchEnd = (angleDegrees: number) => {
     engine?.stopScratch(deckId);
     player.setInteracting(false);
-    // Resume from the dragged position only if playback was active before.
-    if (!readOnlyState && wasPlayingRef.current) {
-      wasPlayingRef.current = false;
+    const shouldResume = wasPlayingRef.current;
+    wasPlayingRef.current = false;
+    if (!readOnlyState) {
+      onTransportCommand?.(deckId, 'seek', player.currentTime, angleDegrees);
+    }
+    if (!readOnlyState && shouldResume) {
+      onTransportCommand?.(deckId, 'play', player.currentTime);
       void player.play();
     }
   };
@@ -242,6 +327,8 @@ export function CDJ({
             onSelect={onLoadTrack}
             label={label}
             onOpenChange={(open) => onPopupChange?.(deckId, open)}
+            roomTracks={roomTracks}
+            currentUserId={currentUserId}
           />
         </div>
       ) : null}
@@ -263,6 +350,9 @@ export function CDJ({
           onScratchStart={handleScratchStart}
           onScratchMove={handleScratchMove}
           onScratchEnd={handleScratchEnd}
+          syncedAngle={localPlatterOverrideRevision === roomTransportCommand?.platterRevision
+            ? undefined
+            : roomTransportCommand?.platterAngleDegrees}
         />
         <div className="flex min-h-0 flex-col items-center justify-center gap-2 self-stretch justify-self-center">
           <MetaField
@@ -321,6 +411,7 @@ export function CDJ({
         cueDisabled={cueSlotsFull || readOnlyState !== undefined}
         label={label}
         onCue={setCueAtPlayhead}
+        onTransportCommand={(command, positionSeconds) => onTransportCommand?.(deckId, command, positionSeconds)}
       />
       </section>
       {waveformTarget

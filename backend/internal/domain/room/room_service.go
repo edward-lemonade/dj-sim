@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
+	"github.com/edward-lemonade/dj-sim-backend/internal/storage"
 )
 
 type Service struct {
@@ -16,7 +17,7 @@ type Service struct {
 	manager    *RoomManager
 	streams    StreamTerminator
 	tracks     TrackDirectory
-	s3Store    S3Presigner
+	s3Store    RoomAudioStore
 }
 
 type TrackDirectory interface {
@@ -27,8 +28,8 @@ type StreamTerminator interface {
 	EndForced(ctx context.Context, streamID string) error
 }
 
-type S3Presigner interface {
-	PresignedGetObject(ctx context.Context, objectKey string, expiresIn time.Duration) (string, error)
+type RoomAudioStore interface {
+	GetObject(ctx context.Context, objectKey string) (*storage.S3Object, error)
 }
 
 type RepositoryService interface {
@@ -73,7 +74,7 @@ func (s *Service) SetTrackDirectory(tracks TrackDirectory) {
 	s.tracks = tracks
 }
 
-func (s *Service) SetS3Store(store S3Presigner) {
+func (s *Service) SetS3Store(store RoomAudioStore) {
 	s.s3Store = store
 }
 
@@ -110,7 +111,7 @@ func (s *Service) Create(ctx context.Context, creatorID, username, avatarURL, vi
 	}
 	s.manager.Ensure(item.ID, creatorID)
 	s.manager.RememberInviteCode(item.ID, code)
-	ticket, err := s.manager.IssueTicket(item.ID, creatorID, username)
+	ticket, err := s.manager.IssueTicket(item.ID, creatorID, username, avatarURL)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +164,7 @@ func (s *Service) JoinByCode(ctx context.Context, code, userID, username, avatar
 	}
 	s.manager.Ensure(joined.Room.ID)
 	s.manager.RememberInviteCode(joined.Room.ID, code)
-	return s.attachConnection(joined, userID, username)
+	return s.attachConnection(joined, userID, username, avatarURL)
 }
 
 func (s *Service) JoinPublic(ctx context.Context, roomID, userID, username, avatarURL string) (*JoinResult, error) {
@@ -178,7 +179,7 @@ func (s *Service) JoinPublic(ctx context.Context, roomID, userID, username, avat
 	if err != nil {
 		return nil, err
 	}
-	return s.attachConnection(joined, userID, username)
+	return s.attachConnection(joined, userID, username, avatarURL)
 }
 
 func (s *Service) Leave(ctx context.Context, roomID, userID string) (*LeaveResult, error) {
@@ -241,12 +242,12 @@ func (s *Service) RelayManager() *RoomManager {
 	return s.manager
 }
 
-func (s *Service) attachConnection(joined *JoinResult, userID, username string) (*JoinResult, error) {
+func (s *Service) attachConnection(joined *JoinResult, userID, username, avatarURL string) (*JoinResult, error) {
 	if joined == nil || joined.Room.ID == "" {
 		return nil, errors.New("room join returned no room ID")
 	}
 	s.manager.Ensure(joined.Room.ID)
-	ticket, err := s.manager.IssueTicket(joined.Room.ID, userID, username)
+	ticket, err := s.manager.IssueTicket(joined.Room.ID, userID, username, avatarURL)
 	if err != nil {
 		return nil, err
 	}
@@ -332,30 +333,34 @@ func (s *Service) IssueTrackAccessToken(ctx context.Context, roomID, userID, tra
 	return s.manager.IssueTrackToken(roomID, userID, trackID, TrackAccessTokenTTL)
 }
 
-func (s *Service) GetTrackAudioURL(ctx context.Context, roomID, trackID, token string) (string, error) {
+func (s *Service) GetTrackAudio(ctx context.Context, roomID, trackID, token string) (*storage.S3Object, error) {
 	if roomID == "" || trackID == "" || token == "" {
-		return "", errors.New("room ID, track ID, and token are required")
+		return nil, errors.New("room ID, track ID, and token are required")
 	}
 	if s.s3Store == nil {
-		return "", errors.New("S3 store is not configured")
+		return nil, errors.New("S3 store is not configured")
 	}
 	userID, err := s.manager.ValidateTrackToken(token, roomID, trackID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if userID == "" {
-		return "", errors.New("invalid track access token")
+		return nil, errors.New("invalid track access token")
 	}
 	_, err = s.repository.Get(ctx, roomID, userID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if s.tracks == nil {
-		return "", errors.New("track directory is not configured")
+		return nil, errors.New("track directory is not configured")
 	}
-	tracks, err := s.tracks.ListByUserIDs(ctx, []string{userID})
+	userIDs, err := s.repository.GetMemberUserIDs(ctx, roomID)
 	if err != nil {
-		return "", err
+		return nil, err
+	}
+	tracks, err := s.tracks.ListByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
 	}
 	var objectKey string
 	for _, t := range tracks {
@@ -365,7 +370,7 @@ func (s *Service) GetTrackAudioURL(ctx context.Context, roomID, trackID, token s
 		}
 	}
 	if objectKey == "" {
-		return "", errors.New("track not found or not owned by user")
+		return nil, errors.New("track not found in room library")
 	}
-	return s.s3Store.PresignedGetObject(ctx, objectKey, 5*time.Minute)
+	return s.s3Store.GetObject(ctx, objectKey)
 }

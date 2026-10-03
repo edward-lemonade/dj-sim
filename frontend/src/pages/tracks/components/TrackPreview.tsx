@@ -20,7 +20,7 @@ export function TrackPreview({
   player: TrackPlayer;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
 }) {
-  const { offset: beatOffset, nudge: nudgeGrid } = useGridNudge({
+  const { nudge: nudgeGrid } = useGridNudge({
     trackId: track?.id ?? null,
     bpm: track?.bpm ?? 0,
     savedOffset: track?.beatOffset ?? 0,

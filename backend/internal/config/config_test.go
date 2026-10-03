@@ -37,3 +37,13 @@ func TestRoomCodePepperRejectsInvalidValues(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsRecordingKey(t *testing.T) {
+	t.Setenv("AWS_S3_RECORDINGS_KEY", "recordings/")
+	t.Setenv("AWS_S3_RECORDINGS_PREFIX", "")
+
+	cfg := Load()
+	if cfg.S3RecordingsKey != "recordings/" {
+		t.Fatalf("S3RecordingsKey = %q, want recordings/", cfg.S3RecordingsKey)
+	}
+}

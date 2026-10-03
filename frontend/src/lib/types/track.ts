@@ -52,6 +52,7 @@ export type Track = TrackMeta &
     'duration'
   > & 
   {
+    createdAt?: string;
     coverLabel: string;
     coverUrl: string | null;
     libraryStatus: TrackLibraryStatus;

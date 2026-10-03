@@ -13,15 +13,17 @@ export type DeckControlsProps = {
   cueDisabled?: boolean;
   label?: DeckId;
   onCue: () => void;
+  onTransportCommand?: (command: 'play' | 'pause' | 'seek', positionSeconds?: number) => void;
 };
 
-export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, onCue }: DeckControlsProps) {
+export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, onCue, onTransportCommand }: DeckControlsProps) {
   const playing = player.status === 'playing';
   const beatSeconds = bpm > 0 ? 60 / bpm : 0;
   const nudgeDisabled = disabled || beatSeconds <= 0;
 
   const nudge = (beats: number) => {
     if (beatSeconds <= 0) return;
+    onTransportCommand?.('seek', player.currentTime + beats * beatSeconds);
     player.skip(beats * beatSeconds);
   };
 
@@ -44,7 +46,10 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         <button
           type="button"
           disabled={disabled}
-          onClick={player.togglePlay}
+          onClick={() => {
+            onTransportCommand?.(playing ? 'pause' : 'play', player.currentTime);
+            player.togglePlay();
+          }}
           aria-label={playing ? (label ? `Pause deck ${label}` : 'Pause') : label ? `Play deck ${label}` : 'Play'}
           className={`flex h-14 w-14 items-center justify-center rounded-full border text-white disabled:cursor-not-allowed disabled:opacity-40 ${
             playing
@@ -60,7 +65,10 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         <button
           type="button"
           disabled={disabled}
-          onClick={player.jumpStart}
+          onClick={() => {
+            onTransportCommand?.('seek', 0);
+            player.jumpStart();
+          }}
           aria-label={label ? `Deck ${label} go to start` : 'Go to start'}
           title="Go to start"
           className={squareBtn}
@@ -104,7 +112,10 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         <button
           type="button"
           disabled={disabled}
-          onClick={player.jumpEnd}
+          onClick={() => {
+            onTransportCommand?.('seek', Math.max(0, player.durationSeconds - 0.05));
+            player.jumpEnd();
+          }}
           aria-label={label ? `Deck ${label} go to end` : 'Go to end'}
           title="Go to end"
           className={squareBtn}
@@ -121,7 +132,10 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         size={40}
         onCueClick={(index) => {
           const time = cues[index];
-          if (time != null) player.seek(time);
+          if (time != null) {
+            onTransportCommand?.('seek', time);
+            player.seek(time);
+          }
         }}
       />
     </div>

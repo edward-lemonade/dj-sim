@@ -4,7 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
+	"github.com/edward-lemonade/dj-sim-backend/internal/storage"
 )
 
 type roomRepositoryStub struct {
@@ -447,6 +453,59 @@ func TestServiceLeaveEndsAssociatedStream(t *testing.T) {
 	if !result.RoomClosed || ended != "stream-1" {
 		t.Fatalf("Leave() = %+v ended = %q", result, ended)
 	}
+}
+
+func TestGetTrackAudioURLAllowsTracksFromOtherRoomMembers(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-1")
+	token, err := manager.IssueTrackToken("room-1", "requester", "owner-track", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := newRoomRepositoryStub()
+	repository.get = func(context.Context, string, string) (*ListedRoom, error) {
+		return &ListedRoom{ID: "room-1"}, nil
+	}
+	repository.getMemberUserIDs = func(context.Context, string) ([]string, error) {
+		return []string{"owner", "requester"}, nil
+	}
+	service := NewService(repository, nil, manager)
+	service.SetTrackDirectory(roomTrackDirectoryFunc(func(_ context.Context, userIDs []string) ([]track.Track, error) {
+		if len(userIDs) != 2 || userIDs[0] != "owner" || userIDs[1] != "requester" {
+			t.Fatalf("ListByUserIDs() IDs = %v, want room members", userIDs)
+		}
+		return []track.Track{{ID: "owner-track", UserID: "owner", ObjectKey: "tracks/owner.mp3"}}, nil
+	}))
+	service.SetS3Store(roomAudioStoreFunc(func(_ context.Context, objectKey string) (*storage.S3Object, error) {
+		if objectKey != "tracks/owner.mp3" {
+			t.Fatalf("GetObject() key = %q, want owner track", objectKey)
+		}
+		body := "shared audio"
+		return &storage.S3Object{
+			Body: io.NopCloser(strings.NewReader(body)), ContentType: "audio/mpeg", ContentLength: int64(len(body)),
+		}, nil
+	}))
+
+	object, err := service.GetTrackAudio(context.Background(), "room-1", "owner-track", token)
+	if err != nil {
+		t.Fatalf("GetTrackAudio() error = %v", err)
+	}
+	defer object.Body.Close()
+	if object.ContentType != "audio/mpeg" || object.ContentLength != int64(len("shared audio")) {
+		t.Fatalf("GetTrackAudio() object = %+v", object)
+	}
+}
+
+type roomTrackDirectoryFunc func(context.Context, []string) ([]track.Track, error)
+
+func (f roomTrackDirectoryFunc) ListByUserIDs(ctx context.Context, userIDs []string) ([]track.Track, error) {
+	return f(ctx, userIDs)
+}
+
+type roomAudioStoreFunc func(context.Context, string) (*storage.S3Object, error)
+
+func (f roomAudioStoreFunc) GetObject(ctx context.Context, objectKey string) (*storage.S3Object, error) {
+	return f(ctx, objectKey)
 }
 
 type streamTerminatorFunc func(context.Context, string) error

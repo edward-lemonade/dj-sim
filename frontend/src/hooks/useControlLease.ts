@@ -1,7 +1,6 @@
 import { useCallback, useRef, useEffect } from 'react';
-import type { ControlId, ControlLease } from '@/lib/types/Control';
+import type { ControlId } from '@/lib/types/Control';
 
-const LEASE_TIMEOUT_MS = 30000;
 const LEASE_RENEWAL_MS = 10000;
 
 export function useControlLease(

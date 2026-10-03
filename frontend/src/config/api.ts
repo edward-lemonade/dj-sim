@@ -34,6 +34,8 @@ export const API_ROUTES = {
     joinByCode: '/rooms/join',
     join: (id: string) => `/rooms/${id}/join`,
     leave: (id: string) => `/rooms/${id}/leave`,
+    trackToken: (roomId: string, trackId: string) => `/rooms/${roomId}/tracks/${trackId}/token`,
+    trackAudio: (roomId: string, trackId: string) => `/rooms/${roomId}/tracks/${trackId}/audio`,
   },
 }
 

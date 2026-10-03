@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
 )
 
 const relayTestSnapshot = `{
@@ -74,6 +75,79 @@ func TestRoomRelayTicketsAreScopedAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestRoomManagerRemoveMemberDoesNotDeadlock(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a")
+	var ownerEvents []RoomEvent
+	_, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", ConnectionID: "owner-connection", Send: func(event RoomEvent) error {
+			ownerEvents = append(ownerEvents, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guestClosed := false
+	_, err = manager.Attach("room-a", RoomParticipant{
+		UserID: "guest", ConnectionID: "guest-connection",
+		Send:  func(RoomEvent) error { return nil },
+		Close: func() { guestClosed = true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		manager.RemoveMember("room-a", "guest")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("RemoveMember deadlocked")
+	}
+	if !guestClosed || manager.ActiveConnections("room-a") != 1 {
+		t.Fatalf("guest closed = %v, active connections = %d", guestClosed, manager.ActiveConnections("room-a"))
+	}
+	if event := ownerEvents[len(ownerEvents)-1]; event.Type != "member-left" || event.UserID != "guest" {
+		t.Fatalf("owner event = %+v, want guest member-left", event)
+	}
+}
+
+func TestRoomRelayPublishesControlLeaseWithoutDeadlock(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a")
+	_, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", ConnectionID: "owner-connection", Send: func(RoomEvent) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+			Type: "control-acquire", T: 1, Payload: json.RawMessage(`{"controlId":"channel.A.eq.high"}`),
+		}); err != nil {
+			done <- err
+			return
+		}
+		done <- manager.Publish("room-a", "owner-connection", RoomMessage{
+			Type: "event", T: 2, Payload: json.RawMessage(`{"action":"set-eq-high","deck":"A"}`),
+		})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Publish() error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("control lease publish deadlocked")
+	}
+}
+
 func TestRoomManagerTracksOwnerConnections(t *testing.T) {
 	manager := NewRoomManager()
 	manager.Ensure("room-a", "owner")
@@ -99,6 +173,49 @@ func TestRoomManagerTracksOwnerConnections(t *testing.T) {
 	}
 }
 
+func TestRoomRelayBroadcastsMemberPresenceWithAvatar(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a")
+	var ownerEvents []RoomEvent
+	_, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", Username: "Owner", AvatarURL: "https://example.com/owner.png", ConnectionID: "owner-connection",
+		Send: func(event RoomEvent) error {
+			ownerEvents = append(ownerEvents, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var joiningEvents []RoomEvent
+	detach, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "guest", Username: "Guest", AvatarURL: "https://example.com/guest.png", ConnectionID: "guest-connection",
+		Send: func(event RoomEvent) error {
+			joiningEvents = append(joiningEvents, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event := ownerEvents[len(ownerEvents)-1]; event.Type != "member-joined" || event.UserID != "guest" || event.AvatarURL != "https://example.com/guest.png" {
+		t.Fatalf("member-joined event = %+v", event)
+	}
+	var joined JoinedState
+	if err := json.Unmarshal(joiningEvents[0].Payload, &joined); err != nil {
+		t.Fatal(err)
+	}
+	if len(joined.Members) != 2 || joined.Members[0].AvatarURL == "" || joined.Members[1].AvatarURL == "" {
+		t.Fatalf("joined member presence = %+v", joined.Members)
+	}
+
+	detach()
+	if event := ownerEvents[len(ownerEvents)-1]; event.Type != "member-left" || event.UserID != "guest" {
+		t.Fatalf("member-left event = %+v", event)
+	}
+}
+
 func TestRoomRelayLeaveAndCloseNotifyMembersAndRevokeTickets(t *testing.T) {
 	t.Skip("test hangs - implementation verified separately")
 }
@@ -118,7 +235,7 @@ func TestRoomRelayConcurrentPublishersReceiveOneTotalOrder(t *testing.T) {
 		_, err := manager.Attach("room-a", RoomParticipant{
 			UserID: connectionID, ConnectionID: connectionID,
 			Send: func(event RoomEvent) error {
-				if event.Type != "joined" {
+				if event.Type != "joined" && event.Type != "member-joined" {
 					mu.Lock()
 					received[receiverID] = append(received[receiverID], event)
 					mu.Unlock()

@@ -20,8 +20,8 @@ type Service struct {
 	recordingsPrefix string
 }
 
-func NewService(recordings *Repository, store *storage.S3Store) *Service {
-	return &Service{recordingsDB: *recordings, store: store}
+func NewService(recordings *Repository, store *storage.S3Store, recordingsPrefix string) *Service {
+	return &Service{recordingsDB: *recordings, store: store, recordingsPrefix: strings.TrimSpace(recordingsPrefix)}
 }
 
 type UploadInput struct {
