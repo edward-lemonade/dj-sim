@@ -87,12 +87,15 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 		}
 	}()
 
+	sessions := middleware.NewSessionVerifier(clerkSecretKey)
 	r.GET("/health", handler.Health)
+	r.GET("/rooms", roomHandler.ListPublic)
+	r.GET("/streams", streamHandler.List)
+	r.POST("/streams/:id/join", middleware.OptionalAuth(userRepo, sessions), streamHandler.Join)
 
 	internal := r.Group("/internal", middleware.WebhookAuth(analysisWebhookSecret))
 	internal.POST("/tracks/analysis", trackHandler.AnalysisWebhook)
 
-	sessions := middleware.NewSessionVerifier(clerkSecretKey)
 	auth := r.Group("/", middleware.Auth(userRepo, sessions))
 
 	auth.GET("/user/me", userHandler.Me)
@@ -116,7 +119,6 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	recordings.DELETE("/:id", recordingHandler.Delete)
 
 	rooms := auth.Group("/rooms", middleware.RequireUser())
-	rooms.GET("", roomHandler.ListPublic)
 	rooms.GET("/:id", roomHandler.Get)
 	rooms.GET("/:id/library", roomHandler.GetLibrary)
 	rooms.POST("", roomHandler.Create)
@@ -127,9 +129,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	rooms.GET("/:id/tracks/:trackId/audio", roomHandler.GetTrackAudio)
 
 	streams := auth.Group("/streams", middleware.RequireUser())
-	streams.GET("", streamHandler.List)
 	streams.POST("", streamHandler.Create)
-	streams.POST("/:id/join", streamHandler.Join)
 	streams.POST("/:id/end", streamHandler.End)
 
 	r.POST("/streams/:id/end-on-exit", streamHandler.EndOnExit)

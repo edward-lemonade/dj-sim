@@ -231,24 +231,25 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
     const destination = destinationRef.current;
     publisherActiveRef.current = false;
     if (publisherRetryRef.current !== null) window.clearTimeout(publisherRetryRef.current);
-    socket?.close();
-    if (destination && engine) engine.master.disconnect(destination);
-    audioTrackRef.current?.stop();
-    room?.disconnect();
-    socketRef.current = null;
-    roomRef.current = null;
-    destinationRef.current = null;
-    audioTrackRef.current = null;
-    sessionIdRef.current = null;
-    exitTicketRef.current = null;
     setLive(false);
-    if (sessionId) {
-      try {
+    try {
+      if (sessionId) {
         await endStream(sessionId);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : 'Could not end the stream session.');
-        throw cause;
       }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not end the stream session.');
+      throw cause;
+    } finally {
+      socket?.close();
+      if (destination && engine) engine.master.disconnect(destination);
+      audioTrackRef.current?.stop();
+      room?.disconnect();
+      socketRef.current = null;
+      roomRef.current = null;
+      destinationRef.current = null;
+      audioTrackRef.current = null;
+      sessionIdRef.current = null;
+      exitTicketRef.current = null;
     }
   }, [engine]);
 

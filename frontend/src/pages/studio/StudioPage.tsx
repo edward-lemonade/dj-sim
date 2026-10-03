@@ -20,7 +20,6 @@ import { createRoom, fetchRoomTrackAudioBlob, getRoomLibrary, leaveRoom } from '
 import { fetchTrackAudioBlob } from '@/lib/api/TrackAPI';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { useStudioRecording } from '../../hooks/useStudioRecording';
-import { useToast } from '@/components/ui/toast';
 import { createStream } from '@/lib/api/StreamsAPI';
 import { useStreamPublisher } from '@/pages/stream/useStreamConnection';
 import {
@@ -238,7 +237,6 @@ function trackFromRoomLibrary(track: RoomTrack): Track {
 }
 
 function StudioPage() {
-  const { showToast } = useToast();
   const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
@@ -756,12 +754,9 @@ function StudioPage() {
     if (window.confirm('Stop streaming? Viewers will be told the stream has ended.')) {
       void stopStream().catch((cause: unknown) => {
         console.error('Failed to stop stream', cause);
-        showToast(cause instanceof Error ? cause.message : 'Could not stop streaming.', 'error', {
-          dedupeKey: 'studio-stop-stream',
-        });
       });
     }
-  }, [showToast, stopStream]);
+  }, [stopStream]);
 
   const masterId = studioState.mixer.tempoMaster;
   const effectiveDeckBpm = (id: DeckId) => trackBpm(id) * (1 + studioState.mixer.channelState[id].tempo / 100);

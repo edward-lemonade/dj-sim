@@ -317,16 +317,18 @@ end-of-stream message to connected viewers so their clients stop audio, close
 connections, and show the ended toast. Viewers must not rely on a media-track
 timeout alone to find out.
 
-Suggested authenticated API surface (exact paths depend on the chosen media
-provider):
+Suggested API surface (exact paths depend on the chosen media provider):
 
-- `GET /streams` — list active/discoverable sessions, newest first or by the
-  selected product ordering.
+- `GET /streams` — publicly list active/discoverable sessions, newest first or
+  by the selected product ordering.
 - `POST /streams` — create a session and return short-lived credentials for
   publishing events and audio.
 - `GET /streams/:id` — return safe session metadata and viewer join
   authorization. For an ended or unknown session, return a response the client
   treats as "ended or unavailable".
+- `POST /streams/:id/join` — issue short-lived viewer credentials to signed-in
+  users or anonymous viewers. Anonymous viewers receive a server-generated
+  guest identity; it must not grant owner permissions.
 - `POST /streams/:id/end` — end the owner's session and revoke publication.
 - A WebSocket endpoint for a stream's events. The owner publishes; viewers
   subscribe, receive the snapshot and events, and are counted for presence.

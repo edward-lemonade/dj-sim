@@ -57,6 +57,7 @@ function StreamPage() {
     if (status === StreamConnectionStatus.Ended) {
       showToast('This stream has ended.', 'info', {
         dedupeKey: `stream-ended-${streamId}`,
+        duration: 8000,
         actions: [{ label: 'Back to Community', onClick: () => navigate('/community') }],
       });
     }
@@ -170,7 +171,9 @@ function StreamPage() {
                 : <div aria-hidden="true" className="grid size-7 place-items-center rounded-full bg-fuchsia-600 text-xs font-bold">{stream.session.username.slice(0, 1).toUpperCase()}</div>}
               <span className="text-sm font-medium">{stream.session.username}</span>
               <span className="truncate text-sm text-zinc-300">{stream.session.name}</span>
-              <span className="ml-auto shrink-0 text-xs tabular-nums text-zinc-400">Live · {formatTime(elapsedSeconds)}</span>
+              <span className="ml-auto shrink-0 text-xs tabular-nums text-zinc-400">
+                {status === StreamConnectionStatus.Ended ? 'Ended' : `Live · ${formatTime(elapsedSeconds)}`}
+              </span>
             </header>
           }
           leftDecks={leftDeckIds.map(renderDeck)}

@@ -70,7 +70,11 @@ func (h *StreamHandler) Create(c *gin.Context) {
 
 func (h *StreamHandler) Join(c *gin.Context) {
 	u := middleware.CurrentUser(c)
-	connection, err := h.Streams.Join(c.Request.Context(), c.Param("id"), u.ID)
+	userID := uuid.NewString()
+	if u != nil {
+		userID = u.ID
+	}
+	connection, err := h.Streams.Join(c.Request.Context(), c.Param("id"), userID)
 	if err != nil {
 		app_error.WriteError(c, err)
 		return

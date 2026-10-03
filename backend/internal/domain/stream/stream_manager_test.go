@@ -2,6 +2,7 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -104,6 +105,32 @@ func TestViewerCountDeduplicatesUsersAcrossConnections(t *testing.T) {
 	}
 	if !sawOneViewer {
 		t.Fatal("expected two tabs for one user to count as one viewer")
+	}
+}
+
+func TestEndNotifiesConnectedViewers(t *testing.T) {
+	manager := NewManager()
+	manager.Start("stream-a", "owner-a")
+	var received []Event
+	_, err := manager.Attach("stream-a", Participant{
+		UserID:       "viewer-a",
+		ConnectionID: "viewer-connection",
+		Send: func(event Event) error {
+			received = append(received, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manager.End("stream-a")
+
+	if len(received) != 2 || received[1].Type != "ended" {
+		t.Fatalf("viewer events = %#v, want joined then ended", received)
+	}
+	if _, err := manager.IssueTicket("stream-a", "viewer-b", false); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("issue ticket after end error = %v, want %v", err, ErrNotFound)
 	}
 }
 

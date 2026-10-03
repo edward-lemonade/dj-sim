@@ -505,9 +505,9 @@ progresses.
       snapshots, sequence history, and tickets are process-local and are lost
       on restart; run one backend instance until shared relay storage and
       cross-instance ticket handling are implemented.
-- [x] Add authenticated `GET /rooms` returning active public room metadata,
-      current member identities, occupancy, and deck-cover placeholders. The
-      payload intentionally has no room-code field.
+- [x] Add public `GET /rooms` returning active public room metadata, current
+      member identities, occupancy, and deck-cover placeholders. The payload
+      intentionally has no room-code field.
 - [x] Add authenticated join-by-code, join-by-public-ID, and leave endpoints.
 - [x] Add authenticated safe room metadata endpoint. Public room metadata is
       available to signed-in users; private metadata is member-only. Responses

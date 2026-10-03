@@ -33,32 +33,50 @@ func CurrentUser(c *gin.Context) *user.User {
 
 func Auth(users UserFinder, sessions *SessionVerifier) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		header := c.GetHeader("Authorization")
-		token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
-		token = strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
-		if token == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "missing bearer token"})
+		if !authenticate(c, users, sessions, false) {
 			return
 		}
-
-		claims, err := sessions.Verify(c.Request.Context(), token)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "invalid session: " + err.Error()})
-			return
-		}
-
-		c.Set(clerkIDKey, claims.Subject)
-
-		u, err := users.FindByClerkID(c.Request.Context(), claims.Subject)
-		if err == nil {
-			c.Set(userKey, u)
-		} else if !errors.Is(err, user.ErrNotFound) {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "failed to load user"})
-			return
-		}
-
 		c.Next()
 	}
+}
+
+func OptionalAuth(users UserFinder, sessions *SessionVerifier) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !authenticate(c, users, sessions, true) {
+			return
+		}
+		c.Next()
+	}
+}
+
+func authenticate(c *gin.Context, users UserFinder, sessions *SessionVerifier, allowAnonymous bool) bool {
+	header := c.GetHeader("Authorization")
+	token := strings.TrimSpace(strings.TrimPrefix(header, "Bearer "))
+	token = strings.TrimSpace(strings.TrimPrefix(token, "Bearer "))
+	if token == "" {
+		if allowAnonymous {
+			return true
+		}
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "missing bearer token"})
+		return false
+	}
+
+	claims, err := sessions.Verify(c.Request.Context(), token)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "invalid session: " + err.Error()})
+		return false
+	}
+
+	c.Set(clerkIDKey, claims.Subject)
+
+	u, err := users.FindByClerkID(c.Request.Context(), claims.Subject)
+	if err == nil {
+		c.Set(userKey, u)
+	} else if !errors.Is(err, user.ErrNotFound) {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "failed to load user"})
+		return false
+	}
+	return true
 }
 
 func RequireUser() gin.HandlerFunc {
