@@ -43,7 +43,7 @@ export function StudioTopbar({
   collabBusy,
   collabError,
   onCreateRoom,
-  onLeaveRoom,
+  onEndRoom,
 }: {
   recordingStatus: RecordingStatusValue;
   recordingError: string | null;
@@ -61,7 +61,7 @@ export function StudioTopbar({
   collabBusy: boolean;
   collabError: string | null;
   onCreateRoom: (visibility: 'public' | 'private') => Promise<void>;
-  onLeaveRoom: () => Promise<void>;
+  onEndRoom: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -69,14 +69,14 @@ export function StudioTopbar({
   const [exiting, setExiting] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
   const [visibility, setVisibility] = useState<'public' | 'private'>('public');
-  const [leavingRoom, setLeavingRoom] = useState(false);
+  const [endingRoom, setEndingRoom] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const exitBusyLabel = recordingStatus === RecordingStatus.Recording
     || recordingStatus === RecordingStatus.Saving
     || hasPendingSave
     ? 'Saving recording...'
     : collabRoom
-      ? 'Leaving room...'
+      ? 'Ending room...'
       : 'Exiting...';
 
   useEffect(() => {
@@ -101,7 +101,7 @@ export function StudioTopbar({
     const saved = await onStopAndSave();
     if (saved && collabRoom) {
       try {
-        await onLeaveRoom();
+        await onEndRoom();
       } catch {
         setExiting(false);
         return;
@@ -270,13 +270,13 @@ export function StudioTopbar({
                 <Button
                   type="button"
                   variant="destructive"
-                  disabled={leavingRoom}
+                  disabled={endingRoom}
                   onClick={() => {
-                    setLeavingRoom(true);
-                    void onLeaveRoom().then(() => setCollabOpen(false)).finally(() => setLeavingRoom(false));
+                    setEndingRoom(true);
+                    void onEndRoom().then(() => setCollabOpen(false)).finally(() => setEndingRoom(false));
                   }}
                 >
-                  {leavingRoom ? 'Leaving...' : 'Leave room'}
+                  {endingRoom ? 'Ending room...' : 'End room'}
                 </Button>
               </DialogFooter>
             </div>

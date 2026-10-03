@@ -272,6 +272,7 @@ function StudioPage() {
   const roomSocketRef = useRef<WebSocket | null>(null);
   const roomEventsReadyRef = useRef(false);
   const publishRoomSnapshotsRef = useRef(false);
+  const endingRoomRef = useRef(false);
   const [roomTransportCommands, setRoomTransportCommands] = useState<Record<StreamDeckId, RoomTransportCommand | null>>({
     [StreamDeckId.A]: null,
     [StreamDeckId.B]: null,
@@ -497,7 +498,11 @@ function StudioPage() {
           publishRoomSnapshotsRef.current = false;
           setCollabRoom(null);
           socket.close();
-          navigate('/community', { replace: true, state: { roomClosed: true } });
+          if (endingRoomRef.current) {
+            endingRoomRef.current = false;
+          } else {
+            navigate('/community', { replace: true, state: { roomClosed: true } });
+          }
           return;
         }
         if (event.type === 'error') {
@@ -649,6 +654,7 @@ function StudioPage() {
   const startCollabRoom = useCallback(async (visibility: 'public' | 'private') => {
     setCollabBusy(true);
     setCollabError(null);
+    endingRoomRef.current = false;
     let created: CreatedRoom | null = null;
     try {
       created = await createRoom(visibility, avatarUrl);
@@ -682,6 +688,7 @@ function StudioPage() {
     navigate('/studio', { replace: true, state: null });
     setCollabBusy(true);
     setCollabError(null);
+    endingRoomRef.current = false;
     void attachRoomSession(incoming, false).catch(async (cause: unknown) => {
       let message = cause instanceof Error ? cause.message : 'Could not connect to the room.';
       if (!incoming.alreadyMember) {
@@ -698,18 +705,20 @@ function StudioPage() {
 
   const stopCollabRoom = useCallback(async () => {
     if (!collabRoom) return;
+    endingRoomRef.current = true;
     setCollabError(null);
     try {
       await Promise.race([
         leaveRoom(collabRoom.id),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Leave room timed out')), 5000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('End room timed out')), 5000))
       ]);
       publishRoomSnapshotsRef.current = false;
       roomSocketRef.current?.close();
       roomSocketRef.current = null;
       setCollabRoom(null);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : 'Could not leave the room.';
+      endingRoomRef.current = false;
+      const message = cause instanceof Error ? cause.message : 'Could not end the room.';
       setCollabError(message);
       publishRoomSnapshotsRef.current = false;
       roomSocketRef.current?.close();
@@ -868,7 +877,7 @@ function StudioPage() {
             collabBusy={collabBusy}
             collabError={collabError}
             onCreateRoom={startCollabRoom}
-            onLeaveRoom={stopCollabRoom}
+            onEndRoom={stopCollabRoom}
           />
         }
         leftDecks={leftDeckIds.map(renderDeck)}
