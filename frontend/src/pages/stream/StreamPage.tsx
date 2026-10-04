@@ -9,6 +9,7 @@ import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import { CDJ } from '@/components/CDJ';
 import { Mixer } from '@/components/Mixer';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';
+import { RoomLeaseProvider } from '@/contexts/RoomLeaseContext';
 import { getStudioDeckLayout } from '@/lib/utils/studioGrid';
 import { DECK_IDS, DeckId } from '@/hooks/useAudioEngine';
 import {
@@ -19,6 +20,8 @@ import {
 } from '@/lib/types/Stream';
 import { createInitialStudioSnapshot } from './studioState';
 import { useStreamViewer } from './useStreamConnection';
+
+const emitNoRoomLeaseEvent = () => {};
 
 function toViewTrack(track: StreamDeckSnapshot['track']): Track | null {
   if (!track) return null;
@@ -156,8 +159,9 @@ function StreamPage() {
   };
 
   return (
-    <ControlSelectionProvider bpm={automationBpm}>
-      <main className="relative h-svh overflow-hidden bg-[#0b0d10] text-zinc-100">
+    <RoomLeaseProvider currentUserId={null} leases={[]} emitEvent={emitNoRoomLeaseEvent}>
+      <ControlSelectionProvider bpm={automationBpm}>
+        <main className="relative h-svh overflow-hidden bg-[#0b0d10] text-zinc-100">
         <StudioConsoleLayout
           className="h-full bg-[#0b0d10]"
           readOnly
@@ -207,8 +211,9 @@ function StreamPage() {
           className="pointer-events-none absolute inset-0 z-70 border-[3px] border-transparent"
           style={{ borderImage: 'linear-gradient(to bottom right, #d946ef, #fb923c, #22d3ee) 1' }}
         />
-      </main>
-    </ControlSelectionProvider>
+        </main>
+      </ControlSelectionProvider>
+    </RoomLeaseProvider>
   );
 }
 
