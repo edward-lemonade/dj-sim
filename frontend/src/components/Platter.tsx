@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { Track } from '@/lib/types/bruh';
+import type { Track } from '@/lib/types/Track';
 import { DeckId } from '../hooks/useAudioEngine';
 import type { ControlId, ControlReleaseReason } from '@/lib/types/Control';
 

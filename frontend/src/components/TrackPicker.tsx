@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
+import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import type { RoomTrack } from '@/lib/types/Room';
 import type { DeckId } from '../hooks/useAudioEngine';
 import { KeyNotationType } from '@/constants/KeyNotation';

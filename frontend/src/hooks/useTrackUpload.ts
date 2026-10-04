@@ -3,7 +3,7 @@ import { coverLabelFromTitle, readTrackMetadata } from '@/lib/utils/trackMetadat
 import { computeOverviewFromFile } from '@/lib/utils/threeBandWaveform';
 import { uploadTrack } from '@/lib/api/TrackAPI';
 import { ApiError } from '@/lib/clients/axios';
-import { TrackAnalysisStatus, TrackLibraryStatus, type Track } from '@/lib/types/bruh';
+import { TrackAnalysisStatus, TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import { emptyCues, normalizeCues } from '@/lib/types/Cues';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';

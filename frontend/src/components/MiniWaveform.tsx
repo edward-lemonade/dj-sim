@@ -4,7 +4,7 @@ import { Playhead } from "./Playhead";
 import { BandOptions, WaveformCanvas, WaveformVariant } from "./WaveformCanvas";
 import { peaksFromOverview, type ThreeBandPeaks } from "@/lib/utils/threeBandWaveform";
 import type { TrackPlayer } from "@/hooks/useTrackPlayer";
-import type { Track } from "@/lib/types/bruh";
+import type { Track } from "@/lib/types/Track";
 import { cn } from 'cn';
 
 export function MiniWaveform({

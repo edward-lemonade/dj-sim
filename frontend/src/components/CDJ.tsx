@@ -9,7 +9,7 @@ import {
   useTrackPlayer,
 } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
-import type { Track, TrackUpdateFields } from '@/lib/types/bruh';
+import type { Track, TrackUpdateFields } from '@/lib/types/Track';
 import { RoomTransportCommandType, type RoomTrack } from '@/lib/types/Room';
 import type { StreamDeckSnapshot } from '@/lib/types/Stream';
 import { DeckControls } from '@/components/DeckControls';

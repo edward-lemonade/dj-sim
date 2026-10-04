@@ -2,7 +2,7 @@ import { BandOptions } from '@/components/WaveformCanvas';
 import { StageWaveform, WaveformDisplayMode } from '@/components/StageWaveform';
 import { PlayerStatus, type TrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
-import type { Track } from '@/lib/types/bruh';
+import type { Track } from '@/lib/types/Track';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { snapToBeat } from '@/lib/utils/snapToBeat';
 import { MiniWaveform } from './MiniWaveform';

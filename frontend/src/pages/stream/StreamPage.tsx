@@ -5,7 +5,7 @@ import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
-import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
+import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import { CDJ } from '@/components/CDJ';
 import { Mixer } from '@/components/Mixer';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';

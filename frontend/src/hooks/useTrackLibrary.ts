@@ -10,7 +10,7 @@ import {
   type Track,
   type TrackDTO,
   type TrackUpdateFields,
-} from '@/lib/types/bruh';
+} from '@/lib/types/Track';
 import { useTrackUpload } from './useTrackUpload';
 import { normalizeCues } from '@/lib/types/Cues';
 import { useToast } from '@/components/ui/toast';

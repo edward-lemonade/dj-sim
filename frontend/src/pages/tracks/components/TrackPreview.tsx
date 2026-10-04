@@ -1,5 +1,5 @@
 import { SongCover } from '@/components/SongCover';
-import { TrackLibraryStatus, type Track, type TrackUpdateFields } from '@/lib/types/bruh';
+import { TrackLibraryStatus, type Track, type TrackUpdateFields } from '@/lib/types/Track';
 import { TransportControls, formatPlaybackTime } from '../../../components/TransportControls';
 import { PlayerStatus, type TrackPlayer } from '../../../hooks/useTrackPlayer';
 import { CueButtons } from '@/components/CueButtons';

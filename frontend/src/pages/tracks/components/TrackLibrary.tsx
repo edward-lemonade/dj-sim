@@ -26,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { SongCover } from '@/components/SongCover';
-import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
+import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import { WaveformCanvas } from '../../../components/WaveformCanvas';
 import { WaveformVariant } from '@/components/WaveformCanvas';
 import { rowShift, useListItemMove } from '../../../hooks/useListItemMove'; // adjust path

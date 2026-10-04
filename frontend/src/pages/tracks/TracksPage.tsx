@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
+import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import { TrackLibrary } from './components/TrackLibrary';
 import { TrackPreview } from './components/TrackPreview';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';

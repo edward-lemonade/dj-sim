@@ -1,6 +1,6 @@
 import { TriangleAlert } from 'lucide-react';
 import { cn } from 'cn';
-import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
+import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 
 export function SongCover({ song, className }: { song: Track; className?: string }) {
   return (
