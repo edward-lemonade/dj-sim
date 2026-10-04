@@ -1,5 +1,4 @@
-import { useRef, useCallback } from 'react';
-import type { ControlId } from '@/lib/types/Control';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { EXTRAPOLATION_CONFIG } from '@/lib/types/Control';
 
 type RemoteControlSample = {
@@ -16,71 +15,82 @@ type ExtrapolatedState = {
   isExtrapolating: boolean;
 };
 
-export function useRemoteControlExtrapolation(controlId: ControlId) {
+export function useRemoteControlExtrapolation(initialValue: number) {
   const samplesRef = useRef<RemoteControlSample[]>([]);
+  const frameRef = useRef<number | null>(null);
   const stateRef = useRef<ExtrapolatedState>({
-    value: 0,
-    targetValue: 0,
-    blendStart: 0,
+    value: initialValue,
+    targetValue: initialValue,
+    blendStart: initialValue,
     blendStartTimestamp: 0,
     isExtrapolating: false,
   });
+  const [currentValue, setCurrentValue] = useState(initialValue);
+
+  const getPredictedValue = useCallback((now: number = performance.now()) => {
+    const state = stateRef.current;
+    const samples = samplesRef.current;
+    if (samples.length === 0) return state.value;
+
+    const lastSample = samples[samples.length - 1];
+    const elapsed = Math.max(0, now - lastSample.timestamp);
+    if (elapsed >= EXTRAPOLATION_CONFIG.horizonMs) return lastSample.value;
+    return lastSample.value + lastSample.velocity * elapsed;
+  }, []);
+
+  const animate = useCallback(() => {
+    const step = () => {
+      const now = performance.now();
+      const state = stateRef.current;
+      const blendElapsed = now - state.blendStartTimestamp;
+      let nextValue: number;
+
+      if (state.isExtrapolating && blendElapsed < EXTRAPOLATION_CONFIG.blendMs) {
+        const progress = Math.max(0, blendElapsed / EXTRAPOLATION_CONFIG.blendMs);
+        nextValue = state.blendStart + (state.targetValue - state.blendStart) * progress;
+      } else {
+        state.isExtrapolating = false;
+        nextValue = getPredictedValue(now);
+      }
+
+      state.value = nextValue;
+      setCurrentValue(nextValue);
+
+      const latestSample = samplesRef.current[samplesRef.current.length - 1];
+      if (latestSample && now - latestSample.timestamp < EXTRAPOLATION_CONFIG.horizonMs) {
+        frameRef.current = requestAnimationFrame(step);
+      } else {
+        frameRef.current = null;
+      }
+    }
+    step();
+  }, [getPredictedValue]);
 
   const addSample = useCallback((value: number, timestamp: number) => {
     const samples = samplesRef.current;
-    const now = Date.now();
-    
+    const previous = samples[samples.length - 1];
     let velocity = 0;
-    if (samples.length > 0) {
-      const lastSample = samples[samples.length - 1];
-      const timeDelta = Math.max(timestamp - lastSample.timestamp, 1);
-      velocity = (value - lastSample.value) / timeDelta;
+    if (previous) {
+      const timeDelta = timestamp - previous.timestamp;
+      if (timeDelta > 0) velocity = (value - previous.value) / timeDelta;
     }
-    
+
     samples.push({ value, timestamp, velocity });
     if (samples.length > EXTRAPOLATION_CONFIG.maxSamples) {
       samples.shift();
     }
-    
-    stateRef.current = {
-      value,
-      targetValue: value,
-      blendStart: value,
-      blendStartTimestamp: now,
-      isExtrapolating: false,
-    };
-  }, [controlId]);
-
-  const getPredictedValue = useCallback((now: number = Date.now()) => {
-    const state = stateRef.current;
-    const samples = samplesRef.current;
-    
-    if (samples.length === 0) return state.value;
-    
-    const timeSinceLastSample = now - samples[samples.length - 1].timestamp;
-    
-    if (timeSinceLastSample > EXTRAPOLATION_CONFIG.horizonMs) {
-      return state.value;
-    }
-    
-    const lastSample = samples[samples.length - 1];
-    const predictedValue = lastSample.value + (lastSample.velocity * timeSinceLastSample);
-    
-    if (state.isExtrapolating) {
-      const blendProgress = Math.min(timeSinceLastSample / EXTRAPOLATION_CONFIG.blendMs, 1);
-      const blendedValue = state.blendStart + (predictedValue - state.blendStart) * blendProgress;
-      return blendedValue;
-    }
-    
-    return predictedValue;
-  }, [controlId]);
+  }, []);
 
   const onAuthoritativeUpdate = useCallback((value: number, timestamp: number) => {
-    const now = Date.now();
+    const now = performance.now();
+    if (samplesRef.current.length === 0) {
+      stateRef.current.value = value;
+      stateRef.current.targetValue = value;
+      stateRef.current.blendStart = value;
+      setCurrentValue(value);
+    }
     const predicted = getPredictedValue(now);
-    
     addSample(value, timestamp);
-    
     stateRef.current = {
       value: predicted,
       targetValue: value,
@@ -88,34 +98,31 @@ export function useRemoteControlExtrapolation(controlId: ControlId) {
       blendStartTimestamp: now,
       isExtrapolating: true,
     };
-  }, [controlId, getPredictedValue, addSample]);
+    if (frameRef.current === null) frameRef.current = requestAnimationFrame(animate);
+  }, [addSample, animate, getPredictedValue]);
 
-  const updateBlend = useCallback(() => {
-    const state = stateRef.current;
-    if (!state.isExtrapolating) return;
-    
-    const now = Date.now();
-    const blendElapsed = now - state.blendStartTimestamp;
-    
-    if (blendElapsed >= EXTRAPOLATION_CONFIG.blendMs) {
-      stateRef.current = {
-        value: state.targetValue,
-        targetValue: state.targetValue,
-        blendStart: state.targetValue,
-        blendStartTimestamp: now,
-        isExtrapolating: false,
-      };
-    } else {
-      const progress = blendElapsed / EXTRAPOLATION_CONFIG.blendMs;
-      stateRef.current.value = state.blendStart + (state.targetValue - state.blendStart) * progress;
-    }
-  }, [controlId]);
+  const reset = useCallback((value: number) => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+    samplesRef.current = [];
+    stateRef.current = {
+      value,
+      targetValue: value,
+      blendStart: value,
+      blendStartTimestamp: 0,
+      isExtrapolating: false,
+    };
+  }, []);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+  }, []);
 
   return {
-    currentValue: stateRef.current.value,
+    currentValue,
     addSample,
     onAuthoritativeUpdate,
-    updateBlend,
     getPredictedValue,
+    reset,
   };
 }

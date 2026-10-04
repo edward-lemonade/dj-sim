@@ -14,7 +14,7 @@ import { RoomTransportCommandType, type RoomTrack } from '@/lib/types/Room';
 import type { StreamDeckSnapshot } from '@/lib/types/Stream';
 import { DeckControls } from '@/components/DeckControls';
 import { Platter } from '@/components/Platter';
-import { clamp, type DeckId, type MixerAudioEngine } from '../hooks/useAudioEngine';
+import { clamp, DeckId, type MixerAudioEngine } from '../hooks/useAudioEngine';
 import { CdjMiniWaveformDisplay, CdjWaveformDisplay } from '@/components/CdjWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
 import { TrackPicker } from './TrackPicker';
@@ -23,6 +23,8 @@ import { Slider } from '@/components/Slider';
 import { ToastVariant, useToast } from '@/components/ui/toast';
 import { AutomationMode } from '@/components/ControlSelection';
 import { MetaFieldAlign } from '@/components/MetaField';
+import { useRoomControl, useRoomLeases } from '@/contexts/RoomLeaseContext';
+import { ControlDeckId, ControlId, DeckControlParam, deckId as getDeckControlId } from '@/lib/types/Control';
 
 const PLATTER_MIN_SIZE = 120;
 // Tempo column plus gap on each side, so the platter stays centered without crowding it
@@ -102,6 +104,12 @@ export function CDJ({
   onPopupChange,
 }: CDJProps) {
   const { showToast } = useToast();
+  const tempoControlId = getDeckControlId(
+    deckId === DeckId.A ? ControlDeckId.A : ControlDeckId.B,
+    DeckControlParam.Tempo,
+  );
+  const tempoRoomControl = useRoomControl(tempoControlId, tempo);
+  const { isLeasedByOther, acquireLease, releaseLease } = useRoomLeases();
   const localPlayer = useTrackPlayer({ enableSpacebar: false, loadAudio });
   const player = useMemo(() => {
     if (!readOnlyState) return localPlayer;
@@ -378,6 +386,10 @@ export function CDJ({
           syncedAngle={localPlatterOverrideRevision === roomTransportCommand?.platterRevision
             ? undefined
             : roomTransportCommand?.platterAngleDegrees}
+          controlId={getDeckControlId(
+            deckId === DeckId.A ? ControlDeckId.A : ControlDeckId.B,
+            DeckControlParam.Platter,
+          )}
         />
         <div className="flex min-h-0 flex-col items-center justify-center gap-2 self-stretch justify-self-center">
           <MetaField
@@ -393,10 +405,11 @@ export function CDJ({
             step={0.1}
             value={tempo}
             onChange={onTempoChange}
-            disabled={readOnlyState !== undefined || tempoFollowing}
+            disabled={readOnlyState !== undefined || tempoFollowing || tempoRoomControl.isLeasedByOther}
             label={label ? `Deck ${label} tempo` : 'Tempo'}
             automationMode={AutomationMode.Tempo}
             referenceBpm={track?.bpm ?? 0}
+            controlId={tempoControlId}
             className="max-h-72 min-h-0 w-8 flex-1 cursor-pointer accent-zinc-200"
           />
           <Button
@@ -404,8 +417,12 @@ export function CDJ({
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-zinc-400 hover:text-zinc-100"
-            disabled={tempo === 0 || tempoFollowing}
-            onClick={() => onTempoChange(0)}
+            disabled={tempo === 0 || tempoFollowing || tempoRoomControl.isLeasedByOther}
+            onClick={() => {
+              tempoRoomControl.onLeaseAcquire?.();
+              onTempoChange(0);
+              tempoRoomControl.onLeaseRelease?.();
+            }}
             aria-label={label ? `Reset deck ${label} tempo` : 'Reset tempo'}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider">Reset</span>
@@ -419,8 +436,12 @@ export function CDJ({
               syncMaster ? 'border-orange-400/70 bg-orange-400/15 text-orange-200' : 'border-transparent text-zinc-400 hover:text-zinc-100',
             )}
             aria-pressed={syncMaster}
-            disabled={readOnlyState !== undefined || (!syncMaster && !track?.bpm)}
-            onClick={() => onSyncMasterChange(!syncMaster)}
+            disabled={readOnlyState !== undefined || (!syncMaster && !track?.bpm) || isLeasedByOther(ControlId.TempoMaster)}
+            onClick={() => {
+              acquireLease(ControlId.TempoMaster);
+              onSyncMasterChange(!syncMaster);
+              releaseLease(ControlId.TempoMaster);
+            }}
             aria-label={label ? `Make deck ${label} the tempo master` : 'Tempo master'}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider">Master</span>

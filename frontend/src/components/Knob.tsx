@@ -1,6 +1,7 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { AutomationMode, useSyncedControl } from '@/components/ControlSelection';
+import { useRoomControl } from '@/contexts/RoomLeaseContext';
 import { ControlReleaseReason, type ControlId } from '@/lib/types/Control';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -54,11 +55,9 @@ export function Knob({
   onLeaseAcquire,
   onLeaseRelease,
 }: KnobProps) {
-  const dragRef = useRef<{ lastY: number } | null>(null);
-  const range = max - min;
-  const t = range === 0 ? 0 : (clamp(value, min, max) - min) / range;
-  const angle = -135 + t * 270;
-  const { selected, inverted, automating, configuringAutomation, bind, move, onContextMenu } = useSyncedControl({
+  const dragRef = useRef<{ lastY: number; value: number } | null>(null);
+  const [dragDisplayValue, setDragDisplayValue] = useState<number | null>(null);
+  const { selected, inverted, automating, configuringAutomation, bind, move, onContextMenu, getInteractionControlIds } = useSyncedControl({
     label,
     value,
     min,
@@ -66,7 +65,23 @@ export function Knob({
     onChange,
     disabled,
     automationMode: AutomationMode.Knob,
+    roomControlId: controlId,
+    setInteractionValue: setDragDisplayValue,
   });
+  const roomControl = useRoomControl(controlId, value, true, getInteractionControlIds);
+  const displayValue = roomControl.value;
+  const controlLocked = isLeasedByOther || roomControl.isLeasedByOther;
+  const currentLeaseOwner = leaseOwner ?? roomControl.leaseOwner;
+  const range = max - min;
+  const visibleValue = dragDisplayValue ?? displayValue;
+  const t = range === 0 ? 0 : (clamp(visibleValue, min, max) - min) / range;
+  const angle = -135 + t * 270;
+
+  useEffect(() => {
+    if (dragRef.current === null && dragDisplayValue !== null && Math.abs(value - dragDisplayValue) < 0.001) {
+      setDragDisplayValue(null);
+    }
+  }, [dragDisplayValue, value]);
 
   const nudge = useCallback(
     (delta: number) => {
@@ -83,12 +98,12 @@ export function Knob({
     )}>
       <div
         role="slider"
-        tabIndex={disabled || automating || isLeasedByOther ? -1 : 0}
-        aria-label={isLeasedByOther ? `${label} (controlled by ${leaseOwner})` : label}
+        tabIndex={disabled || automating || controlLocked ? -1 : 0}
+        aria-label={controlLocked ? `${label} (controlled by ${currentLeaseOwner})` : label}
         aria-valuemin={min}
         aria-valuemax={max}
-        aria-valuenow={Number(value.toFixed(3))}
-        aria-disabled={disabled || automating || isLeasedByOther || undefined}
+        aria-valuenow={Number(visibleValue.toFixed(3))}
+        aria-disabled={disabled || automating || controlLocked || undefined}
         className={cn(
           'relative cursor-ns-resize touch-none rounded-full border bg-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400',
           size === 'sm' ? 'size-9' : 'size-12',
@@ -96,40 +111,58 @@ export function Knob({
           configuringAutomation && !automating && 'ring-2 ring-yellow-400 focus-visible:ring-yellow-400',
           selected && !inverted && !automating && !configuringAutomation && 'ring-2 ring-sky-400 focus-visible:ring-sky-400',
           inverted && !automating && !configuringAutomation && 'ring-2 ring-red-400 focus-visible:ring-red-400',
-          isLeasedByOther && 'ring-2 ring-amber-400 focus-visible:ring-amber-400 cursor-not-allowed opacity-70',
+          controlLocked && 'ring-2 ring-amber-400 focus-visible:ring-amber-400 cursor-not-allowed opacity-70',
           (disabled || automating) && 'cursor-not-allowed opacity-60',
         )}
         {...bind}
         onContextMenu={onContextMenu}
         onPointerDown={(event) => {
-          if (disabled || automating || isLeasedByOther) return;
-          if (controlId) onLeaseAcquire?.(controlId);
+          if (disabled || automating || controlLocked) return;
+          roomControl.onLeaseAcquire?.();
+          if (!roomControl.onLeaseAcquire && controlId) onLeaseAcquire?.(controlId);
           event.currentTarget.setPointerCapture(event.pointerId);
-          dragRef.current = { lastY: event.clientY };
+          dragRef.current = { lastY: event.clientY, value };
+          setDragDisplayValue(value);
         }}
         onPointerMove={(event) => {
           const drag = dragRef.current;
           if (!drag) return;
           const dy = drag.lastY - event.clientY;
           drag.lastY = event.clientY;
-          move((dy / 120) * range);
+          const nextValue = clamp(drag.value + (dy / 120) * range, min, max);
+          drag.value = nextValue;
+          setDragDisplayValue(nextValue);
+          if (selected) {
+            move((dy / 120) * range);
+          } else {
+            onChange(Number(nextValue.toFixed(3)));
+          }
         }}
         onPointerUp={() => {
-          if (controlId) onLeaseRelease?.(controlId);
+          roomControl.onLeaseRelease?.();
+          if (!roomControl.onLeaseRelease && controlId) onLeaseRelease?.(controlId);
           dragRef.current = null;
         }}
         onPointerCancel={() => {
-          if (controlId) onLeaseRelease?.(controlId, ControlReleaseReason.PointerCancel);
+          roomControl.onLeaseRelease?.(ControlReleaseReason.PointerCancel);
+          if (!roomControl.onLeaseRelease && controlId) onLeaseRelease?.(controlId, ControlReleaseReason.PointerCancel);
           dragRef.current = null;
         }}
         onDoubleClick={() => {
-          if (!disabled && !automating) onChange(defaultValue);
+          if (disabled || automating || controlLocked) return;
+          roomControl.onLeaseAcquire?.();
+          if (!roomControl.onLeaseAcquire && controlId) onLeaseAcquire?.(controlId);
+          onChange(defaultValue);
+          roomControl.onLeaseRelease?.();
+          if (!roomControl.onLeaseRelease && controlId) onLeaseRelease?.(controlId);
         }}
         onKeyDown={(event) => {
-          if (automating) {
+          if (disabled || automating || controlLocked) {
             event.preventDefault();
             return;
           }
+          if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'Home'].includes(event.key)) return;
+          roomControl.onLeaseAcquire?.();
           if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
             event.preventDefault();
             nudge(step);
@@ -141,6 +174,7 @@ export function Knob({
             onChange(defaultValue);
           }
         }}
+        onKeyUp={() => roomControl.onLeaseRelease?.()}
       >
         <div
           className="absolute inset-0 rounded-full"

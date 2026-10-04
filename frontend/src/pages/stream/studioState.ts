@@ -1,4 +1,5 @@
 import type { MixerState } from '@/hooks/useMixerState';
+import type { ControlId } from '@/lib/types/Control';
 import { FxType } from '@/lib/utils/fxRack';
 import {
   StreamDeckId,
@@ -105,7 +106,7 @@ export enum StudioActionType {
 }
 
 export type StudioAction =
-  | { action: StudioActionType.MixerChange; value: MixerState }
+  | { action: StudioActionType.MixerChange; value: MixerState; controlId?: ControlId }
   | { action: StudioActionType.TrackLoad; deck: StreamDeckId; value: StreamDeckSnapshot['track'] }
   | {
       action: StudioActionType.Transport;

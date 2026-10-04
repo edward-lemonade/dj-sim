@@ -5,10 +5,10 @@ const LEASE_RENEWAL_MS = 10000;
 
 export function useControlLease(
   currentUserId: string | null,
-  emitEvent: (event: { type: string; controlId: ControlId; reason?: string }) => void,
+  emitEvent: (event: { type: string; controlId: ControlId; reason?: ControlReleaseReason }) => void,
 ) {
   const activeLeasesRef = useRef<Set<ControlId>>(new Set());
-  const renewalTimersRef = useRef<Map<ControlId, NodeJS.Timeout>>(new Map());
+  const renewalTimersRef = useRef<Map<ControlId, number>>(new Map());
 
   const acquireLease = useCallback((controlId: ControlId) => {
     if (!currentUserId) return;
@@ -21,7 +21,7 @@ export function useControlLease(
 
     activeLeasesRef.current.add(controlId);
 
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       emitEvent({
         type: 'control-acquire',
         controlId,
@@ -35,7 +35,7 @@ export function useControlLease(
 
     const timer = renewalTimersRef.current.get(controlId);
     if (timer) {
-      clearInterval(timer);
+      window.clearInterval(timer);
       renewalTimersRef.current.delete(controlId);
     }
 

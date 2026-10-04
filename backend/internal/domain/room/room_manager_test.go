@@ -119,11 +119,24 @@ func TestRoomManagerRemoveMemberDoesNotDeadlock(t *testing.T) {
 func TestRoomRelayPublishesControlLeaseWithoutDeadlock(t *testing.T) {
 	manager := NewRoomManager()
 	manager.Ensure("room-a")
+	var joinedPayload json.RawMessage
 	_, err := manager.Attach("room-a", RoomParticipant{
-		UserID: "owner", ConnectionID: "owner-connection", Send: func(RoomEvent) error { return nil },
+		UserID: "owner", ConnectionID: "owner-connection", Send: func(event RoomEvent) error {
+			if event.Type == "joined" {
+				joinedPayload = event.Payload
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	var joined JoinedState
+	if err := json.Unmarshal(joinedPayload, &joined); err != nil {
+		t.Fatal(err)
+	}
+	if joined.UserID != "owner" {
+		t.Fatalf("joined user ID = %q, want relay user ID %q", joined.UserID, "owner")
 	}
 
 	done := make(chan error, 1)
@@ -135,7 +148,7 @@ func TestRoomRelayPublishesControlLeaseWithoutDeadlock(t *testing.T) {
 			return
 		}
 		done <- manager.Publish("room-a", "owner-connection", RoomMessage{
-			Type: "event", T: 2, Payload: json.RawMessage(`{"action":"set-eq-high","deck":"A"}`),
+			Type: "event", T: 2, Payload: json.RawMessage(`{"action":"mixer-change","controlId":"channel.A.eq.high","value":{}}`),
 		})
 	}()
 	select {
@@ -145,6 +158,29 @@ func TestRoomRelayPublishesControlLeaseWithoutDeadlock(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("control lease publish deadlocked")
+	}
+
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "event", T: 3, Payload: json.RawMessage(`{"action":"mixer-change","value":{}}`),
+	}); err == nil {
+		t.Fatal("mixer change without a control ID was accepted")
+	}
+
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "event", T: 4, Payload: json.RawMessage(`{"action":"mixer-change","controlId":"unsupported.control","value":{}}`),
+	}); err == nil {
+		t.Fatal("mixer change with an unsupported control ID was accepted")
+	}
+
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "control-acquire", T: 5, Payload: json.RawMessage(`{"controlId":"deck.A.platter"}`),
+	}); err != nil {
+		t.Fatalf("acquiring platter lease: %v", err)
+	}
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "event", T: 6, Payload: json.RawMessage(`{"action":"transport-command","deck":"A","command":"seek","controlId":"deck.A.platter","platterAngleDegrees":45}`),
+	}); err != nil {
+		t.Fatalf("publishing leased platter update: %v", err)
 	}
 }
 

@@ -70,6 +70,7 @@ type RoomPresence struct {
 }
 
 type JoinedState struct {
+	UserID      string          `json:"userId"`
 	Snapshot    json.RawMessage `json:"snapshot"`
 	SnapshotSeq uint64          `json:"snapshotSeq"`
 	LastSeq     uint64          `json:"lastSeq"`
@@ -331,6 +332,7 @@ func (m *RoomManager) Attach(roomID string, participant RoomParticipant) (func()
 	}
 	leases := m.getLeasesLocked(live)
 	joinedPayload, err := json.Marshal(JoinedState{
+		UserID:      participant.UserID,
 		Snapshot:    snapshot,
 		SnapshotSeq: snapshotSeq,
 		LastSeq:     live.seq,
@@ -830,11 +832,21 @@ func validateLeaseLocked(live *roomRelay, userID, controlID string) bool {
 
 func extractControlIDFromAction(payload json.RawMessage) string {
 	var action struct {
-		Action string `json:"action"`
-		Deck   string `json:"deck"`
+		Action    string `json:"action"`
+		Deck      string `json:"deck"`
+		ControlID string `json:"controlId"`
 	}
 	if err := json.Unmarshal(payload, &action); err != nil {
 		return ""
+	}
+	if action.ControlID != "" {
+		if isSupportedControlID(action.ControlID) {
+			return action.ControlID
+		}
+		return "\x00invalid-control-id"
+	}
+	if action.Action == "mixer-change" {
+		return "\x00missing-control-id"
 	}
 
 	deckID := action.Deck
@@ -862,6 +874,19 @@ func extractControlIDFromAction(payload json.RawMessage) string {
 		return "fx.division"
 	default:
 		return ""
+	}
+}
+
+func isSupportedControlID(controlID string) bool {
+	switch controlID {
+	case "master.volume",
+		"channel.A.gain", "channel.A.eq.high", "channel.A.eq.mid", "channel.A.eq.low", "channel.A.filter",
+		"channel.B.gain", "channel.B.eq.high", "channel.B.eq.mid", "channel.B.eq.low", "channel.B.filter",
+		"fx.wet", "fx.division", "fx.assign.A", "fx.assign.B", "mixer.tempo-master",
+		"deck.A.platter", "deck.A.tempo", "deck.B.platter", "deck.B.tempo":
+		return true
+	default:
+		return false
 	}
 }
 

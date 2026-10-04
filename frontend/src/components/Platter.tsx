@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { Track } from '@/lib/types/Track';
 import { DeckId } from '../hooks/useAudioEngine';
-import type { ControlId, ControlReleaseReason } from '@/lib/types/Control';
+import { useRoomControl } from '@/contexts/RoomLeaseContext';
+import { ControlReleaseReason, type ControlId } from '@/lib/types/Control';
 
 // Audio-seconds moved per full platter rotation while scratching.
 const SECONDS_PER_REVOLUTION = 1.8;
@@ -63,13 +64,17 @@ export function Platter({
   // Visual angle changes only while the user drags the platter.
   const [angle, setAngle] = useState(0);
   const visibleAngle = typeof syncedAngle === 'number' && Number.isFinite(syncedAngle) ? syncedAngle : angle;
+  const roomControl = useRoomControl(controlId, visibleAngle, false);
+  const controlLocked = isLeasedByOther || roomControl.isLeasedByOther;
+  const currentLeaseOwner = leaseOwner ?? roomControl.leaseOwner;
 
   const coverUrl = isImageCover(track?.coverUrl) ? track.coverUrl : null;
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (disabled || isLeasedByOther || !ringRef.current) return;
+    if (disabled || controlLocked || !ringRef.current) return;
     event.preventDefault();
-    if (controlId) onLeaseAcquire?.(controlId);
+    roomControl.onLeaseAcquire?.();
+    if (!roomControl.onLeaseAcquire && controlId) onLeaseAcquire?.(controlId);
     ringRef.current.setPointerCapture(event.pointerId);
     angleRef.current = visibleAngle;
     setAngle(visibleAngle);
@@ -96,11 +101,12 @@ export function Platter({
     onScratchMove?.(deltaSeconds, deltaRealSeconds, nextVisualAngle);
   };
 
-  const endDrag = () => {
+  const endDrag = (reason?: ControlReleaseReason) => {
     if (!dragRef.current) return;
-    if (controlId) onLeaseRelease?.(controlId);
     dragRef.current = null;
     onScratchEnd?.(angleRef.current);
+    roomControl.onLeaseRelease?.(reason);
+    if (!roomControl.onLeaseRelease && controlId) onLeaseRelease?.(controlId, reason);
   };
 
   return (
@@ -109,14 +115,14 @@ export function Platter({
         ref={ringRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
+        onPointerUp={() => endDrag()}
+        onPointerCancel={() => endDrag(ControlReleaseReason.PointerCancel)}
         onDragStart={(event) => event.preventDefault()}
         className={`relative select-none overflow-hidden rounded-full border border-zinc-600 bg-[#14181e] shadow-inner touch-none ${
-          disabled || isLeasedByOther ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
-        } ${isLeasedByOther ? 'ring-2 ring-amber-400 opacity-70' : ''}`}
+          disabled || controlLocked ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+        } ${controlLocked ? 'ring-2 ring-amber-400 opacity-70' : ''}`}
         style={{ width: size, height: size }}
-        aria-label={isLeasedByOther ? `Platter (controlled by ${leaseOwner})` : label ? `Deck ${label} platter` : 'Platter'}
+        aria-label={controlLocked ? `Platter (controlled by ${currentLeaseOwner})` : label ? `Deck ${label} platter` : 'Platter'}
       >
         <div
           className="absolute inset-0 rounded-full"

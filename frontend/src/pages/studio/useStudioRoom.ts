@@ -19,10 +19,14 @@ import {
   StudioActionType,
   type StudioAction,
 } from '@/pages/stream/studioState';
-import type { MixerAudioEngine } from '@/hooks/useAudioEngine';
+import { DeckId as AudioDeckId, type MixerAudioEngine } from '@/hooks/useAudioEngine';
 import type { MixerState } from '@/hooks/useMixerState';
+import { ControlId, type ControlLease, type ControlReleaseReason } from '@/lib/types/Control';
 
 type StudioCommand = StudioAction | { action: StudioActionType.Hydrate; value: StudioSnapshot };
+type MixerChangeAction = Extract<StudioAction, { action: StudioActionType.MixerChange }>;
+
+const ROOM_MIXER_UPDATE_INTERVAL_MS = 33;
 
 export type RoomTransportCommand = {
   id: string;
@@ -53,6 +57,31 @@ type RoomRelayEvent = {
   username?: string;
   avatarUrl?: string;
 };
+
+function parseRoomLeases(value: unknown): ControlLease[] {
+  if (!Array.isArray(value)) return [];
+  const knownControlIds = new Set<string>(Object.values(ControlId));
+  return value.flatMap((entry): ControlLease[] => {
+    if (typeof entry !== 'object' || entry === null) return [];
+    const lease = entry as Partial<ControlLease> & { expiresAt?: number | string };
+    const expiresAt = typeof lease.expiresAt === 'number'
+      ? lease.expiresAt
+      : typeof lease.expiresAt === 'string' ? Date.parse(lease.expiresAt) : NaN;
+    if (
+      typeof lease.controlId !== 'string'
+      || !knownControlIds.has(lease.controlId)
+      || typeof lease.ownerId !== 'string'
+      || typeof lease.ownerUsername !== 'string'
+      || !Number.isFinite(expiresAt)
+    ) return [];
+    return [{
+      controlId: lease.controlId as ControlId,
+      ownerId: lease.ownerId,
+      ownerUsername: lease.ownerUsername,
+      expiresAt,
+    }];
+  });
+}
 
 type PendingRoomSocketEvents = {
   messages: MessageEvent[];
@@ -85,6 +114,58 @@ function snapshotFromRoomEvent(type: string | undefined, payload: unknown): Stud
 
 function isStudioAction(value: unknown): value is StudioAction {
   return typeof value === 'object' && value !== null && 'action' in value;
+}
+
+function mergeMixerControl(current: MixerState, incoming: MixerState, controlId: ControlId): MixerState {
+  const channelValue = (deck: AudioDeckId, field: keyof MixerState['channelState'][AudioDeckId.A]) => ({
+    ...current,
+    channelState: {
+      ...current.channelState,
+      [deck]: { ...current.channelState[deck], [field]: incoming.channelState[deck][field] },
+    },
+  });
+
+  switch (controlId) {
+    case ControlId.MasterVolume:
+      return { ...current, master: incoming.master };
+    case ControlId.ChannelAGain:
+      return channelValue(AudioDeckId.A, 'volume');
+    case ControlId.ChannelAEqHigh:
+      return channelValue(AudioDeckId.A, 'high');
+    case ControlId.ChannelAEqMid:
+      return channelValue(AudioDeckId.A, 'mid');
+    case ControlId.ChannelAEqLow:
+      return channelValue(AudioDeckId.A, 'low');
+    case ControlId.ChannelAFilter:
+      return channelValue(AudioDeckId.A, 'filter');
+    case ControlId.DeckATempo:
+      return channelValue(AudioDeckId.A, 'tempo');
+    case ControlId.ChannelBGain:
+      return channelValue(AudioDeckId.B, 'volume');
+    case ControlId.ChannelBEqHigh:
+      return channelValue(AudioDeckId.B, 'high');
+    case ControlId.ChannelBEqMid:
+      return channelValue(AudioDeckId.B, 'mid');
+    case ControlId.ChannelBEqLow:
+      return channelValue(AudioDeckId.B, 'low');
+    case ControlId.ChannelBFilter:
+      return channelValue(AudioDeckId.B, 'filter');
+    case ControlId.DeckBTempo:
+      return channelValue(AudioDeckId.B, 'tempo');
+    case ControlId.FxWet:
+      return { ...current, fx: { ...current.fx, wet: incoming.fx.wet } };
+    case ControlId.FxDivision:
+      return { ...current, fx: { ...current.fx, division: incoming.fx.division } };
+    case ControlId.FxAssignA:
+      return { ...current, fx: { ...current.fx, assign: { ...current.fx.assign, [AudioDeckId.A]: incoming.fx.assign[AudioDeckId.A] } } };
+    case ControlId.FxAssignB:
+      return { ...current, fx: { ...current.fx, assign: { ...current.fx.assign, [AudioDeckId.B]: incoming.fx.assign[AudioDeckId.B] } } };
+    case ControlId.TempoMaster:
+      return { ...current, tempoMaster: incoming.tempoMaster };
+    case ControlId.DeckAPlatter:
+    case ControlId.DeckBPlatter:
+      return current;
+  }
 }
 
 function isRoomTransportCommand(value: unknown): value is RoomTransportCommandPayload {
@@ -147,9 +228,11 @@ export function useStudioRoom({
   const navigate = useNavigate();
   const avatarUrl = user?.imageUrl ?? '';
   const [room, setRoom] = useState<CreatedRoom | null>(null);
+  const [roomUserId, setRoomUserId] = useState<string | null>(null);
   const [roomLibraryState, setRoomLibraryState] = useState<{ roomId: string; tracks: RoomTrack[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leases, setLeases] = useState<ControlLease[]>([]);
   const [transportCommands, setTransportCommands] = useState<Record<StreamDeckId, RoomTransportCommand | null>>({
     [StreamDeckId.A]: null,
     [StreamDeckId.B]: null,
@@ -159,6 +242,8 @@ export function useStudioRoom({
   const publishRoomSnapshotsRef = useRef(false);
   const endingRoomRef = useRef(false);
   const studioSnapshotRef = useRef(studioState);
+  const pendingMixerEventsRef = useRef<Map<ControlId, MixerChangeAction>>(new Map());
+  const mixerEventTimerRef = useRef<number | null>(null);
   const initialIncomingRoom = (location.state as { roomSession?: CreatedRoom } | null)?.roomSession;
   const incomingRoomRef = useRef(initialIncomingRoom);
   const [incomingRoomPending, setIncomingRoomPending] = useState(Boolean(initialIncomingRoom));
@@ -167,13 +252,17 @@ export function useStudioRoom({
     ? roomLibraryState.tracks
     : [];
 
-  const commitStudio = useCallback((command: StudioCommand) => {
+  const commitStudioLocal = useCallback((command: StudioCommand) => {
     if (command.action === StudioActionType.Hydrate) {
       studioSnapshotRef.current = command.value;
     } else {
       studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, command);
     }
     dispatchStudio(command);
+  }, [dispatchStudio]);
+
+  const commitStudio = useCallback((command: StudioCommand) => {
+    commitStudioLocal(command);
     if (command.action === StudioActionType.Hydrate) return;
     const socket = roomSocketRef.current;
     if (!roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
@@ -182,14 +271,40 @@ export function useStudioRoom({
       t: engine?.context.currentTime ?? 0,
       payload: command,
     }));
-  }, [dispatchStudio, engine]);
+  }, [commitStudioLocal, engine]);
 
-  const commitMixer = useCallback((update: (current: MixerState) => MixerState) => {
-    commitStudio({
+  const flushMixerEvents = useCallback(() => {
+    if (mixerEventTimerRef.current !== null) {
+      window.clearTimeout(mixerEventTimerRef.current);
+      mixerEventTimerRef.current = null;
+    }
+    const pending = [...pendingMixerEventsRef.current.values()];
+    pendingMixerEventsRef.current.clear();
+    const socket = roomSocketRef.current;
+    if (!roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
+    pending.forEach((command) => {
+      socket.send(JSON.stringify({
+        type: 'event',
+        t: engine?.context.currentTime ?? 0,
+        payload: command,
+      }));
+    });
+  }, [engine]);
+
+  const commitMixer = useCallback((controlId: ControlId, update: (current: MixerState) => MixerState) => {
+    const command: MixerChangeAction = {
       action: StudioActionType.MixerChange,
       value: update(studioSnapshotRef.current.mixer),
-    });
-  }, [commitStudio]);
+      controlId,
+    };
+    commitStudioLocal(command);
+    const socket = roomSocketRef.current;
+    if (!roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
+    pendingMixerEventsRef.current.set(controlId, command);
+    if (mixerEventTimerRef.current === null) {
+      mixerEventTimerRef.current = window.setTimeout(flushMixerEvents, ROOM_MIXER_UPDATE_INTERVAL_MS);
+    }
+  }, [commitStudioLocal, flushMixerEvents]);
 
   const sendTransportCommand = useCallback((
     deck: StreamDeckId,
@@ -205,9 +320,35 @@ export function useStudioRoom({
     socket.send(JSON.stringify({
       type: 'event',
       t: engine?.context.currentTime ?? 0,
-      payload: { action: 'transport-command', deck, command, positionSeconds, platterAngleDegrees },
+      payload: {
+        action: 'transport-command',
+        deck,
+        command,
+        positionSeconds,
+        platterAngleDegrees,
+        ...(platterAngleDegrees === undefined
+          ? {}
+          : { controlId: deck === StreamDeckId.A ? ControlId.DeckAPlatter : ControlId.DeckBPlatter }),
+      },
     }));
   }, [engine, room?.id]);
+
+  const sendControlLeaseEvent = useCallback((event: {
+    type: string;
+    controlId: ControlId;
+    reason?: ControlReleaseReason;
+  }) => {
+    if (event.type === 'control-release' || event.type === 'control-cancel') {
+      flushMixerEvents();
+    }
+    const socket = roomSocketRef.current;
+    if (!room?.id || !roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: event.type,
+      t: engine?.context.currentTime ?? 0,
+      payload: { controlId: event.controlId, ...(event.reason ? { reason: event.reason } : {}) },
+    }));
+  }, [engine, flushMixerEvents, room?.id]);
 
   const roomId = room?.id;
   const loadTrackAudio = useCallback((trackId: string) => (
@@ -224,6 +365,8 @@ export function useStudioRoom({
           roomEventsReadyRef.current = false;
           publishRoomSnapshotsRef.current = false;
           setRoom(null);
+          setRoomUserId(null);
+          setLeases([]);
           socket.close();
           if (endingRoomRef.current) {
             endingRoomRef.current = false;
@@ -238,6 +381,13 @@ export function useStudioRoom({
         }
         if (event.type === 'joined' || event.type === 'snapshot') {
           const snapshot = snapshotFromRoomEvent(event.type, event.payload);
+          if (event.type === 'joined' && typeof event.payload === 'object' && event.payload !== null && 'leases' in event.payload) {
+            setLeases(parseRoomLeases(event.payload.leases));
+          }
+          if (event.type === 'joined' && typeof event.payload === 'object' && event.payload !== null && 'userId' in event.payload) {
+            const userId = (event.payload as { userId?: unknown }).userId;
+            if (typeof userId === 'string' && userId.length > 0) setRoomUserId(userId);
+          }
           if (event.type === 'joined' && typeof event.payload === 'object' && event.payload !== null && 'members' in event.payload) {
             const members = (event.payload as { members?: CreatedRoom['members'] }).members;
             if (members) setRoom((current) => current ? { ...current, members } : current);
@@ -284,6 +434,10 @@ export function useStudioRoom({
               }));
             }
           }
+          return;
+        }
+        if (event.type === 'leases') {
+          setLeases(parseRoomLeases(event.payload));
           return;
         }
         if (event.type === 'member-joined' && event.userId) {
@@ -335,8 +489,14 @@ export function useStudioRoom({
           return;
         }
         if (event.type === 'event' && isStudioAction(event.payload)) {
-          studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, event.payload);
-          dispatchStudio(event.payload);
+          const action = event.payload.action === StudioActionType.MixerChange && event.payload.controlId
+            ? {
+              ...event.payload,
+              value: mergeMixerControl(studioSnapshotRef.current.mixer, event.payload.value, event.payload.controlId),
+            }
+            : event.payload;
+          studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, action);
+          dispatchStudio(action);
         }
       } catch {
         setError('The room relay returned an unreadable message.');
@@ -361,6 +521,8 @@ export function useStudioRoom({
     roomEventsReadyRef.current = true;
     publishRoomSnapshotsRef.current = publishSnapshots;
     setRoom(nextRoom);
+    setRoomUserId(null);
+    setLeases([]);
     pendingRoomSocketEvents.delete(socket);
     for (const message of buffered?.messages ?? []) handleMessage(message);
     if (buffered?.closeEvent) handleClose();
@@ -380,12 +542,7 @@ export function useStudioRoom({
     let created: CreatedRoom | null = null;
     try {
       created = await createRoom(visibility, avatarUrl);
-      await attachRoomSession({
-        ...created,
-        members: user
-          ? [{ userId: user.id, username: user.username ?? user.fullName ?? 'You', avatarUrl }]
-          : created.members,
-      }, true);
+      await attachRoomSession(created, true);
     } catch (cause) {
       let message = cause instanceof Error ? cause.message : 'Could not create a collaborative room.';
       if (created) {
@@ -401,7 +558,7 @@ export function useStudioRoom({
     } finally {
       setBusy(false);
     }
-  }, [attachRoomSession, avatarUrl, user]);
+  }, [attachRoomSession, avatarUrl]);
 
   useEffect(() => {
     const incoming = incomingRoomRef.current;
@@ -441,6 +598,8 @@ export function useStudioRoom({
       roomSocketRef.current?.close();
       roomSocketRef.current = null;
       setRoom(null);
+      setRoomUserId(null);
+      setLeases([]);
     } catch (cause) {
       endingRoomRef.current = false;
       setError(cause instanceof Error ? cause.message : 'Could not end the room.');
@@ -448,6 +607,8 @@ export function useStudioRoom({
       roomSocketRef.current?.close();
       roomSocketRef.current = null;
       setRoom(null);
+      setRoomUserId(null);
+      setLeases([]);
     }
   }, [room]);
 
@@ -506,14 +667,17 @@ export function useStudioRoom({
   return {
     room,
     roomLibrary,
+    leases,
     avatarUrl,
-    currentUserId: user?.id,
+    currentUserId: roomUserId,
     busy,
     error,
     transportCommands,
+    commitStudioLocal,
     commitStudio,
     commitMixer,
     sendTransportCommand,
+    sendControlLeaseEvent,
     loadTrackAudio,
     startRoom,
     endRoom,

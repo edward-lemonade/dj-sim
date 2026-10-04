@@ -1,5 +1,6 @@
 import { cn } from 'cn';
 import { AutomationMode, useSyncedControl } from '@/components/ControlSelection';
+import { useRoomControl } from '@/contexts/RoomLeaseContext';
 import { ControlReleaseReason, type ControlId } from '@/lib/types/Control';
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -45,7 +46,7 @@ export function Slider({
   onLeaseAcquire,
   onLeaseRelease,
 }: VerticalSliderProps) {
-  const { selected, inverted, automating, configuringAutomation, bind, move, onContextMenu } = useSyncedControl({
+  const { selected, inverted, automating, configuringAutomation, bind, move, onContextMenu, getInteractionControlIds } = useSyncedControl({
     label,
     value,
     min,
@@ -54,7 +55,12 @@ export function Slider({
     disabled,
     automationMode,
     referenceBpm,
+    roomControlId: controlId,
   });
+  const roomControl = useRoomControl(controlId, value, true, getInteractionControlIds);
+  const displayValue = roomControl.value;
+  const controlLocked = isLeasedByOther || roomControl.isLeasedByOther;
+  const currentLeaseOwner = leaseOwner ?? roomControl.leaseOwner;
 
   return (
     <input
@@ -62,31 +68,42 @@ export function Slider({
       min={min}
       max={max}
       step={step}
-      value={value}
-      disabled={disabled || isLeasedByOther}
+      value={displayValue}
+      disabled={disabled || controlLocked}
       onChange={(event) => {
-        if (!automating && !isLeasedByOther) move(Number(event.target.value) - value);
+        if (!automating && !controlLocked) move(Number(event.target.value) - value);
       }}
       // Ctrl/cmd-click selects; without this the native thumb would still jump/drag.
       onMouseDown={(event) => {
-        if (automating || isLeasedByOther || event.ctrlKey || event.metaKey) event.preventDefault();
-        if (controlId && !automating && !isLeasedByOther) onLeaseAcquire?.(controlId);
+        if (automating || controlLocked || event.ctrlKey || event.metaKey) event.preventDefault();
+        if (!automating && !controlLocked) {
+          roomControl.onLeaseAcquire?.();
+          if (!roomControl.onLeaseAcquire && controlId) onLeaseAcquire?.(controlId);
+        }
       }}
+      onPointerUp={() => roomControl.onLeaseRelease?.()}
+      onPointerCancel={() => roomControl.onLeaseRelease?.(ControlReleaseReason.PointerCancel)}
       onBlur={() => {
-        if (controlId) onLeaseRelease?.(controlId, ControlReleaseReason.LostCapture);
+        roomControl.onLeaseRelease?.(ControlReleaseReason.LostCapture);
+        if (!roomControl.onLeaseRelease && controlId) onLeaseRelease?.(controlId, ControlReleaseReason.LostCapture);
       }}
       onKeyDown={(event) => {
-        if (automating || isLeasedByOther) event.preventDefault();
+        if (automating || controlLocked) {
+          event.preventDefault();
+        } else if (['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+          roomControl.onLeaseAcquire?.();
+        }
       }}
+      onKeyUp={() => roomControl.onLeaseRelease?.()}
       onContextMenu={onContextMenu}
-      aria-label={isLeasedByOther ? `${label} (controlled by ${leaseOwner})` : label}
-      aria-disabled={disabled || automating || isLeasedByOther || undefined}
+      aria-label={controlLocked ? `${label} (controlled by ${currentLeaseOwner})` : label}
+      aria-disabled={disabled || automating || controlLocked || undefined}
       className={cn(
         automating && 'rounded ring-2 ring-orange-400',
         configuringAutomation && !automating && 'rounded ring-2 ring-yellow-400',
         selected && !inverted && !automating && !configuringAutomation && 'rounded ring-2 ring-sky-400',
         inverted && !automating && !configuringAutomation && 'rounded ring-2 ring-red-400',
-        isLeasedByOther && 'rounded ring-2 ring-amber-400 cursor-not-allowed opacity-70',
+        controlLocked && 'rounded ring-2 ring-amber-400 cursor-not-allowed opacity-70',
         className,
       )}
       style={orientation === SliderOrientation.Vertical ? { writingMode: 'vertical-lr', direction: 'rtl' } : undefined}

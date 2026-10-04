@@ -12,6 +12,8 @@ import {
 import { createPortal } from 'react-dom';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
+import { useRoomLeases } from '@/contexts/RoomLeaseContext';
+import type { ControlId } from '@/lib/types/Control';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export enum AutomationUnit {
@@ -33,6 +35,8 @@ type Control = {
   onChange: (value: number) => void;
   automationMode?: AutomationMode;
   referenceBpm?: number;
+  roomControlId?: ControlId;
+  setInteractionValue?: (value: number) => void;
 };
 
 enum AutomationEndpoint {
@@ -50,6 +54,8 @@ type SelectionApi = {
   openAutomation: (id: string, x: number, y: number) => void;
   startAutomation: (id: string, target: number, duration: number, unit: AutomationUnit) => void;
   stopAutomation: (id: string) => void;
+  getInteractionControlIds: (id: string) => ControlId[];
+  getSelectedControlIds: (ids: ReadonlySet<string>) => ControlId[];
 };
 
 const SelectionContext = createContext<{
@@ -66,8 +72,10 @@ function clamp(value: number, min: number, max: number) {
 }
 
 export function ControlSelectionProvider({ children, bpm = 0 }: { children: ReactNode; bpm?: number }) {
+  const { currentUserId, acquireLease, releaseLease, isLeasedByOther } = useRoomLeases();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const selectedRef = useRef(selected);
+  const heldSelectionLeasesRef = useRef<Set<ControlId>>(new Set());
   const controls = useRef(new Map<string, Control>());
   const automations = useRef(new Map<string, { frameId: number }>());
   const [automating, setAutomating] = useState<ReadonlySet<string>>(new Set());
@@ -126,7 +134,10 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
         if (!target || automatingRef.current.has(targetId)) return;
         const sign = targetId === id || !shiftRef.current ? 1 : -1;
         const next = target.value + sign * normalized * (target.max - target.min);
-        target.onChange(Number(clamp(next, target.min, target.max).toFixed(3)));
+        const nextValue = Number(clamp(next, target.min, target.max).toFixed(3));
+        target.value = nextValue;
+        target.setInteractionValue?.(nextValue);
+        target.onChange(nextValue);
       });
     },
     openAutomation: (id, x, y) => {
@@ -148,6 +159,10 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
       stopAutomation(id);
       const startValue = control.value;
       const endValue = control.automationMode === AutomationMode.Tempo ? target : clamp(target, control.min, control.max);
+      if (control.roomControlId) {
+        acquireLease(control.roomControlId);
+        heldSelectionLeasesRef.current.add(control.roomControlId);
+      }
       let elapsed = 0;
       let previousTime: number | null = null;
       const animation = { frameId: 0 };
@@ -185,7 +200,44 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
       setPopup(null);
     },
     stopAutomation,
-  }), [setAutomationState, stopAutomation, update]);
+    getInteractionControlIds: (id) => {
+      if (!selectedRef.current.has(id)) return [];
+      const targets = selectedRef.current;
+      return [...new Set([...targets].flatMap((targetId) => {
+        const controlId = controls.current.get(targetId)?.roomControlId;
+        return controlId ? [controlId] : [];
+      }))];
+    },
+    getSelectedControlIds: (ids) => [...new Set([...ids].flatMap((id) => {
+      const controlId = controls.current.get(id)?.roomControlId;
+      return controlId ? [controlId] : [];
+    }))],
+  }), [acquireLease, setAutomationState, stopAutomation, update]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      heldSelectionLeasesRef.current.forEach((controlId) => releaseLease(controlId));
+      heldSelectionLeasesRef.current.clear();
+      return;
+    }
+    const heldControlIds = new Set([...selected, ...automating]);
+    const selectedControlIds = new Set(api.getSelectedControlIds(heldControlIds));
+    for (const controlId of heldSelectionLeasesRef.current) {
+      if (selectedControlIds.has(controlId)) continue;
+      releaseLease(controlId);
+      heldSelectionLeasesRef.current.delete(controlId);
+    }
+    for (const controlId of selectedControlIds) {
+      if (heldSelectionLeasesRef.current.has(controlId) || isLeasedByOther(controlId)) continue;
+      acquireLease(controlId);
+      heldSelectionLeasesRef.current.add(controlId);
+    }
+  }, [acquireLease, api, automating, currentUserId, isLeasedByOther, releaseLease, selected]);
+
+  useEffect(() => () => {
+    heldSelectionLeasesRef.current.forEach((controlId) => releaseLease(controlId));
+    heldSelectionLeasesRef.current.clear();
+  }, [releaseLease]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -204,6 +256,10 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
       const id = (event.target as Element).closest('[data-control-id]')?.getAttribute('data-control-id');
       if (id && (event.ctrlKey || event.metaKey)) {
         if (automatingRef.current.has(id)) return;
+        if (!selectedRef.current.has(id)) {
+          const controlId = controls.current.get(id)?.roomControlId;
+          if (controlId && isLeasedByOther(controlId)) return;
+        }
         event.stopPropagation();
         const next = new Set(selectedRef.current);
         if (next.has(id)) next.delete(id);
@@ -229,7 +285,7 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [update]);
+  }, [isLeasedByOther, update]);
 
   useEffect(() => () => {
     automations.current.forEach(({ frameId }) => cancelAnimationFrame(frameId));
@@ -411,6 +467,8 @@ export function useSyncedControl({
   disabled,
   automationMode = AutomationMode.Slider,
   referenceBpm,
+  roomControlId,
+  setInteractionValue,
 }: Control & { disabled?: boolean }) {
   const context = useContext(SelectionContext);
   if (!context) throw new Error('useSyncedControl must be used inside ControlSelectionProvider');
@@ -419,11 +477,22 @@ export function useSyncedControl({
 
   // Re-registers every render so the provider always sees the latest value/onChange.
   useEffect(() => {
-    api.register(id, { label, value, min, max, onChange, automationMode, referenceBpm });
+    api.register(id, {
+      label,
+      value,
+      min,
+      max,
+      onChange,
+      automationMode,
+      referenceBpm,
+      roomControlId,
+      setInteractionValue,
+    });
   });
   useEffect(() => () => api.unregister(id), [api, id]);
 
   const move = useCallback((delta: number) => api.move(id, delta), [api, id]);
+  const getInteractionControlIds = useCallback(() => api.getInteractionControlIds(id), [api, id]);
 
   const isSelected = selected.has(id);
   const isAutomating = automating.has(id);
@@ -435,6 +504,7 @@ export function useSyncedControl({
     configuringAutomation: isConfiguringAutomation,
     inverted: isSelected && shiftHeld && activeId !== null && activeId !== id,
     move,
+    getInteractionControlIds,
     bind: disabled ? {} : { 'data-control-id': id },
     onContextMenu: (event: React.MouseEvent) => {
       event.preventDefault();

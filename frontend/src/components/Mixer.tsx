@@ -4,6 +4,7 @@ import { Slider } from '@/components/Slider';
 import { DECK_IDS, DeckId } from '../hooks/useAudioEngine';
 import type { FxState } from '../lib/utils/fxRack';
 import type { ChannelState, MixerState } from '../hooks/useMixerState';
+import { ControlId } from '@/lib/types/Control';
 
 export function Mixer({
   state,
@@ -24,6 +25,7 @@ export function Mixer({
           value={state.master}
           onChange={onMasterChange}
           label="Master volume"
+          controlId={ControlId.MasterVolume}
           className="h-32 w-5 flex-none cursor-pointer accent-zinc-200"
         />
       </div>

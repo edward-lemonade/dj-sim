@@ -11,6 +11,15 @@ import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import { RecordingStatus, useStudioRecording } from '@/hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
+import { RoomLeaseProvider } from '@/contexts/RoomLeaseContext';
+import {
+  channelId,
+  ChannelControlParam,
+  ControlDeckId,
+  ControlId,
+  DeckControlParam,
+  deckId as getDeckControlId,
+} from '@/lib/types/Control';
 import { TrackLibraryStatus } from '@/lib/types/Track';
 import { StreamDeckId, StreamPopupKind, type StudioSnapshot } from '@/lib/types/Stream';
 import { getStudioDeckLayout } from '@/lib/utils/studioGrid';
@@ -40,7 +49,14 @@ function StudioPage() {
   const [studioState, dispatchStudio] = useReducer(reduceStudio, undefined, createInitialStudioSnapshot);
   const engine = useAudioEngine(studioState.mixer);
   const roomSession = useStudioRoom({ studioState, dispatchStudio, engine });
-  const { commitMixer, avatarUrl: roomAvatarUrl } = roomSession;
+  const {
+    commitMixer,
+    commitStudio,
+    commitStudioLocal,
+    avatarUrl: roomAvatarUrl,
+    currentUserId,
+    leases,
+  } = roomSession;
   const recording = useStudioRecording(engine);
   const { status: recordingStatus, hasPendingSave, stopAndSave } = recording;
   const shouldBlockExit = recordingStatus === RecordingStatus.Recording
@@ -58,24 +74,69 @@ function StudioPage() {
     [DeckId.B]: studioState.decks.B.track?.id ?? null,
   }), [studioState.decks]);
 
-  const setChannel = useCallback((id: DeckId, patch: Partial<MixerState['channelState'][DeckId.A]>) => {
-    commitMixer((current) => ({
+  const setChannel = useCallback((
+    id: DeckId,
+    patch: Partial<MixerState['channelState'][DeckId.A]>,
+    localOnly = false,
+  ) => {
+    const controlDeck = id === DeckId.A ? ControlDeckId.A : ControlDeckId.B;
+    const controlIds: Partial<Record<keyof MixerState['channelState'][DeckId.A], ControlId>> = {
+      high: channelId(controlDeck, ChannelControlParam.EqHigh),
+      mid: channelId(controlDeck, ChannelControlParam.EqMid),
+      low: channelId(controlDeck, ChannelControlParam.EqLow),
+      filter: id === DeckId.A ? ControlId.ChannelAFilter : ControlId.ChannelBFilter,
+      volume: channelId(controlDeck, ChannelControlParam.Gain),
+      tempo: getDeckControlId(controlDeck, DeckControlParam.Tempo),
+    };
+    const changedField = Object.keys(patch)[0] as keyof MixerState['channelState'][DeckId.A] | undefined;
+    const controlId = changedField ? controlIds[changedField] : undefined;
+    if (!controlId) return;
+    const activeLease = leases.find((lease) => lease.controlId === controlId);
+    if (
+      activeLease
+      && activeLease.ownerId !== currentUserId
+      && activeLease.expiresAt > Date.now()
+    ) return;
+    const update = (current: MixerState) => ({
       ...current,
       channelState: { ...current.channelState, [id]: { ...current.channelState[id], ...patch } },
-    }));
-  }, [commitMixer]);
+    });
+    if (localOnly) {
+      commitStudioLocal({
+        action: StudioActionType.MixerChange,
+        value: update(studioState.mixer),
+      });
+    } else {
+      commitMixer(controlId, update);
+    }
+  }, [commitMixer, commitStudioLocal, currentUserId, leases, studioState.mixer]);
 
   const setFx = useCallback((patch: Partial<MixerState['fx']>) => {
-    commitMixer((current) => ({ ...current, fx: { ...current.fx, ...patch } }));
-  }, [commitMixer]);
+    const changedAssignmentDeck = patch.assign
+      ? patch.assign[DeckId.A] !== studioState.mixer.fx.assign[DeckId.A] ? DeckId.A : DeckId.B
+      : null;
+    const controlId = 'wet' in patch
+      ? ControlId.FxWet
+      : 'division' in patch
+        ? ControlId.FxDivision
+        : changedAssignmentDeck !== null
+          ? changedAssignmentDeck === DeckId.A ? ControlId.FxAssignA : ControlId.FxAssignB
+          : undefined;
+    if (!controlId) return;
+    commitMixer(controlId, (current) => ({ ...current, fx: { ...current.fx, ...patch } }));
+  }, [commitMixer, studioState.mixer.fx.assign]);
 
   const setMaster = useCallback((value: number) => {
-    commitMixer((current) => ({ ...current, master: value }));
+    commitMixer(ControlId.MasterVolume, (current) => ({ ...current, master: value }));
   }, [commitMixer]);
 
   const setTempoMaster = useCallback((id: DeckId | null) => {
-    commitMixer((current) => ({ ...current, tempoMaster: id }));
-  }, [commitMixer]);
+    commitStudio({
+      action: StudioActionType.MixerChange,
+      value: { ...studioState.mixer, tempoMaster: id },
+      controlId: ControlId.TempoMaster,
+    });
+  }, [commitStudio, studioState.mixer]);
 
   const loadedBeatCounts = DECK_IDS
     .map((id) => deckBeatCounts[id])
@@ -226,7 +287,9 @@ function StudioPage() {
       const bpm = trackBpm(id);
       if (id === masterId || bpm <= 0) return;
       const target = clamp((masterBpm / bpm - 1) * 100, -TEMPO_RANGE_PERCENT, TEMPO_RANGE_PERCENT);
-      if (Math.abs(target - studioState.mixer.channelState[id].tempo) > 0.001) setChannel(id, { tempo: target });
+      if (Math.abs(target - studioState.mixer.channelState[id].tempo) > 0.001) {
+        setChannel(id, { tempo: target }, true);
+      }
     });
   }, [masterId, masterBpm, trackBpm, studioState.mixer.channelState, setChannel]);
 
@@ -260,7 +323,7 @@ function StudioPage() {
         loadAudio={roomSession.loadTrackAudio}
         roomTransportCommand={roomSession.room ? roomSession.transportCommands[streamDeckId] ?? undefined : undefined}
         roomTracks={roomSession.room ? roomSession.roomLibrary : undefined}
-        currentUserId={roomSession.currentUserId}
+        currentUserId={roomSession.currentUserId ?? undefined}
         track={library.songs.find((song) => song.id === loadedTrackIds[id])
           ?? trackFromSnapshot(studioState.decks[streamDeckId].track)}
         tracks={availableTracks}
@@ -302,8 +365,13 @@ function StudioPage() {
   };
 
   return (
-    <ControlSelectionProvider bpm={automationBpm}>
-      <StudioConsoleLayout
+    <RoomLeaseProvider
+      currentUserId={roomSession.room ? roomSession.currentUserId ?? null : null}
+      leases={roomSession.leases}
+      emitEvent={roomSession.sendControlLeaseEvent}
+    >
+      <ControlSelectionProvider bpm={automationBpm}>
+        <StudioConsoleLayout
         className="h-svh bg-[#0b0d10]"
         topbar={
           <StudioTopbar
@@ -347,8 +415,9 @@ function StudioPage() {
             y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)),
           } });
         }}
-      />
-    </ControlSelectionProvider>
+        />
+      </ControlSelectionProvider>
+    </RoomLeaseProvider>
   );
 }
 

@@ -4,6 +4,8 @@ import { Knob, KnobLabelPosition, KnobSize } from '@/components/Knob';
 import { Slider, SliderOrientation } from '@/components/Slider';
 import { DECK_IDS, DeckId } from '../hooks/useAudioEngine';
 import { FX_TYPES, FxType, type FxState } from '../lib/utils/fxRack';
+import { ControlId } from '@/lib/types/Control';
+import { useRoomLeases } from '@/contexts/RoomLeaseContext';
 
 const TYPE_LABELS: Record<FxType, string> = {
   [FxType.Echo]: 'Echo',
@@ -50,6 +52,28 @@ export function EffectsUnit({
   onChange: (patch: Partial<FxState>) => void;
   className?: string;
 }) {
+  const { isLeasedByOther, getLeaseOwner, acquireLease, releaseLease } = useRoomLeases();
+  const renderAssignButton = (id: DeckId) => {
+    const controlId = id === DeckId.A ? ControlId.FxAssignA : ControlId.FxAssignB;
+    const locked = isLeasedByOther(controlId);
+    const owner = getLeaseOwner(controlId);
+    return (
+      <FxButton
+        key={id}
+        active={value.assign[id]}
+        disabled={locked}
+        label={`Send deck ${DeckId[id]} to effects${locked ? ` (controlled by ${owner})` : ''}`}
+        onClick={() => {
+          acquireLease(controlId);
+          onChange({ assign: { ...value.assign, [id]: !value.assign[id] } });
+          releaseLease(controlId);
+        }}
+      >
+        {DeckId[id]}
+      </FxButton>
+    );
+  };
+
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col items-center justify-center gap-2 px-1 py-2', className)}>
       <div role="group" aria-label="Effect type" className="flex w-full flex-col gap-1">
@@ -71,6 +95,7 @@ export function EffectsUnit({
           disabled={value.type === FxType.Reverb}
           onChange={(division) => onChange({ division })}
           labelPosition={KnobLabelPosition.Top}
+          controlId={ControlId.FxDivision}
         />
       </div>
       <div className="flex flex-col items-center justify-center gap-1 border-t border-white/10 pt-2">
@@ -80,20 +105,12 @@ export function EffectsUnit({
           label="Effect level"
           value={value.wet}
           onChange={(wet) => onChange({ wet })}
+          controlId={ControlId.FxWet}
           className="h-20 w-4 cursor-pointer accent-zinc-200"
         />
       </div>
       <div role="group" aria-label="Effect sends" className="flex w-full gap-1 border-t border-white/10 pt-2">
-        {DECK_IDS.map((id) => (
-          <FxButton
-            key={id}
-            active={value.assign[id]}
-            label={`Send deck ${DeckId[id]} to effects`}
-            onClick={() => onChange({ assign: { ...value.assign, [id]: !value.assign[id] } })}
-          >
-            {DeckId[id]}
-          </FxButton>
-        ))}
+        {DECK_IDS.map(renderAssignButton)}
       </div>
     </div>
   );
