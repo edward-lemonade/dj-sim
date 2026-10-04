@@ -9,6 +9,7 @@ import { TrackLibraryStatus, type Track } from '@/lib/types/Track';
 import { CDJ } from '@/components/CDJ';
 import { Mixer } from '@/components/Mixer';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';
+import { RoomCursorOverlay } from '@/components/RoomCursorOverlay';
 import { RoomLeaseProvider } from '@/contexts/RoomLeaseContext';
 import { getStudioDeckLayout } from '@/lib/utils/studioGrid';
 import { DECK_IDS, DeckId } from '@/hooks/useAudioEngine';
@@ -116,6 +117,11 @@ function StreamPage() {
   }
 
   const snapshot = stream.snapshot ?? createInitialStudioSnapshot();
+  const streamCursors = stream.hasCursorFeed
+    ? stream.cursors
+    : snapshot.pointer
+      ? [{ userId: 'stream-owner', username: stream.session.username, pointer: snapshot.pointer }]
+      : [];
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(stream.session.startedAt)) / 1000));
   const masterId = snapshot.mixer.tempoMaster;
   const bpmForDeck = (id: DeckId) => {
@@ -192,13 +198,7 @@ function StreamPage() {
             />
           }
         >
-          {snapshot.pointer && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute z-40 size-4 rounded-full border-2 border-white bg-rose-400 shadow-[0_0_12px_rgba(251,113,133,.9)]"
-              style={{ left: `${snapshot.pointer.x * 100}%`, top: `${snapshot.pointer.y * 100}%` }}
-            />
-          )}
+          <RoomCursorOverlay cursors={streamCursors} />
           {snapshot.popup?.kind === StreamPopupKind.TrackPicker && (
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-40 w-72 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-white/15 bg-[#161a20] p-4 shadow-2xl">
               <p className="text-xs uppercase tracking-wider text-zinc-500">Deck {snapshot.popup.deck} · Track picker</p>

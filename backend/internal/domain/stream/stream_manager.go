@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -56,6 +57,7 @@ type liveSession struct {
 	rateStarted      time.Time
 	rateCount        int
 	pointerRateCount int
+	cursorEvent      Event
 }
 
 type Manager struct {
@@ -161,6 +163,7 @@ func (m *Manager) Attach(streamID string, p Participant) (func(), error) {
 	snapshotSeq := live.snapshotSeq
 	snapshotTime := live.snapshotTime
 	recent := append([]Event(nil), live.recentEvents...)
+	cursorEvent := live.cursorEvent
 	count := len(live.viewers)
 	live.mu.Unlock()
 
@@ -172,6 +175,9 @@ func (m *Manager) Attach(streamID string, p Participant) (func(), error) {
 			if event.Seq > snapshotSeq {
 				_ = p.Send(event)
 			}
+		}
+		if cursorEvent.Seq > 0 {
+			_ = p.Send(cursorEvent)
 		}
 		m.broadcastCount(streamID, count)
 	}
@@ -211,10 +217,10 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 		live.rateCount = 0
 		live.pointerRateCount = 0
 	}
-	if incoming.Type == "pointer" {
+	if incoming.Type == "pointer" || incoming.Type == "cursors" {
 		live.pointerRateCount++
 		if live.pointerRateCount > 30 {
-			return errors.New("stream pointer rate exceeded")
+			return errors.New("stream cursor rate exceeded")
 		}
 	} else {
 		live.rateCount++
@@ -232,9 +238,9 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 		live.snapshotSeq = live.seq
 		live.snapshotTime = incoming.T
 		incoming.Seq = live.seq
-	case "event", "pointer":
+	case "event", "pointer", "cursors":
 		maxPayload := 256 << 10
-		if incoming.Type == "pointer" {
+		if incoming.Type == "pointer" || incoming.Type == "cursors" {
 			maxPayload = 8 << 10
 		}
 		if !validTimestamp(incoming.T) || len(incoming.Payload) > maxPayload || !json.Valid(incoming.Payload) {
@@ -246,6 +252,9 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 		if incoming.Type == "pointer" && !validatePointer(incoming.Payload) {
 			return errors.New("invalid stream pointer")
 		}
+		if incoming.Type == "cursors" && !validateCursors(incoming.Payload) {
+			return errors.New("invalid stream cursors")
+		}
 		live.seq++
 		incoming.Seq = live.seq
 		if incoming.Type == "event" {
@@ -253,6 +262,8 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 			if len(live.recentEvents) > 200 {
 				live.recentEvents = append([]Event(nil), live.recentEvents[len(live.recentEvents)-200:]...)
 			}
+		} else if incoming.Type == "cursors" {
+			live.cursorEvent = incoming
 		}
 	default:
 		return errors.New("unsupported stream event type")
@@ -266,6 +277,34 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 		}
 	}
 	return nil
+}
+
+func validateCursors(payload json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(payload)
+	var items []json.RawMessage
+	if len(trimmed) == 0 || trimmed[0] != '[' ||
+		json.Unmarshal(payload, &items) != nil || len(items) > 100 {
+		return false
+	}
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		cursor, ok := objectWithFields(item, "userId", "username", "pointer")
+		if !ok || len(cursor) != 3 {
+			return false
+		}
+		var userID, username string
+		if json.Unmarshal(cursor["userId"], &userID) != nil ||
+			json.Unmarshal(cursor["username"], &username) != nil ||
+			userID == "" || len(userID) > 256 || len(username) > 128 ||
+			!validatePointer(cursor["pointer"]) {
+			return false
+		}
+		if _, exists := seen[userID]; exists {
+			return false
+		}
+		seen[userID] = struct{}{}
+	}
+	return true
 }
 
 func validateSnapshot(payload json.RawMessage) bool {

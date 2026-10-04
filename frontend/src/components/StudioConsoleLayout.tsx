@@ -8,6 +8,7 @@ export function StudioConsoleLayout({
   mixer,
   gridTemplateColumns,
   onPointerMove,
+  onPointerLeave,
   children,
   className = 'h-svh bg-[#0b0d10]',
   readOnly = false,
@@ -18,12 +19,17 @@ export function StudioConsoleLayout({
   mixer: ReactNode;
   gridTemplateColumns: string;
   onPointerMove?: PointerEventHandler<HTMLDivElement>;
+  onPointerLeave?: PointerEventHandler<HTMLDivElement>;
   children?: ReactNode;
   className?: string;
   readOnly?: boolean;
 }) {
   return (
-    <div className={`relative flex min-h-0 flex-col text-zinc-200 ${className}`} onPointerMove={onPointerMove}>
+    <div
+      className={`relative flex min-h-0 flex-col text-zinc-200 ${className}`}
+      onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
+    >
       {topbar}
       <div inert={readOnly} className="flex min-h-0 flex-1 flex-col">
         <section aria-label="Deck waveforms" className="flex-none border-b bg-[#101214]">

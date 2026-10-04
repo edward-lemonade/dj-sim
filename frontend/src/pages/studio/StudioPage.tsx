@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useReducer, useRef, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { CDJ } from '@/components/CDJ';
+import { RoomCursorOverlay } from '@/components/RoomCursorOverlay';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { Mixer } from '@/components/Mixer';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';
@@ -22,6 +23,7 @@ import {
 } from '@/lib/types/Control';
 import { TrackLibraryStatus } from '@/lib/types/Track';
 import { StreamDeckId, StreamPopupKind, type StudioSnapshot } from '@/lib/types/Stream';
+import type { RoomCursor } from '@/lib/types/Room';
 import { getStudioDeckLayout } from '@/lib/utils/studioGrid';
 import { useStreamPublisher } from '@/pages/stream/useStreamConnection';
 import {
@@ -56,6 +58,9 @@ function StudioPage() {
     avatarUrl: roomAvatarUrl,
     currentUserId,
     leases,
+    roomCursors,
+    currentUsername,
+    sendRoomPointer,
   } = roomSession;
   const recording = useStudioRecording(engine);
   const { status: recordingStatus, hasPendingSave, stopAndSave } = recording;
@@ -235,7 +240,19 @@ function StudioPage() {
     });
   }, [studioState.decks]);
 
-  const streaming = useStreamPublisher(engine, studioState);
+  const streamCursors = useMemo<RoomCursor[]>(() => {
+    const cursors = [...roomCursors];
+    if (studioState.pointer) {
+      const userId = currentUserId ?? 'stream-owner';
+      cursors.push({
+        userId,
+        username: currentUsername,
+        pointer: studioState.pointer,
+      });
+    }
+    return cursors;
+  }, [currentUserId, currentUsername, roomCursors, studioState.pointer]);
+  const streaming = useStreamPublisher(engine, studioState, streamCursors);
   const { start: startStream, stop: stopStream } = streaming;
   const collabRoomId = roomSession.room?.id;
 
@@ -412,12 +429,20 @@ function StudioPage() {
           if (now - lastPointerUpdate.current < 1000 / 60) return;
           lastPointerUpdate.current = now;
           const bounds = event.currentTarget.getBoundingClientRect();
-          dispatchStudio({ action: StudioActionType.Pointer, value: {
+          const pointer = {
             x: Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)),
             y: Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height)),
-          } });
+          };
+          dispatchStudio({ action: StudioActionType.Pointer, value: pointer });
+          sendRoomPointer(pointer);
         }}
-        />
+        onPointerLeave={() => {
+          dispatchStudio({ action: StudioActionType.Pointer, value: null });
+          sendRoomPointer(null);
+        }}
+      >
+        <RoomCursorOverlay cursors={roomCursors} currentUserId={currentUserId} />
+      </StudioConsoleLayout>
       </ControlSelectionProvider>
     </RoomLeaseProvider>
   );

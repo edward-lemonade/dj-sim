@@ -20,6 +20,12 @@ export type ListedRoomMember = {
   avatarUrl: string;
 };
 
+export type RoomCursor = {
+  userId: string;
+  username: string;
+  pointer: { x: number; y: number };
+};
+
 export type CreatedRoom = {
   id: string;
   code: string;

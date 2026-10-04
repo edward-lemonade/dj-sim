@@ -12,6 +12,7 @@ import {
 } from '@/lib/types/Stream';
 import { endStream, joinStream } from '@/lib/api/StreamsAPI';
 import type { MixerAudioEngine } from '@/hooks/useAudioEngine';
+import type { RoomCursor } from '@/lib/types/Room';
 import { ApiError, axiosClient } from '@/lib/clients/axios';
 import {
   diffStudioSnapshots,
@@ -48,7 +49,11 @@ function eventSocketUrl(connection: StreamConnection): string {
   return url.toString();
 }
 
-export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: StudioSnapshot | null) {
+export function useStreamPublisher(
+  engine: MixerAudioEngine | null,
+  snapshot: StudioSnapshot | null,
+  cursors: RoomCursor[] = [],
+) {
   const [live, setLive] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +67,11 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
   const publisherRetryRef = useRef<number | null>(null);
   const snapshotRef = useRef(snapshot);
   const lastSentSnapshotRef = useRef<StudioSnapshot | null>(null);
+  const lastSentCursorsRef = useRef('');
+  const cursorsRef = useRef(cursors);
+  useEffect(() => {
+    cursorsRef.current = cursors;
+  }, [cursors]);
   const lastCheckpointAtRef = useRef(0);
   useEffect(() => {
     snapshotRef.current = snapshot;
@@ -121,6 +131,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       return;
     }
     socketRef.current = socket;
+    lastSentCursorsRef.current = '';
     socket.addEventListener('message', (message) => {
       const event = JSON.parse(String(message.data)) as StreamEvent;
       if (event.type === StreamEventType.ViewerCount) setViewerCount(event.count ?? 0);
@@ -157,6 +168,13 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       lastSentSnapshotRef.current = snapshotRef.current;
       lastCheckpointAtRef.current = Date.now();
     }
+    const initialCursors = cursorsRef.current;
+    socket.send(JSON.stringify({
+      type: StreamEventType.Cursors,
+      t: engine?.context.currentTime ?? 0,
+      payload: initialCursors,
+    }));
+    lastSentCursorsRef.current = JSON.stringify(initialCursors);
   }, [engine]);
   useEffect(() => {
     connectPublisherRef.current = (streamId) => connectPublisherEvents(streamId);
@@ -264,7 +282,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       if (previous) {
         for (const action of diffStudioSnapshots(previous, current)) {
           if (action.action === StudioActionType.Pointer) {
-            socket.send(JSON.stringify({ type: StreamEventType.Pointer, t: engine?.context.currentTime ?? 0, payload: action.value }));
+            continue;
           } else {
             socket.send(JSON.stringify({ type: StreamEventType.Event, t: engine?.context.currentTime ?? 0, payload: action }));
             if (action.action === StudioActionType.TrackLoad) {
@@ -273,6 +291,16 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
             }
           }
         }
+      }
+      const currentCursors = cursorsRef.current;
+      const serializedCursors = JSON.stringify(currentCursors);
+      if (serializedCursors !== lastSentCursorsRef.current) {
+        socket.send(JSON.stringify({
+          type: StreamEventType.Cursors,
+          t: engine?.context.currentTime ?? 0,
+          payload: currentCursors,
+        }));
+        lastSentCursorsRef.current = serializedCursors;
       }
       lastSentSnapshotRef.current = current;
       if (Date.now() - lastCheckpointAtRef.current >= 1000) {
@@ -303,6 +331,8 @@ export function useStreamViewer(id: string) {
   const [needsAudioGesture, setNeedsAudioGesture] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [remotePointer, setRemotePointer] = useState<{ x: number; y: number } | null>(null);
+  const [cursors, setCursors] = useState<RoomCursor[]>([]);
+  const [hasCursorFeed, setHasCursorFeed] = useState(false);
   const snapshotRef = useRef<StudioSnapshot | null>(null);
   const eventQueueRef = useRef<StreamEvent[]>([]);
   const transportSamplesRef = useRef<Record<StreamDeckId, TransportSample[]>>({
@@ -348,6 +378,8 @@ export function useStreamViewer(id: string) {
     transportSamplesRef.current = { [StreamDeckId.A]: [], [StreamDeckId.B]: [] };
     mixerSamplesRef.current = [];
     pointerSamplesRef.current = [];
+    setCursors([]);
+    setHasCursorFeed(false);
     latestTimelineRef.current = null;
     setSnapshot(null);
     const oldSocket = socketRef.current;
@@ -376,6 +408,8 @@ export function useStreamViewer(id: string) {
           transportSamplesRef.current = { [StreamDeckId.A]: [], [StreamDeckId.B]: [] };
           mixerSamplesRef.current = [];
           pointerSamplesRef.current = [];
+          setCursors([]);
+          setHasCursorFeed(false);
           latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
@@ -409,6 +443,8 @@ export function useStreamViewer(id: string) {
           transportSamplesRef.current = { [StreamDeckId.A]: [], [StreamDeckId.B]: [] };
           mixerSamplesRef.current = [];
           pointerSamplesRef.current = [];
+          setCursors([]);
+          setHasCursorFeed(false);
           latestTimelineRef.current = null;
           if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
           setStatus(StreamConnectionStatus.Ended);
@@ -417,6 +453,9 @@ export function useStreamViewer(id: string) {
         } else if (event.type === StreamEventType.Error) {
           setStatus(StreamConnectionStatus.Error);
           setError('The stream connection returned an error.');
+        } else if (event.type === StreamEventType.Cursors && Array.isArray(event.payload)) {
+          setCursors(event.payload as RoomCursor[]);
+          setHasCursorFeed(true);
         } else if (
           (event.type === StreamEventType.Joined ||
             event.type === StreamEventType.Snapshot ||
@@ -482,6 +521,8 @@ export function useStreamViewer(id: string) {
           transportSamplesRef.current = { A: [], B: [] };
           mixerSamplesRef.current = [];
           pointerSamplesRef.current = [];
+          setCursors([]);
+          setHasCursorFeed(false);
           latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
@@ -498,6 +539,8 @@ export function useStreamViewer(id: string) {
           transportSamplesRef.current = { A: [], B: [] };
           mixerSamplesRef.current = [];
           pointerSamplesRef.current = [];
+          setCursors([]);
+          setHasCursorFeed(false);
           latestTimelineRef.current = null;
           setRemotePointer(null);
           setSnapshot(null);
@@ -527,6 +570,10 @@ export function useStreamViewer(id: string) {
       snapshotRef.current = null;
       eventQueueRef.current = [];
       transportSamplesRef.current = { A: [], B: [] };
+      mixerSamplesRef.current = [];
+      pointerSamplesRef.current = [];
+      setCursors([]);
+      setHasCursorFeed(false);
       latestTimelineRef.current = null;
       setStatus(StreamConnectionStatus.Error);
       setError(cause instanceof Error ? cause.message : 'Could not join this stream.');
@@ -665,5 +712,17 @@ export function useStreamViewer(id: string) {
     setNeedsAudioGesture(false);
   }, []);
 
-  return { session, snapshot, status, error, needsAudioGesture, viewerCount, remotePointer, connect, playAudio };
+  return {
+    session,
+    snapshot,
+    status,
+    error,
+    needsAudioGesture,
+    viewerCount,
+    remotePointer,
+    cursors,
+    hasCursorFeed,
+    connect,
+    playAudio,
+  };
 }

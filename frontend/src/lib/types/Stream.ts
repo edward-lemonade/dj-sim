@@ -1,5 +1,5 @@
 import type { MixerState } from '@/hooks/useMixerState';
-import type { RoomVisibility } from './Room';
+import type { RoomCursor, RoomVisibility } from './Room';
 import type { WaveformOverview } from './Track';
 
 export enum StreamDeckId {
@@ -16,6 +16,7 @@ export enum StreamEventType {
   Snapshot = 'snapshot',
   Event = 'event',
   Pointer = 'pointer',
+  Cursors = 'cursors',
   ViewerCount = 'viewer-count',
   Ended = 'ended',
   Error = 'error',
@@ -96,6 +97,6 @@ export type StreamEvent = {
   type: StreamEventType;
   seq?: number;
   t?: number;
-  payload?: StudioSnapshot | Record<string, unknown>;
+  payload?: StudioSnapshot | Record<string, unknown> | RoomCursor[];
   count?: number;
 };

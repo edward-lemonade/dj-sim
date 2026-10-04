@@ -7,6 +7,7 @@ import { fetchTrackAudioBlob } from '@/lib/api/TrackAPI';
 import {
   RoomTransportCommandType,
   type CreatedRoom,
+  type RoomCursor,
   type RoomTrack,
   type RoomVisibility,
 } from '@/lib/types/Room';
@@ -27,6 +28,7 @@ type StudioCommand = StudioAction | { action: StudioActionType.Hydrate; value: S
 type MixerChangeAction = Extract<StudioAction, { action: StudioActionType.MixerChange }>;
 
 const ROOM_MIXER_UPDATE_INTERVAL_MS = 33;
+const ROOM_POINTER_UPDATE_INTERVAL_MS = 1000 / 30;
 
 export type RoomTransportCommand = {
   id: string;
@@ -229,12 +231,14 @@ export function useStudioRoom({
   const location = useLocation();
   const navigate = useNavigate();
   const avatarUrl = user?.imageUrl ?? '';
+  const username = user?.username ?? user?.firstName ?? 'DJ';
   const [room, setRoom] = useState<CreatedRoom | null>(null);
   const [roomUserId, setRoomUserId] = useState<string | null>(null);
   const [roomLibraryState, setRoomLibraryState] = useState<{ roomId: string; tracks: RoomTrack[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leases, setLeases] = useState<ControlLease[]>([]);
+  const [roomCursors, setRoomCursors] = useState<Record<string, RoomCursor>>({});
   const [transportCommands, setTransportCommands] = useState<Record<StreamDeckId, RoomTransportCommand | null>>({
     [StreamDeckId.A]: null,
     [StreamDeckId.B]: null,
@@ -246,6 +250,9 @@ export function useStudioRoom({
   const studioSnapshotRef = useRef(studioState);
   const pendingMixerEventsRef = useRef<Map<ControlId, MixerChangeAction>>(new Map());
   const mixerEventTimerRef = useRef<number | null>(null);
+  const pointerEventTimerRef = useRef<number | null>(null);
+  const pendingPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPointerSentAtRef = useRef(0);
   const initialIncomingRoom = (location.state as { roomSession?: CreatedRoom } | null)?.roomSession;
   const incomingRoomRef = useRef(initialIncomingRoom);
   const [incomingRoomPending, setIncomingRoomPending] = useState(Boolean(initialIncomingRoom));
@@ -352,6 +359,33 @@ export function useStudioRoom({
     }));
   }, [engine, flushMixerEvents, room?.id]);
 
+  const flushRoomPointer = useCallback(() => {
+    pointerEventTimerRef.current = null;
+    const socket = roomSocketRef.current;
+    if (!roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) {
+      pendingPointerRef.current = null;
+      return;
+    }
+    socket.send(JSON.stringify({
+      type: 'pointer',
+      t: engine?.context.currentTime ?? 0,
+      payload: pendingPointerRef.current,
+    }));
+    pendingPointerRef.current = null;
+    lastPointerSentAtRef.current = performance.now();
+  }, [engine]);
+
+  const sendRoomPointer = useCallback((pointer: { x: number; y: number } | null) => {
+    if (!room?.id) return;
+    pendingPointerRef.current = pointer;
+    if (pointerEventTimerRef.current !== null) return;
+    const delay = Math.max(
+      0,
+      ROOM_POINTER_UPDATE_INTERVAL_MS - (performance.now() - lastPointerSentAtRef.current),
+    );
+    pointerEventTimerRef.current = window.setTimeout(flushRoomPointer, delay);
+  }, [flushRoomPointer, room?.id]);
+
   const roomId = room?.id;
   const loadTrackAudio = useCallback((trackId: string) => (
     roomId ? fetchRoomTrackAudioBlob(roomId, trackId) : fetchTrackAudioBlob(trackId)
@@ -366,9 +400,13 @@ export function useStudioRoom({
           roomSocketRef.current = null;
           roomEventsReadyRef.current = false;
           publishRoomSnapshotsRef.current = false;
+          pendingPointerRef.current = null;
+          if (pointerEventTimerRef.current !== null) window.clearTimeout(pointerEventTimerRef.current);
+          pointerEventTimerRef.current = null;
           setRoom(null);
           setRoomUserId(null);
           setLeases([]);
+          setRoomCursors({});
           socket.close();
           if (endingRoomRef.current) {
             endingRoomRef.current = false;
@@ -395,21 +433,22 @@ export function useStudioRoom({
             if (members) setRoom((current) => current ? { ...current, members } : current);
           }
           if (snapshot) {
-            studioSnapshotRef.current = snapshot;
-            dispatchStudio({ action: StudioActionType.Hydrate, value: snapshot });
+            const localSnapshot = { ...snapshot, pointer: studioSnapshotRef.current.pointer };
+            studioSnapshotRef.current = localSnapshot;
+            dispatchStudio({ action: StudioActionType.Hydrate, value: localSnapshot });
             if (event.type === 'joined') {
               const commandId = String(event.seq ?? Date.now());
               setTransportCommands({
                 [StreamDeckId.A]: {
                   id: `${commandId}:A`, command: RoomTransportCommandType.Sync,
-                  playing: snapshot.decks[StreamDeckId.A].playing,
-                  positionSeconds: snapshot.decks[StreamDeckId.A].positionSeconds,
+                  playing: localSnapshot.decks[StreamDeckId.A].playing,
+                  positionSeconds: localSnapshot.decks[StreamDeckId.A].positionSeconds,
                   receivedAtMs: performance.now(),
                 },
                 [StreamDeckId.B]: {
                   id: `${commandId}:B`, command: RoomTransportCommandType.Sync,
-                  playing: snapshot.decks[StreamDeckId.B].playing,
-                  positionSeconds: snapshot.decks[StreamDeckId.B].positionSeconds,
+                  playing: localSnapshot.decks[StreamDeckId.B].playing,
+                  positionSeconds: localSnapshot.decks[StreamDeckId.B].positionSeconds,
                   receivedAtMs: performance.now(),
                 },
               });
@@ -417,18 +456,18 @@ export function useStudioRoom({
               const receivedAtMs = performance.now();
               setTransportCommands((currentCommands) => ({
                 ...currentCommands,
-                ...(snapshot.decks[StreamDeckId.A].playing ? {
+                ...(localSnapshot.decks[StreamDeckId.A].playing ? {
                   [StreamDeckId.A]: {
                     id: `${event.seq ?? Date.now()}:A`, command: RoomTransportCommandType.Sync, playing: true,
-                    positionSeconds: snapshot.decks[StreamDeckId.A].positionSeconds, receivedAtMs,
+                    positionSeconds: localSnapshot.decks[StreamDeckId.A].positionSeconds, receivedAtMs,
                     platterRevision: currentCommands[StreamDeckId.A]?.platterRevision,
                     platterAngleDegrees: currentCommands[StreamDeckId.A]?.platterAngleDegrees,
                   },
                 } : {}),
-                ...(snapshot.decks[StreamDeckId.B].playing ? {
+                ...(localSnapshot.decks[StreamDeckId.B].playing ? {
                   [StreamDeckId.B]: {
                     id: `${event.seq ?? Date.now()}:B`, command: RoomTransportCommandType.Sync, playing: true,
-                    positionSeconds: snapshot.decks[StreamDeckId.B].positionSeconds, receivedAtMs,
+                    positionSeconds: localSnapshot.decks[StreamDeckId.B].positionSeconds, receivedAtMs,
                     platterRevision: currentCommands[StreamDeckId.B]?.platterRevision,
                     platterAngleDegrees: currentCommands[StreamDeckId.B]?.platterAngleDegrees,
                   },
@@ -442,6 +481,26 @@ export function useStudioRoom({
           setLeases(parseRoomLeases(event.payload));
           return;
         }
+        if (event.type === 'pointer' && event.userId) {
+          const pointer = event.payload as { x: number; y: number } | null;
+          setRoomCursors((currentCursors) => {
+            if (pointer === null) {
+              if (!(event.userId! in currentCursors)) return currentCursors;
+              const nextCursors = { ...currentCursors };
+              delete nextCursors[event.userId!];
+              return nextCursors;
+            }
+            return {
+              ...currentCursors,
+              [event.userId!]: {
+                userId: event.userId!,
+                username: event.username ?? '',
+                pointer,
+              },
+            };
+          });
+          return;
+        }
         if (event.type === 'member-joined' && event.userId) {
           const member = { userId: event.userId, username: event.username ?? '', avatarUrl: event.avatarUrl ?? '' };
           setRoom((current) => current ? {
@@ -451,6 +510,12 @@ export function useStudioRoom({
           return;
         }
         if (event.type === 'member-left' && event.userId) {
+          setRoomCursors((currentCursors) => {
+            if (!(event.userId! in currentCursors)) return currentCursors;
+            const nextCursors = { ...currentCursors };
+            delete nextCursors[event.userId!];
+            return nextCursors;
+          });
           setRoom((current) => current ? {
             ...current,
             members: (current.members ?? []).filter((member) => member.userId !== event.userId),
@@ -509,6 +574,7 @@ export function useStudioRoom({
         roomSocketRef.current = null;
         roomEventsReadyRef.current = false;
         publishRoomSnapshotsRef.current = false;
+        setRoomCursors({});
         setError('Room connection lost. The last shared state is still playing locally.');
       }
     };
@@ -522,6 +588,7 @@ export function useStudioRoom({
     roomSocketRef.current = socket;
     roomEventsReadyRef.current = true;
     publishRoomSnapshotsRef.current = publishSnapshots;
+    setRoomCursors({});
     setRoom(nextRoom);
     setRoomUserId(null);
     setLeases([]);
@@ -532,7 +599,7 @@ export function useStudioRoom({
       socket.send(JSON.stringify({
         type: 'snapshot',
         t: engine?.context.currentTime ?? 0,
-        payload: studioSnapshotRef.current,
+        payload: { ...studioSnapshotRef.current, pointer: null },
       }));
     }
   }, [dispatchStudio, engine, navigate]);
@@ -599,19 +666,26 @@ export function useStudioRoom({
       publishRoomSnapshotsRef.current = false;
       roomSocketRef.current?.close();
       roomSocketRef.current = null;
+      roomEventsReadyRef.current = false;
       setRoom(null);
       setRoomUserId(null);
       setLeases([]);
+      setRoomCursors({});
     } catch (cause) {
       endingRoomRef.current = false;
       setError(cause instanceof Error ? cause.message : 'Could not end the room.');
       publishRoomSnapshotsRef.current = false;
       roomSocketRef.current?.close();
       roomSocketRef.current = null;
+      roomEventsReadyRef.current = false;
       setRoom(null);
       setRoomUserId(null);
       setLeases([]);
+      setRoomCursors({});
     }
+    pendingPointerRef.current = null;
+    if (pointerEventTimerRef.current !== null) window.clearTimeout(pointerEventTimerRef.current);
+    pointerEventTimerRef.current = null;
   }, [room]);
 
   useEffect(() => {
@@ -664,14 +738,17 @@ export function useStudioRoom({
   useEffect(() => () => {
     roomSocketRef.current?.close();
     roomSocketRef.current = null;
+    if (pointerEventTimerRef.current !== null) window.clearTimeout(pointerEventTimerRef.current);
   }, []);
 
   return {
     room,
     roomLibrary,
     leases,
+    roomCursors: Object.values(roomCursors),
     avatarUrl,
     currentUserId: roomUserId,
+    currentUsername: username,
     busy,
     error,
     transportCommands,
@@ -680,6 +757,7 @@ export function useStudioRoom({
     commitMixer,
     sendTransportCommand,
     sendControlLeaseEvent,
+    sendRoomPointer,
     loadTrackAudio,
     startRoom,
     endRoom,

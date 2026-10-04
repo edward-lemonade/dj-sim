@@ -526,6 +526,10 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		if trackID := extractTrackIDFromEjectAction(incoming.Payload); trackID != "" {
 			delete(live.trackOwners, trackID)
 		}
+	case "pointer":
+		if !validRoomPointer(incoming.Payload) {
+			return errors.New("invalid room pointer")
+		}
 	case "control-acquire":
 		var payload struct {
 			ControlID string `json:"controlId"`
@@ -596,6 +600,32 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		}
 	}
 	return nil
+}
+
+func validRoomPointer(payload json.RawMessage) bool {
+	if string(payload) == "null" {
+		return true
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil || len(fields) != 2 {
+		return false
+	}
+	var pointer struct {
+		X float64 `json:"x"`
+		Y float64 `json:"y"`
+	}
+	if _, ok := fields["x"]; !ok {
+		return false
+	}
+	if _, ok := fields["y"]; !ok {
+		return false
+	}
+	if err := json.Unmarshal(payload, &pointer); err != nil {
+		return false
+	}
+	return pointer.X >= 0 && pointer.X <= 1 && pointer.Y >= 0 && pointer.Y <= 1 &&
+		!math.IsNaN(pointer.X) && !math.IsInf(pointer.X, 0) &&
+		!math.IsNaN(pointer.Y) && !math.IsInf(pointer.Y, 0)
 }
 
 func (m *RoomManager) RemoveMember(roomID, userID string) {

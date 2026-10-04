@@ -134,6 +134,47 @@ func TestEndNotifiesConnectedViewers(t *testing.T) {
 	}
 }
 
+func TestStreamCursorUpdatesAreValidatedAndReplayed(t *testing.T) {
+	manager := NewManager()
+	manager.Start("stream-a", "owner-a")
+	if err := manager.Publish("stream-a", "owner-a", Event{
+		Type: "cursors", T: 1, Payload: json.RawMessage(`[{"userId":"member-a","username":"Alice","pointer":{"x":0.25,"y":0.75}}]`),
+	}); err != nil {
+		t.Fatalf("publish cursors: %v", err)
+	}
+	for _, payload := range []string{
+		`[{"userId":"","username":"Alice","pointer":{"x":0.5,"y":0.5}}]`,
+		`[{"userId":"member-a","username":"Alice","pointer":{"x":1.1,"y":0.5}}]`,
+		`[{"userId":"member-a","username":"Alice","pointer":{"x":0.5,"y":0.5}},{"userId":"member-a","username":"Alice","pointer":{"x":0.6,"y":0.6}}]`,
+		`[{"userId":"member-a","username":"Alice","pointer":{"x":0.5,"y":0.5},"extra":true}]`,
+	} {
+		if err := manager.Publish("stream-a", "owner-a", Event{
+			Type: "cursors", T: 1, Payload: json.RawMessage(payload),
+		}); err == nil {
+			t.Errorf("accepted invalid cursor payload %s", payload)
+		}
+	}
+
+	var received []Event
+	_, err := manager.Attach("stream-a", Participant{
+		UserID: "viewer-a", ConnectionID: "viewer-connection",
+		Send: func(event Event) error {
+			received = append(received, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(received) != 2 || received[0].Type != "joined" || received[1].Type != "cursors" ||
+		string(received[1].Payload) != `[{"userId":"member-a","username":"Alice","pointer":{"x":0.25,"y":0.75}}]` {
+		t.Fatalf("viewer events = %#v, want joined then latest cursor event", received)
+	}
+	if err := manager.Publish("stream-a", "owner-a", Event{Type: "cursors", T: 2, Payload: json.RawMessage(`[]`)}); err != nil {
+		t.Fatalf("publish empty cursor list: %v", err)
+	}
+}
+
 func TestLateViewerGetsCurrentSnapshotAndPublisherEventsAreOwnerOnly(t *testing.T) {
 	manager := NewManager()
 	manager.Start("stream-a", "owner-a")

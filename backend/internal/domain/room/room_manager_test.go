@@ -75,6 +75,53 @@ func TestRoomRelayTicketsAreScopedAndSingleUse(t *testing.T) {
 	}
 }
 
+func TestRoomRelayBroadcastsValidatedPointerUpdates(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a")
+	_, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", Username: "Alice", ConnectionID: "owner-connection",
+		Send: func(RoomEvent) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received []RoomEvent
+	_, err = manager.Attach("room-a", RoomParticipant{
+		UserID: "guest", Username: "Bob", ConnectionID: "guest-connection",
+		Send: func(event RoomEvent) error {
+			received = append(received, event)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "pointer", T: 1, Payload: json.RawMessage(`{"x":0.25,"y":0.75}`),
+	}); err != nil {
+		t.Fatalf("publish pointer: %v", err)
+	}
+	pointerEvent := received[len(received)-1]
+	if pointerEvent.Type != "pointer" || pointerEvent.UserID != "owner" || pointerEvent.Username != "Alice" ||
+		string(pointerEvent.Payload) != `{"x":0.25,"y":0.75}` {
+		t.Fatalf("pointer event = %+v", pointerEvent)
+	}
+
+	for _, payload := range []string{`{"x":-0.1,"y":0.5}`, `{"x":0.5,"y":1.1}`, `{"x":0.5,"y":0.5,"z":0}`} {
+		if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+			Type: "pointer", T: 1, Payload: json.RawMessage(payload),
+		}); err == nil {
+			t.Errorf("accepted invalid pointer payload %s", payload)
+		}
+	}
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "pointer", T: 1, Payload: json.RawMessage(`null`),
+	}); err != nil {
+		t.Fatalf("publish pointer leave: %v", err)
+	}
+}
+
 func TestRoomManagerRemoveMemberDoesNotDeadlock(t *testing.T) {
 	manager := NewRoomManager()
 	manager.Ensure("room-a")
