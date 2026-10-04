@@ -119,6 +119,8 @@ function StudioPage() {
       ? ControlId.FxWet
       : 'division' in patch
         ? ControlId.FxDivision
+        : 'type' in patch
+          ? ControlId.FxType
         : changedAssignmentDeck !== null
           ? changedAssignmentDeck === DeckId.A ? ControlId.FxAssignA : ControlId.FxAssignB
           : undefined;

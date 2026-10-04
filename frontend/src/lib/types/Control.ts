@@ -12,6 +12,7 @@ export enum ControlId {
   ChannelBFilter = 'channel.B.filter',
   FxWet = 'fx.wet',
   FxDivision = 'fx.division',
+  FxType = 'fx.type',
   FxAssignA = 'fx.assign.A',
   FxAssignB = 'fx.assign.B',
   TempoMaster = 'mixer.tempo-master',

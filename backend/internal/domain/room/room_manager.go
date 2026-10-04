@@ -882,7 +882,7 @@ func isSupportedControlID(controlID string) bool {
 	case "master.volume",
 		"channel.A.gain", "channel.A.eq.high", "channel.A.eq.mid", "channel.A.eq.low", "channel.A.filter",
 		"channel.B.gain", "channel.B.eq.high", "channel.B.eq.mid", "channel.B.eq.low", "channel.B.filter",
-		"fx.wet", "fx.division", "fx.assign.A", "fx.assign.B", "mixer.tempo-master",
+		"fx.wet", "fx.division", "fx.type", "fx.assign.A", "fx.assign.B", "mixer.tempo-master",
 		"deck.A.platter", "deck.A.tempo", "deck.B.platter", "deck.B.tempo":
 		return true
 	default:

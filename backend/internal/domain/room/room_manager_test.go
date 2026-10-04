@@ -173,12 +173,23 @@ func TestRoomRelayPublishesControlLeaseWithoutDeadlock(t *testing.T) {
 	}
 
 	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
-		Type: "control-acquire", T: 5, Payload: json.RawMessage(`{"controlId":"deck.A.platter"}`),
+		Type: "control-acquire", T: 5, Payload: json.RawMessage(`{"controlId":"fx.type"}`),
+	}); err != nil {
+		t.Fatalf("acquiring FX type lease: %v", err)
+	}
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "event", T: 6, Payload: json.RawMessage(`{"action":"mixer-change","controlId":"fx.type","value":{}}`),
+	}); err != nil {
+		t.Fatalf("publishing leased FX type update: %v", err)
+	}
+
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "control-acquire", T: 7, Payload: json.RawMessage(`{"controlId":"deck.A.platter"}`),
 	}); err != nil {
 		t.Fatalf("acquiring platter lease: %v", err)
 	}
 	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
-		Type: "event", T: 6, Payload: json.RawMessage(`{"action":"transport-command","deck":"A","command":"seek","controlId":"deck.A.platter","platterAngleDegrees":45}`),
+		Type: "event", T: 8, Payload: json.RawMessage(`{"action":"transport-command","deck":"A","command":"seek","controlId":"deck.A.platter","platterAngleDegrees":45}`),
 	}); err != nil {
 		t.Fatalf("publishing leased platter update: %v", err)
 	}

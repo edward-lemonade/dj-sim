@@ -77,11 +77,25 @@ export function EffectsUnit({
   return (
     <div className={cn('flex h-full min-h-0 min-w-0 flex-col items-center justify-center gap-2 px-1 py-2', className)}>
       <div role="group" aria-label="Effect type" className="flex w-full flex-col gap-1">
-        {FX_TYPES.map((type) => (
-          <FxButton key={type} active={value.type === type} onClick={() => onChange({ type })}>
-            {TYPE_LABELS[type]}
-          </FxButton>
-        ))}
+        {FX_TYPES.map((type) => {
+          const locked = isLeasedByOther(ControlId.FxType);
+          const owner = getLeaseOwner(ControlId.FxType);
+          return (
+            <FxButton
+              key={type}
+              active={value.type === type}
+              disabled={locked}
+              label={`Select ${TYPE_LABELS[type]} effect${locked ? ` (controlled by ${owner})` : ''}`}
+              onClick={() => {
+                acquireLease(ControlId.FxType);
+                onChange({ type });
+                releaseLease(ControlId.FxType);
+              }}
+            >
+              {TYPE_LABELS[type]}
+            </FxButton>
+          );
+        })}
       </div>
       <div role="group" aria-label="Effect timing" className="border-t border-white/10 pt-2">
         <Knob

@@ -156,6 +156,8 @@ function mergeMixerControl(current: MixerState, incoming: MixerState, controlId:
       return { ...current, fx: { ...current.fx, wet: incoming.fx.wet } };
     case ControlId.FxDivision:
       return { ...current, fx: { ...current.fx, division: incoming.fx.division } };
+    case ControlId.FxType:
+      return { ...current, fx: { ...current.fx, type: incoming.fx.type } };
     case ControlId.FxAssignA:
       return { ...current, fx: { ...current.fx, assign: { ...current.fx.assign, [AudioDeckId.A]: incoming.fx.assign[AudioDeckId.A] } } };
     case ControlId.FxAssignB:
