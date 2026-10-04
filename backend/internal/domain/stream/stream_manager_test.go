@@ -214,6 +214,29 @@ func TestSnapshotRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestPointerEventsHaveIndependentRateLimit(t *testing.T) {
+	manager := NewManager()
+	manager.Start("stream-a", "owner-a")
+
+	for range 30 {
+		if err := manager.Publish("stream-a", "owner-a", Event{
+			Type: "pointer", T: 1, Payload: json.RawMessage(`{"x":0.5,"y":0.5}`),
+		}); err != nil {
+			t.Fatalf("publish pointer event: %v", err)
+		}
+	}
+	if err := manager.Publish("stream-a", "owner-a", Event{
+		Type: "pointer", T: 1, Payload: json.RawMessage(`{"x":0.5,"y":0.5}`),
+	}); err == nil {
+		t.Fatal("pointer rate limit was not enforced")
+	}
+	if err := manager.Publish("stream-a", "owner-a", Event{
+		Type: "event", T: 1, Payload: json.RawMessage(`{"action":"waveform-view","value":16}`),
+	}); err != nil {
+		t.Fatalf("pointer events consumed the control-event rate limit: %v", err)
+	}
+}
+
 func TestEventValidationRejectsUnknownFieldsAndInvalidValues(t *testing.T) {
 	tests := []struct {
 		name    string

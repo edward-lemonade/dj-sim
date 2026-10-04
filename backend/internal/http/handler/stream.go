@@ -197,10 +197,10 @@ func (h *StreamHandler) Events(c *gin.Context) {
 			}
 			return
 		}
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		if err := manager.Publish(streamID, ticket.UserID, event); err != nil {
 			_ = send(stream.Event{Type: "error", Payload: []byte(`{"message":"invalid stream event"}`)})
-			return
+			continue
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	}
 }

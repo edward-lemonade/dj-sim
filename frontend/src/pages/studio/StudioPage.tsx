@@ -409,7 +409,7 @@ function StudioPage() {
         gridTemplateColumns={gridTemplateColumns}
         onPointerMove={(event) => {
           const now = performance.now();
-          if (now - lastPointerUpdate.current < 50) return;
+          if (now - lastPointerUpdate.current < 1000 / 60) return;
           lastPointerUpdate.current = now;
           const bounds = event.currentTarget.getBoundingClientRect();
           dispatchStudio({ action: StudioActionType.Pointer, value: {

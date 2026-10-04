@@ -44,17 +44,18 @@ type snapshotDeck struct {
 }
 
 type liveSession struct {
-	mu           sync.Mutex
-	ownerID      string
-	seq          uint64
-	snapshotSeq  uint64
-	snapshot     json.RawMessage
-	snapshotTime float64
-	recentEvents []Event
-	participants map[string]Participant
-	viewers      map[string]int
-	rateStarted  time.Time
-	rateCount    int
+	mu               sync.Mutex
+	ownerID          string
+	seq              uint64
+	snapshotSeq      uint64
+	snapshot         json.RawMessage
+	snapshotTime     float64
+	recentEvents     []Event
+	participants     map[string]Participant
+	viewers          map[string]int
+	rateStarted      time.Time
+	rateCount        int
+	pointerRateCount int
 }
 
 type Manager struct {
@@ -208,10 +209,18 @@ func (m *Manager) Publish(streamID, userID string, incoming Event) error {
 	if now.Sub(live.rateStarted) >= time.Second {
 		live.rateStarted = now
 		live.rateCount = 0
+		live.pointerRateCount = 0
 	}
-	live.rateCount++
-	if live.rateCount > 30 {
-		return errors.New("stream event rate exceeded")
+	if incoming.Type == "pointer" {
+		live.pointerRateCount++
+		if live.pointerRateCount > 30 {
+			return errors.New("stream pointer rate exceeded")
+		}
+	} else {
+		live.rateCount++
+		if live.rateCount > 30 {
+			return errors.New("stream event rate exceeded")
+		}
 	}
 	switch incoming.Type {
 	case "snapshot":

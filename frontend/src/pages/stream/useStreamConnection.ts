@@ -27,7 +27,8 @@ import {
   type TransportSample,
 } from './studioState';
 
-const PLAYBACK_RENDER_INTERVAL_MS = 1000 / 30;
+const PLAYBACK_RENDER_INTERVAL_MS = 1000 / 60;
+const PUBLISH_UPDATE_INTERVAL_MS = 1000 / 20;
 
 function isStudioSnapshot(value: unknown): value is StudioSnapshot {
   return typeof value === 'object' && value !== null && 'decks' in value && 'mixer' in value;
@@ -72,7 +73,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       socketRef.current.send(JSON.stringify({
         type: StreamEventType.Snapshot,
         t: engine?.context.currentTime ?? 0,
-        payload: { ...next, pointer: null },
+        payload: next,
       }));
     }
   }, [engine]);
@@ -151,7 +152,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
       socket.send(JSON.stringify({
         type: StreamEventType.Snapshot,
         t: engine?.context.currentTime ?? 0,
-        payload: { ...snapshotRef.current, pointer: null },
+        payload: snapshotRef.current,
       }));
       lastSentSnapshotRef.current = snapshotRef.current;
       lastCheckpointAtRef.current = Date.now();
@@ -278,7 +279,7 @@ export function useStreamPublisher(engine: MixerAudioEngine | null, snapshot: St
         publishSnapshot(current);
         lastCheckpointAtRef.current = Date.now();
       }
-    }, 200);
+    }, PUBLISH_UPDATE_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [engine, live, publishSnapshot]);
 
@@ -435,7 +436,9 @@ export function useStreamViewer(id: string) {
               transportSamplesRef.current[deck].push(snapshotSamples[deck]);
             }
             mixerSamplesRef.current.push({ time, value: event.payload.mixer });
-            if (event.payload.pointer) pointerSamplesRef.current.push({ time, value: event.payload.pointer });
+            if (event.payload.pointer && pointerSamplesRef.current.length === 0) {
+              pointerSamplesRef.current.push({ time, value: event.payload.pointer });
+            }
           } else if (event.type === StreamEventType.Event && event.payload && typeof event.payload === 'object') {
             const action = event.payload as StudioAction;
             if (action.action === StudioActionType.Transport) {
@@ -463,6 +466,11 @@ export function useStreamViewer(id: string) {
             } else if (action.action === StudioActionType.Pointer) {
               pointerSamplesRef.current.push({ time, value: action.value });
             }
+          } else if (event.type === StreamEventType.Pointer) {
+            pointerSamplesRef.current.push({
+              time,
+              value: (event.payload as { x: number; y: number } | null) ?? null,
+            });
           }
         }
       });
@@ -547,7 +555,10 @@ export function useStreamViewer(id: string) {
       while (eventQueueRef.current[0] && (eventQueueRef.current[0].t ?? Infinity) <= presentationTime) {
         const event = eventQueueRef.current.shift()!;
         if ((event.type === StreamEventType.Joined || event.type === StreamEventType.Snapshot) && isStudioSnapshot(event.payload)) {
-          const next = event.payload;
+          const next = {
+            ...event.payload,
+            pointer: event.payload.pointer ?? snapshotRef.current?.pointer ?? null,
+          };
           snapshotRef.current = next;
           setRemotePointer(next.pointer);
           for (const deck of [StreamDeckId.A, StreamDeckId.B]) {
@@ -565,7 +576,6 @@ export function useStreamViewer(id: string) {
           snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, event.payload as StudioAction);
         } else if (event.type === StreamEventType.Pointer) {
           const pointer = (event.payload as { x: number; y: number } | null) ?? null;
-          setRemotePointer(pointer);
           if (snapshotRef.current) {
             snapshotRef.current = reduceStudioSnapshot(snapshotRef.current, {
               action: StudioActionType.Pointer,

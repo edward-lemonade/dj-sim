@@ -532,7 +532,7 @@ export function useStudioRoom({
       socket.send(JSON.stringify({
         type: 'snapshot',
         t: engine?.context.currentTime ?? 0,
-        payload: { ...studioSnapshotRef.current, pointer: null },
+        payload: studioSnapshotRef.current,
       }));
     }
   }, [dispatchStudio, engine, navigate]);
@@ -655,7 +655,7 @@ export function useStudioRoom({
       socket.send(JSON.stringify({
         type: 'snapshot',
         t: engine?.context.currentTime ?? 0,
-        payload: { ...studioSnapshotRef.current, pointer: null },
+        payload: studioSnapshotRef.current,
       }));
     }, 1000);
     return () => window.clearInterval(interval);
