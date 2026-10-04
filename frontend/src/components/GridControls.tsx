@@ -1,3 +1,10 @@
+
+// eslint-disable-next-line react-refresh/only-export-components
+export enum ChevronDirection {
+  Left = 'left',
+  Right = 'right',
+}
+
 const SIZE = 20; // px, buttons are exact squares
 
 export function GridControls({
@@ -36,7 +43,7 @@ export function GridControls({
         title="Move grid lines left (Shift: fine)"
         aria-label="Move grid lines left"
       >
-        <Chevron direction="left" />
+        <Chevron direction={ChevronDirection.Left} />
       </button>
       <div className="w-px self-stretch bg-zinc-700" />
       <button
@@ -48,15 +55,15 @@ export function GridControls({
         title="Move grid lines right (Shift: fine)"
         aria-label="Move grid lines right"
       >
-        <Chevron direction="right" />
+        <Chevron direction={ChevronDirection.Right} />
       </button>
     </div>
   );
 }
 
-function Chevron({ direction }: { direction: 'left' | 'right' }) {
+function Chevron({ direction }: { direction: ChevronDirection }) {
   // Bounding box is nudged 0.5 units toward the open side so it looks centered.
-  const d = direction === 'left' ? 'M13 5 L8 10 L13 15' : 'M7 5 L12 10 L7 15';
+  const d = direction === ChevronDirection.Left ? 'M13 5 L8 10 L13 15' : 'M7 5 L12 10 L7 15';
   return (
     <svg
       width={SIZE}

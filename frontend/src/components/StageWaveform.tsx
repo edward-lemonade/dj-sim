@@ -2,7 +2,7 @@ import { useRef, type CSSProperties } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { BeatGrid } from '@/components/BeatGrid';
 import { CueMarkers } from '@/components/CueMarkers';
-import { BandOptions, WaveformCanvas } from '@/components/WaveformCanvas';
+import { BandOptions, WaveformCanvas, WaveformVariant } from '@/components/WaveformCanvas';
 import { useWaveformZoom, ZOOM_STEP } from '@/hooks/useWaveformZoom';
 import type { TrackPlayer } from '@/hooks/useTrackPlayer';
 import type { ThreeBandPeaks } from '@/lib/utils/threeBandWaveform';
@@ -129,7 +129,7 @@ export function StageWaveform({
         // CDJ readout: playback drives the window; a transform slides it.
         <div style={cdjSliderStyle}>
           <WaveformCanvas
-            variant="zoomed"
+            variant={WaveformVariant.Zoomed}
             bands={bands}
             peaks={peaks}
             interactive={false}
@@ -141,7 +141,7 @@ export function StageWaveform({
         </div>
       ) : (
         <WaveformCanvas
-          variant="zoomed"
+          variant={WaveformVariant.Zoomed}
           bands={bands}
           peaks={peaks}
           interactive

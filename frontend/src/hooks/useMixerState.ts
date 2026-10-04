@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { DECK_IDS, type DeckId } from './useAudioEngine';
-import type { FxState } from '../lib/utils/fxRack';
+import { FxType, type FxState } from '../lib/utils/fxRack';
 
 export type ChannelState = {
   high: number; // [-1, 1], 0 = flat
@@ -52,7 +52,7 @@ function defaultFxAssign(): Record<DeckId, boolean> {
 export function useMixerState() {
   const [state, setState] = useState<MixerState>(() => ({
     channelState: defaultChannelState(),
-    fx: { type: 'echo', division: 1, wet: 0, assign: defaultFxAssign() },
+    fx: { type: FxType.Echo, division: 1, wet: 0, assign: defaultFxAssign() },
     tempoMaster: null,
     master: 0.9,
   }));

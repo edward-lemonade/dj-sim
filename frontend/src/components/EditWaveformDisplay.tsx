@@ -1,8 +1,8 @@
 import { BandOptions } from '@/components/WaveformCanvas';
 import { StageWaveform, WaveformDisplayMode } from '@/components/StageWaveform';
-import type { TrackPlayer } from '@/hooks/useTrackPlayer';
+import { PlayerStatus, type TrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
-import type { Track } from '@/lib/types/Track';
+import type { Track } from '@/lib/types/bruh';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { snapToBeat } from '@/lib/utils/snapToBeat';
 import { MiniWaveform } from './MiniWaveform';
@@ -16,7 +16,7 @@ export function EditWaveformDisplay({
   player: TrackPlayer;
   bands?: BandOptions;
 }) {
-  if (!track || player.status === 'idle') {
+  if (!track || player.status === PlayerStatus.Idle) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center bg-[#101214]">
         <p className="text-sm tracking-wide text-zinc-400">No track loaded</p>
@@ -24,7 +24,7 @@ export function EditWaveformDisplay({
     );
   }
 
-  if (player.status === 'error') {
+  if (player.status === PlayerStatus.Error) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-red-400">
         {player.errorMessage || 'Could not open track'}

@@ -1,6 +1,12 @@
 import { cn } from 'cn';
-import { useSyncedControl } from '@/components/ControlSelection';
-import type { ControlId } from '@/lib/types/Control';
+import { AutomationMode, useSyncedControl } from '@/components/ControlSelection';
+import { ControlReleaseReason, type ControlId } from '@/lib/types/Control';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export enum SliderOrientation {
+  Vertical = 'vertical',
+  Horizontal = 'horizontal',
+}
 
 type VerticalSliderProps = {
   label: string;
@@ -11,14 +17,14 @@ type VerticalSliderProps = {
   step?: number;
   disabled?: boolean;
   className?: string;
-  orientation?: 'vertical' | 'horizontal';
-  automationMode?: 'slider' | 'tempo';
+  orientation?: SliderOrientation;
+  automationMode?: AutomationMode.Slider | AutomationMode.Tempo;
   referenceBpm?: number;
   controlId?: ControlId;
   leaseOwner?: string;
   isLeasedByOther?: boolean;
   onLeaseAcquire?: (controlId: ControlId) => void;
-  onLeaseRelease?: (controlId: ControlId, reason?: string) => void;
+  onLeaseRelease?: (controlId: ControlId, reason?: ControlReleaseReason) => void;
 };
 
 export function Slider({
@@ -30,8 +36,8 @@ export function Slider({
   step = 0.01,
   disabled,
   className,
-  orientation = 'vertical',
-  automationMode = 'slider',
+  orientation = SliderOrientation.Vertical,
+  automationMode = AutomationMode.Slider,
   referenceBpm,
   controlId,
   leaseOwner,
@@ -67,7 +73,7 @@ export function Slider({
         if (controlId && !automating && !isLeasedByOther) onLeaseAcquire?.(controlId);
       }}
       onBlur={() => {
-        if (controlId) onLeaseRelease?.(controlId, 'lost-capture');
+        if (controlId) onLeaseRelease?.(controlId, ControlReleaseReason.LostCapture);
       }}
       onKeyDown={(event) => {
         if (automating || isLeasedByOther) event.preventDefault();
@@ -83,7 +89,7 @@ export function Slider({
         isLeasedByOther && 'rounded ring-2 ring-amber-400 cursor-not-allowed opacity-70',
         className,
       )}
-      style={orientation === 'vertical' ? { writingMode: 'vertical-lr', direction: 'rtl' } : undefined}
+      style={orientation === SliderOrientation.Vertical ? { writingMode: 'vertical-lr', direction: 'rtl' } : undefined}
       {...bind}
     />
   );

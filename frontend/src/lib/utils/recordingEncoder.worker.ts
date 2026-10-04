@@ -2,17 +2,18 @@
 
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder';
 import { AudioSample, AudioSampleSource, Mp3OutputFormat, Output, StreamTarget } from 'mediabunny';
+import { EncoderRequestType, EncoderResponseType } from '@/lib/types/RecordingEncoder';
 
 type WorkerRequest =
-  | { type: 'start'; sampleRate: number }
-  | { type: 'samples'; samples: Float32Array }
-  | { type: 'finish' };
+  | { type: EncoderRequestType.Start; sampleRate: number }
+  | { type: EncoderRequestType.Samples; samples: Float32Array }
+  | { type: EncoderRequestType.Finish };
 
 type WorkerResponse =
-  | { type: 'ready' }
-  | { type: 'chunk'; data: Uint8Array }
-  | { type: 'finalized' }
-  | { type: 'error'; message: string };
+  | { type: EncoderResponseType.Ready }
+  | { type: EncoderResponseType.Chunk; data: Uint8Array }
+  | { type: EncoderResponseType.Finalized }
+  | { type: EncoderResponseType.Error; message: string };
 
 const worker = self as DedicatedWorkerGlobalScope;
 let source: AudioSampleSource | null = null;
@@ -24,9 +25,9 @@ let finishing = false;
 
 worker.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
-  if (request.type === 'start') {
+  if (request.type === EncoderRequestType.Start) {
     void startEncoder(request.sampleRate);
-  } else if (request.type === 'samples') {
+  } else if (request.type === EncoderRequestType.Samples) {
     if (!source || finishing) return;
     pendingSamples = pendingSamples.then(async () => {
       const frames = request.samples.length / 2;
@@ -45,7 +46,7 @@ worker.onmessage = (event: MessageEvent<WorkerRequest>) => {
       }
     });
     pendingSamples.catch(reportError);
-  } else if (request.type === 'finish') {
+  } else if (request.type === EncoderRequestType.Finish) {
     void finishEncoder();
   }
 };
@@ -59,7 +60,7 @@ async function startEncoder(rate: number) {
       new WritableStream({
         write(chunk) {
           const data = chunk.data;
-          worker.postMessage({ type: 'chunk', data } satisfies WorkerResponse, [data.buffer]);
+          worker.postMessage({ type: EncoderResponseType.Chunk, data } satisfies WorkerResponse, [data.buffer]);
         },
       }),
       { chunked: true, chunkSize: 1024 * 1024 },
@@ -71,7 +72,7 @@ async function startEncoder(rate: number) {
     source = new AudioSampleSource({ codec: 'mp3', bitrate: 192_000, bitrateMode: 'constant' });
     output.addAudioTrack(source, { bitrate: 192_000, averageBitrate: 192_000 });
     await output.start();
-    worker.postMessage({ type: 'ready' } satisfies WorkerResponse);
+    worker.postMessage({ type: EncoderResponseType.Ready } satisfies WorkerResponse);
   } catch (error) {
     reportError(error);
   }
@@ -84,7 +85,7 @@ async function finishEncoder() {
     await pendingSamples;
     source.close();
     await output.finalize();
-    worker.postMessage({ type: 'finalized' } satisfies WorkerResponse);
+    worker.postMessage({ type: EncoderResponseType.Finalized } satisfies WorkerResponse);
   } catch (error) {
     reportError(error);
   }
@@ -92,7 +93,7 @@ async function finishEncoder() {
 
 function reportError(error: unknown) {
   worker.postMessage({
-    type: 'error',
+    type: EncoderResponseType.Error,
     message: error instanceof Error ? error.message : 'MP3 encoding failed.',
   } satisfies WorkerResponse);
 }

@@ -1,6 +1,13 @@
 import API_ROUTES from '@/config/api';
 import { axiosClient } from '@/lib/clients/axios';
-import type { CreatedRoom, ListedRoom, RoomJoinResult, RoomLeaveResult, RoomTrack } from '@/lib/types/Room';
+import type {
+  CreatedRoom,
+  ListedRoom,
+  RoomJoinResult,
+  RoomLeaveResult,
+  RoomTrack,
+  RoomVisibility,
+} from '@/lib/types/Room';
 
 export async function listRooms(): Promise<ListedRoom[]> {
   const { data } = await axiosClient.get<ListedRoom[]>(API_ROUTES.room.list);
@@ -30,7 +37,7 @@ export async function fetchRoomTrackAudioBlob(roomId: string, trackId: string): 
 }
 
 export async function createRoom(
-  visibility: 'public' | 'private',
+  visibility: RoomVisibility,
   avatarUrl: string,
 ): Promise<CreatedRoom> {
   const { data } = await axiosClient.post<CreatedRoom>(API_ROUTES.room.create, { visibility, avatarUrl });

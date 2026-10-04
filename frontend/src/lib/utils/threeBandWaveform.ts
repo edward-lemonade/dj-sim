@@ -1,4 +1,4 @@
-import type { WaveformOverview } from '@/lib/types/Track';
+import type { WaveformOverview } from '@/lib/types/bruh';
 
 export const OVERVIEW_COLUMNS = 1600;
 export const HIRES_COLUMNS = 12000;
@@ -342,14 +342,19 @@ function drawBandLayer(
 type BiquadCoeffs = { b0: number; b1: number; b2: number; a1: number; a2: number };
 
 function lowpassCoeffs(freq: number, sampleRate: number): BiquadCoeffs {
-  return biquadCoeffs(freq, sampleRate, 'lowpass');
+  return biquadCoeffs(freq, sampleRate, BiquadFilterType.Lowpass);
 }
 
 function highpassCoeffs(freq: number, sampleRate: number): BiquadCoeffs {
-  return biquadCoeffs(freq, sampleRate, 'highpass');
+  return biquadCoeffs(freq, sampleRate, BiquadFilterType.Highpass);
 }
 
-function biquadCoeffs(freq: number, sampleRate: number, type: 'lowpass' | 'highpass'): BiquadCoeffs {
+enum BiquadFilterType {
+  Lowpass = 'lowpass',
+  Highpass = 'highpass',
+}
+
+function biquadCoeffs(freq: number, sampleRate: number, type: BiquadFilterType): BiquadCoeffs {
   const f0 = Math.min(freq, sampleRate * 0.45);
   const w0 = (2 * Math.PI * f0) / sampleRate;
   const cosw0 = Math.cos(w0);

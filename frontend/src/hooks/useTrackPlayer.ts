@@ -7,8 +7,15 @@ import {
   type ThreeBandPeaks,
 } from '@/lib/utils/threeBandWaveform';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 
-export type PlayerStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'error';
+export enum PlayerStatus {
+  Idle = 'idle',
+  Loading = 'loading',
+  Ready = 'ready',
+  Playing = 'playing',
+  Error = 'error',
+}
 
 export const MIN_PLAYER_ZOOM = 0.001;
 export const MAX_PLAYER_ZOOM = 4096;
@@ -24,7 +31,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
   const enableSpacebar = options?.enableSpacebar !== false;
   const loadAudio = options?.loadAudio ?? fetchTrackAudioBlob;
   const [openedId, setOpenedId] = useState<string | null>(null);
-  const [status, setStatus] = useState<PlayerStatus>('idle');
+  const [status, setStatus] = useState<PlayerStatus>(PlayerStatus.Idle);
   const [currentTime, setCurrentTime] = useState(0);
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -65,7 +72,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
     stopAudio();
     revokeBlob();
     setOpenedId(null);
-    setStatus('idle');
+    setStatus(PlayerStatus.Idle);
     setCurrentTime(0);
     setDurationSeconds(0);
     setZoom(1);
@@ -83,7 +90,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
     stopAudio();
     revokeBlob();
     setOpenedId(trackId);
-    setStatus('loading');
+    setStatus(PlayerStatus.Loading);
     setCurrentTime(0);
     setDurationSeconds(0);
     setZoom(1);
@@ -122,7 +129,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
 
       if (openedIdRef.current !== trackId) return;
       setDurationSeconds(Number.isFinite(audio.duration) ? audio.duration : 0);
-      setStatus('ready');
+      setStatus(PlayerStatus.Ready);
 
       if (!peaksCacheRef.current.has(trackId)) {
         const buffer = await decodeToAudioBuffer(blob);
@@ -138,10 +145,10 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
       }
     } catch (error) {
       if (openedIdRef.current !== trackId) return;
-      setStatus('error');
+      setStatus(PlayerStatus.Error);
       const message = error instanceof Error ? error.message : 'Could not open track';
       setErrorMessage(message);
-      showToast(message, 'error', { dedupeKey: `track-open-${trackId}` });
+      showToast(message, ToastVariant.Error, { dedupeKey: `track-open-${trackId}` });
     }
   }, [audioElement, loadAudio, revokeBlob, showToast, stopAudio]);
 
@@ -160,20 +167,20 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
   const play = useCallback(async () => {
     if (!openedIdRef.current) return;
     await audioElement.play();
-    setStatus('playing');
+    setStatus(PlayerStatus.Playing);
   }, [audioElement]);
 
   const pause = useCallback(() => {
     audioElement.pause();
-    if (openedIdRef.current) setStatus('ready');
+    if (openedIdRef.current) setStatus(PlayerStatus.Ready);
   }, [audioElement]);
 
   const togglePlay = useCallback(() => {
-    if (status === 'playing') {
+    if (status === PlayerStatus.Playing) {
       pause();
       return;
     }
-    if (status === 'ready') {
+    if (status === PlayerStatus.Ready) {
       void play();
     }
   }, [pause, play, status]);
@@ -204,11 +211,13 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
   useEffect(() => {
     const audio = audioElement;
     const onEnded = () => {
-      setStatus('ready');
+      setStatus(PlayerStatus.Ready);
       setCurrentTime(audio.duration || 0);
     };
     const onPause = () => {
-      if (!audio.ended && openedIdRef.current) setStatus((current) => (current === 'playing' ? 'ready' : current));
+      if (!audio.ended && openedIdRef.current) {
+        setStatus((current) => (current === PlayerStatus.Playing ? PlayerStatus.Ready : current));
+      }
     };
     audio.addEventListener('ended', onEnded);
     audio.addEventListener('pause', onPause);
@@ -219,7 +228,7 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
   }, [audioElement]);
 
   useEffect(() => {
-    if (status !== 'playing') return;
+    if (status !== PlayerStatus.Playing) return;
     let frame = 0;
     const tick = () => {
       const time = audioElement.currentTime;
@@ -250,10 +259,10 @@ export function useTrackPlayer(options?: { enableSpacebar?: boolean; loadAudio?:
       if (!openedIdRef.current) return;
       event.preventDefault();
       if (audioElement.paused) {
-        void audioElement.play().then(() => setStatus('playing')).catch(() => undefined);
+        void audioElement.play().then(() => setStatus(PlayerStatus.Playing)).catch(() => undefined);
       } else {
         audioElement.pause();
-        setStatus('ready');
+        setStatus(PlayerStatus.Ready);
       }
     };
     window.addEventListener('keydown', onKey);

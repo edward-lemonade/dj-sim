@@ -1,8 +1,7 @@
 import { SongCover } from '@/components/SongCover';
-import type { Track } from '@/lib/types/Track';
-import type { TrackUpdateFields } from '@/lib/types/Track';
+import { TrackLibraryStatus, type Track, type TrackUpdateFields } from '@/lib/types/bruh';
 import { TransportControls, formatPlaybackTime } from '../../../components/TransportControls';
-import type { TrackPlayer } from '../../../hooks/useTrackPlayer';
+import { PlayerStatus, type TrackPlayer } from '../../../hooks/useTrackPlayer';
 import { CueButtons } from '@/components/CueButtons';
 import { normalizeCues } from '@/lib/types/Cues';
 import { GridControls } from '../../../components/GridControls';
@@ -11,6 +10,7 @@ import { BandOptions } from '@/components/WaveformCanvas';
 import { EditWaveformDisplay } from '@/components/EditWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 
 export function TrackPreview({
   track,
@@ -29,7 +29,7 @@ export function TrackPreview({
     save: (id, beatOffset) => onPatch(id, { beatOffset }),
   });
 
-  if (!track || player.status === 'idle') {
+  if (!track || player.status === PlayerStatus.Idle) {
     return (
       <section className="flex min-h-0 shrink-0 items-center justify-center bg-[#101214] border-b border-slate/40">
         <p className="text-sm tracking-wide text-zinc-400">No track opened</p>
@@ -40,7 +40,7 @@ export function TrackPreview({
   const cues = normalizeCues(track.cues);
   const setCues = (next: Array<number | null>) => {
     void onPatch(track.id, { cues: next }).catch((cause: unknown) => {
-      showToast(cause instanceof Error ? cause.message : 'Could not save cue points.', 'error', {
+      showToast(cause instanceof Error ? cause.message : 'Could not save cue points.', ToastVariant.Error, {
         dedupeKey: `track-cues-${track.id}`,
       });
     });
@@ -48,7 +48,7 @@ export function TrackPreview({
 
   return (
     <section className="flex min-h-0 shrink-0 flex-col bg-mist-900 border-b border-slate/40">
-      {player.status === 'error' ? (
+      {player.status === PlayerStatus.Error ? (
         <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-zinc-400">
           Track preview is unavailable.
         </div>
@@ -65,18 +65,18 @@ export function TrackPreview({
         <CueButtons
           cues={cues}
           currentTime={player.currentTime}
-          disabled={track.libraryStatus !== 'ready'}
+          disabled={track.libraryStatus !== TrackLibraryStatus.Ready}
           onChange={setCues}
         />
-        <GridControls disabled={track.libraryStatus !== 'ready' || track.bpm <= 0} onNudge={nudgeGrid} />
+        <GridControls disabled={track.libraryStatus !== TrackLibraryStatus.Ready || track.bpm <= 0} onNudge={nudgeGrid} />
       </div>
 
       <div className="grid grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)] items-center gap-2 bg-mist-900 px-3 py-2 text-xs">
         <SongCover song={track} className="h-8 w-8 shrink-0 rounded-sm shadow-none" />
-        <MetaField label="Title" value={track.title} disabled={track.libraryStatus !== 'ready'} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
-        <MetaField label="Artist" value={track.artist} disabled={track.libraryStatus !== 'ready'} onCommit={(artist) => onPatch(track.id, { artist })} />
-        <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={track.libraryStatus !== 'ready'} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />
-        <MetaField label="Key" value={track.key} disabled={track.libraryStatus !== 'ready'} onCommit={(key) => onPatch(track.id, { key })} />
+        <MetaField label="Title" value={track.title} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
+        <MetaField label="Artist" value={track.artist} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(artist) => onPatch(track.id, { artist })} />
+        <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />
+        <MetaField label="Key" value={track.key} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(key) => onPatch(track.id, { key })} />
         <div>
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">Time</p>
           <p className="truncate text-zinc-200">{player.durationSeconds > 0 ? formatPlaybackTime(player.durationSeconds, false) : track.duration}</p>

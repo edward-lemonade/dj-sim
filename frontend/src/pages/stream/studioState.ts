@@ -1,4 +1,5 @@
 import type { MixerState } from '@/hooks/useMixerState';
+import { FxType } from '@/lib/utils/fxRack';
 import {
   StreamDeckId,
   StreamPopupKind,
@@ -94,6 +95,7 @@ export function interpolateDeckPosition(
 }
 
 export enum StudioActionType {
+  Hydrate = 'hydrate',
   MixerChange = 'mixer-change',
   TrackLoad = 'track-load',
   Transport = 'transport',
@@ -127,7 +129,7 @@ export function createInitialStudioSnapshot(): StudioSnapshot {
     version: 1,
     mixer: {
       channelState: { 0: channel(), 1: channel() },
-      fx: { type: 'echo', division: 1, wet: 0, assign: { 0: false, 1: false } },
+      fx: { type: FxType.Echo, division: 1, wet: 0, assign: { 0: false, 1: false } },
       tempoMaster: null,
       master: 0.9,
     },

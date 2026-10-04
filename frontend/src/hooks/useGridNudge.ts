@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 
 const STEP = 0.01; // seconds
 const FINE_STEP = 0.001;
@@ -34,7 +35,7 @@ export function useGridNudge({
     if (value === null) return;
     pendingRef.current = null;
     void saveRef.current(id, value).catch((cause: unknown) => {
-      showToast(cause instanceof Error ? cause.message : 'Could not save beat-grid adjustment.', 'error', {
+      showToast(cause instanceof Error ? cause.message : 'Could not save beat-grid adjustment.', ToastVariant.Error, {
         dedupeKey: `track-grid-${id}`,
       });
     }).finally(() => {

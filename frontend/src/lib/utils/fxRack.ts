@@ -1,7 +1,11 @@
 import type { DeckId } from '../../hooks/useAudioEngine';
 
-export const FX_TYPES = ['echo', 'reverb', 'flanger'] as const;
-export type FxType = (typeof FX_TYPES)[number];
+export enum FxType {
+  Echo = 'echo',
+  Reverb = 'reverb',
+  Flanger = 'flanger',
+}
+export const FX_TYPES: readonly FxType[] = [FxType.Echo, FxType.Reverb, FxType.Flanger];
 
 // In beats: echo time = this many beats, flanger sweep = 4x this many beats
 export type FxDivision = number;

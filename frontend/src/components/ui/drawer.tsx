@@ -1,7 +1,11 @@
 import * as React from 'react';
 import { cn } from 'cn';
 
-export type DrawerSide = 'right' | 'bottom';
+// eslint-disable-next-line react-refresh/only-export-components
+export enum DrawerSide {
+  Right = 'right',
+  Bottom = 'bottom',
+}
 
 export type DrawerProps = React.HTMLAttributes<HTMLDivElement> & {
   side?: DrawerSide;
@@ -9,13 +13,18 @@ export type DrawerProps = React.HTMLAttributes<HTMLDivElement> & {
 };
 
 export const Drawer = React.forwardRef<HTMLDivElement, DrawerProps>(
-  ({ side = 'right', open = true, className, ...props }, ref) => {
+  ({ side = DrawerSide.Right, open = true, className, ...props }, ref) => {
     return (
       <div
         ref={ref}
         data-side={side}
         data-open={open}
-        className={cn('drawer-root', side === 'bottom' ? 'drawer-bottom' : 'drawer-side', open ? 'is-open' : 'is-collapsed', className)}
+        className={cn(
+          'drawer-root',
+          side === DrawerSide.Bottom ? 'drawer-bottom' : 'drawer-side',
+          open ? 'is-open' : 'is-collapsed',
+          className,
+        )}
         {...props}
       />
     );

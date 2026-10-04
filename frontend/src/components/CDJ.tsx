@@ -5,11 +5,12 @@ import {
   clampWaveformViewStart,
   MAX_PLAYER_ZOOM,
   MIN_PLAYER_ZOOM,
+  PlayerStatus,
   useTrackPlayer,
 } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
-import type { Track, TrackUpdateFields } from '@/lib/types/Track';
-import type { RoomTrack } from '@/lib/types/Room';
+import type { Track, TrackUpdateFields } from '@/lib/types/bruh';
+import { RoomTransportCommandType, type RoomTrack } from '@/lib/types/Room';
 import type { StreamDeckSnapshot } from '@/lib/types/Stream';
 import { DeckControls } from '@/components/DeckControls';
 import { Platter } from '@/components/Platter';
@@ -19,7 +20,9 @@ import { MetaField } from '@/components/MetaField';
 import { TrackPicker } from './TrackPicker';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/Slider';
-import { useToast } from '@/components/ui/toast';
+import { ToastVariant, useToast } from '@/components/ui/toast';
+import { AutomationMode } from '@/components/ControlSelection';
+import { MetaFieldAlign } from '@/components/MetaField';
 
 const PLATTER_MIN_SIZE = 120;
 // Tempo column plus gap on each side, so the platter stays centered without crowding it
@@ -37,7 +40,7 @@ export type CDJProps = {
   roomTransportCommand?: {
     id: string;
     platterRevision?: string;
-    command: 'play' | 'pause' | 'seek' | 'sync';
+    command: RoomTransportCommandType;
     playing?: boolean;
     positionSeconds?: number;
     platterAngleDegrees?: number;
@@ -62,7 +65,12 @@ export type CDJProps = {
   onSharedZoomBy: (factor: number) => void;
   onBeatCountChange: (id: DeckId, count: number | null) => void;
   onTransportUpdate?: (id: DeckId, state: { playing: boolean; positionSeconds: number; durationSeconds: number; rate: number }) => void;
-  onTransportCommand?: (id: DeckId, command: 'play' | 'pause' | 'seek', positionSeconds?: number, platterAngleDegrees?: number) => void;
+  onTransportCommand?: (
+    id: DeckId,
+    command: RoomTransportCommandType.Play | RoomTransportCommandType.Pause | RoomTransportCommandType.Seek,
+    positionSeconds?: number,
+    platterAngleDegrees?: number,
+  ) => void;
   onPopupChange?: (id: DeckId, open: boolean) => void;
 };
 
@@ -107,7 +115,9 @@ export function CDJ({
     return {
       ...localPlayer,
       openedId: track?.id ?? null,
-      status: track ? readOnlyState.playing ? 'playing' as const : 'ready' as const : 'idle' as const,
+      status: track
+        ? readOnlyState.playing ? PlayerStatus.Playing : PlayerStatus.Ready
+        : PlayerStatus.Idle,
       currentTime,
       durationSeconds,
       zoom,
@@ -176,28 +186,34 @@ export function CDJ({
       pendingRoomTransportCommandRef.current = roomTransportCommand;
     }
     const pendingTransport = pendingRoomTransportCommandRef.current;
-    if (!pendingTransport || readOnlyState || !track || !player.audioElement.src || (player.status !== 'ready' && player.status !== 'playing')) return;
+    if (
+      !pendingTransport
+      || readOnlyState
+      || !track
+      || !player.audioElement.src
+      || (player.status !== PlayerStatus.Ready && player.status !== PlayerStatus.Playing)
+    ) return;
 
     const audio = player.audioElement;
-    const isAdvancing = pendingTransport.command === 'play'
-      || (pendingTransport.command === 'sync' && pendingTransport.playing === true);
+    const isAdvancing = pendingTransport.command === RoomTransportCommandType.Play
+      || (pendingTransport.command === RoomTransportCommandType.Sync && pendingTransport.playing === true);
     const loadDelaySeconds = isAdvancing
       ? Math.max(0, performance.now() - pendingTransport.receivedAtMs) / 1000
       : 0;
     const positionSeconds = typeof pendingTransport.positionSeconds === 'number'
       ? pendingTransport.positionSeconds + loadDelaySeconds
       : undefined;
-    const seekThreshold = pendingTransport.command === 'seek' ? 0.01 : 0.75;
+    const seekThreshold = pendingTransport.command === RoomTransportCommandType.Seek ? 0.01 : 0.75;
     if (
       typeof positionSeconds === 'number' && Number.isFinite(positionSeconds) &&
       Math.abs(audio.currentTime - positionSeconds) > seekThreshold
     ) {
       player.seek(positionSeconds);
     }
-    const shouldPlay = pendingTransport.command === 'play'
-      || (pendingTransport.command === 'sync' && pendingTransport.playing === true);
-    const shouldPause = pendingTransport.command === 'pause'
-      || (pendingTransport.command === 'sync' && pendingTransport.playing === false);
+    const shouldPlay = pendingTransport.command === RoomTransportCommandType.Play
+      || (pendingTransport.command === RoomTransportCommandType.Sync && pendingTransport.playing === true);
+    const shouldPause = pendingTransport.command === RoomTransportCommandType.Pause
+      || (pendingTransport.command === RoomTransportCommandType.Sync && pendingTransport.playing === false);
     if (shouldPlay && audio.paused) {
       void player.play().catch((cause: unknown) => {
         console.warn('Could not follow room playback', cause);
@@ -249,7 +265,10 @@ export function CDJ({
   }, [player.zoom, player.durationSeconds, track?.id, track?.bpm, sharedBeatsPerView, readOnlyState]);
 
   const cues = normalizeCues(track?.cues);
-  const transportDisabled = !track || player.status === 'idle' || player.status === 'loading' || player.status === 'error';
+  const transportDisabled = !track
+    || player.status === PlayerStatus.Idle
+    || player.status === PlayerStatus.Loading
+    || player.status === PlayerStatus.Error;
   const cueSlotsFull = cues.every((slot) => slot !== null);
   // BPM after applying the tempo adjustment — this is what the MetaField
   // below displays, not the raw tempo percentage.
@@ -268,7 +287,7 @@ export function CDJ({
     if (index < 0) return;
     next[index] = Math.round(player.currentTime * 1000) / 1000;
     void onPatch(track.id, { cues: next }).catch((cause: unknown) => {
-      showToast(cause instanceof Error ? cause.message : 'Could not save cue points.', 'error', {
+      showToast(cause instanceof Error ? cause.message : 'Could not save cue points.', ToastVariant.Error, {
         dedupeKey: `track-cues-${track.id}`,
       });
     });
@@ -276,12 +295,12 @@ export function CDJ({
 
   const handleScratchStart = () => {
     if (!engine || readOnlyState || transportDisabled) return;
-    wasPlayingRef.current = player.status === 'playing';
+    wasPlayingRef.current = player.status === PlayerStatus.Playing;
     setLocalPlatterOverrideRevision(roomTransportCommand?.platterRevision);
     player.setInteracting(true);
     // Pause element playback while scratch grains use the decoded buffer.
     if (wasPlayingRef.current) {
-      onTransportCommand?.(deckId, 'pause', player.currentTime);
+      onTransportCommand?.(deckId, RoomTransportCommandType.Pause, player.currentTime);
       player.pause();
     }
   };
@@ -297,7 +316,7 @@ export function CDJ({
     const now = performance.now();
     if (now - lastScratchRoomSentAtRef.current >= 33) {
       lastScratchRoomSentAtRef.current = now;
-      onTransportCommand?.(deckId, 'seek', next, angleDegrees);
+      onTransportCommand?.(deckId, RoomTransportCommandType.Seek, next, angleDegrees);
     }
   };
 
@@ -307,10 +326,10 @@ export function CDJ({
     const shouldResume = wasPlayingRef.current;
     wasPlayingRef.current = false;
     if (!readOnlyState) {
-      onTransportCommand?.(deckId, 'seek', player.currentTime, angleDegrees);
+      onTransportCommand?.(deckId, RoomTransportCommandType.Seek, player.currentTime, angleDegrees);
     }
     if (!readOnlyState && shouldResume) {
-      onTransportCommand?.(deckId, 'play', player.currentTime);
+      onTransportCommand?.(deckId, RoomTransportCommandType.Play, player.currentTime);
       void player.play();
     }
   };
@@ -364,7 +383,7 @@ export function CDJ({
           <MetaField
             label="Tempo:"
             value={effectiveBpm.toFixed(2)}
-            align='center'
+            align={MetaFieldAlign.Center}
             disabled
             onCommit={async () => {}}
           />
@@ -376,7 +395,7 @@ export function CDJ({
             onChange={onTempoChange}
             disabled={readOnlyState !== undefined || tempoFollowing}
             label={label ? `Deck ${label} tempo` : 'Tempo'}
-            automationMode="tempo"
+            automationMode={AutomationMode.Tempo}
             referenceBpm={track?.bpm ?? 0}
             className="max-h-72 min-h-0 w-8 flex-1 cursor-pointer accent-zinc-200"
           />

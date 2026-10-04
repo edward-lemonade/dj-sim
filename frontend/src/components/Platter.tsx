@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import type { Track } from '@/lib/types/Track';
+import type { Track } from '@/lib/types/bruh';
 import { DeckId } from '../hooks/useAudioEngine';
-import type { ControlId } from '@/lib/types/Control';
+import type { ControlId, ControlReleaseReason } from '@/lib/types/Control';
 
 // Audio-seconds moved per full platter rotation while scratching.
 const SECONDS_PER_REVOLUTION = 1.8;
@@ -54,7 +54,7 @@ export function Platter({
   leaseOwner?: string;
   isLeasedByOther?: boolean;
   onLeaseAcquire?: (controlId: ControlId) => void;
-  onLeaseRelease?: (controlId: ControlId, reason?: string) => void;
+  onLeaseRelease?: (controlId: ControlId, reason?: ControlReleaseReason) => void;
 }) {
   const ringRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ lastAngle: number; lastTime: number } | null>(null);

@@ -1,4 +1,5 @@
 import type { MixerState } from '@/hooks/useMixerState';
+import type { RoomVisibility } from './Room';
 import type { WaveformOverview } from './Track';
 
 export enum StreamDeckId {
@@ -36,7 +37,7 @@ export type ListedStreamRoomMember = {
 
 export type ListedStreamRoom = {
   id: string;
-  visibility: 'public' | 'private';
+  visibility: RoomVisibility;
   members: ListedStreamRoomMember[];
   memberCount: number;
   capacity: number;

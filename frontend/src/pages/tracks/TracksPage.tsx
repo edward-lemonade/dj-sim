@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Track } from '@/lib/types/Track';
+import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 import { TrackLibrary } from './components/TrackLibrary';
 import { TrackPreview } from './components/TrackPreview';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
@@ -17,7 +17,7 @@ function TracksPage() {
       void player.close();
       return;
     }
-    if (song.libraryStatus !== 'ready' && song.libraryStatus !== 'analyzing') return;
+    if (song.libraryStatus !== TrackLibraryStatus.Ready && song.libraryStatus !== TrackLibraryStatus.Analyzing) return;
     setSelectedId(song.id);
     void player.open(song.id);
   };

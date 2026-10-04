@@ -1,5 +1,5 @@
 import { useCallback, useRef, useEffect } from 'react';
-import type { ControlId } from '@/lib/types/Control';
+import type { ControlId, ControlReleaseReason } from '@/lib/types/Control';
 
 const LEASE_RENEWAL_MS = 10000;
 
@@ -30,7 +30,7 @@ export function useControlLease(
     renewalTimersRef.current.set(controlId, timer);
   }, [currentUserId, emitEvent]);
 
-  const releaseLease = useCallback((controlId: ControlId, reason?: string) => {
+  const releaseLease = useCallback((controlId: ControlId, reason?: ControlReleaseReason) => {
     if (!activeLeasesRef.current.has(controlId)) return;
 
     const timer = renewalTimersRef.current.get(controlId);

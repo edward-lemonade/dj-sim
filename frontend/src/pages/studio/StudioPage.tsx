@@ -11,15 +11,20 @@ import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { clamp, DECK_IDS, DeckId } from '../../hooks/useAudioEngine';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
-import type { Track } from '@/lib/types/Track';
+import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 import { normalizeCues } from '@/lib/types/Cues';
 import { StreamDeckId, StreamPopupKind, type StreamDeckSnapshot, type StudioSnapshot } from '@/lib/types/Stream';
-import type { CreatedRoom, RoomTrack } from '@/lib/types/Room';
+import {
+  RoomTransportCommandType,
+  type CreatedRoom,
+  type RoomTrack,
+  type RoomVisibility,
+} from '@/lib/types/Room';
 import { ENV } from '@/config/env';
 import { createRoom, fetchRoomTrackAudioBlob, getRoomLibrary, leaveRoom } from '@/lib/api/RoomsAPI';
 import { fetchTrackAudioBlob } from '@/lib/api/TrackAPI';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
-import { useStudioRecording } from '../../hooks/useStudioRecording';
+import { RecordingStatus, useStudioRecording } from '../../hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
 import { useStreamPublisher } from '@/pages/stream/useStreamConnection';
 import {
@@ -51,11 +56,11 @@ function roomSocketUrl(room: CreatedRoom): string {
   return url.toString();
 }
 
-type StudioCommand = StudioAction | { action: 'hydrate'; value: StudioSnapshot };
+type StudioCommand = StudioAction | { action: StudioActionType.Hydrate; value: StudioSnapshot };
 type RoomTransportCommand = {
   id: string;
   platterRevision?: string;
-  command: 'play' | 'pause' | 'seek' | 'sync';
+  command: RoomTransportCommandType;
   playing?: boolean;
   positionSeconds?: number;
   platterAngleDegrees?: number;
@@ -64,13 +69,16 @@ type RoomTransportCommand = {
 type RoomTransportCommandPayload = {
   action: 'transport-command';
   deck: StreamDeckId;
-  command: 'play' | 'pause' | 'seek';
+  command:
+    | RoomTransportCommandType.Play
+    | RoomTransportCommandType.Pause
+    | RoomTransportCommandType.Seek;
   positionSeconds?: number;
   platterAngleDegrees?: number;
 };
 
 function reduceStudio(state: StudioSnapshot, command: StudioCommand): StudioSnapshot {
-  if (command.action === 'hydrate') return command.value;
+  if (command.action === StudioActionType.Hydrate) return command.value;
   return reduceStudioSnapshot(state, command);
 }
 
@@ -98,7 +106,11 @@ function isRoomTransportCommand(value: unknown): value is RoomTransportCommandPa
   const command = value as Partial<RoomTransportCommandPayload>;
   return command.action === 'transport-command'
     && (command.deck === StreamDeckId.A || command.deck === StreamDeckId.B)
-    && (command.command === 'play' || command.command === 'pause' || command.command === 'seek')
+    && (
+      command.command === RoomTransportCommandType.Play
+      || command.command === RoomTransportCommandType.Pause
+      || command.command === RoomTransportCommandType.Seek
+    )
     && (command.platterAngleDegrees === undefined || Number.isFinite(command.platterAngleDegrees));
 }
 
@@ -215,7 +227,7 @@ function trackFromSnapshot(track: StreamDeckSnapshot['track']): Track | null {
     ...track,
     duration: `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, '0')}`,
     coverLabel: '',
-    libraryStatus: 'ready',
+    libraryStatus: TrackLibraryStatus.Ready,
   };
 }
 
@@ -232,7 +244,7 @@ function trackFromRoomLibrary(track: RoomTrack): Track {
     duration: '0:00',
     coverLabel: '',
     coverUrl: track.coverUrl,
-    libraryStatus: 'ready',
+    libraryStatus: TrackLibraryStatus.Ready,
   };
 }
 
@@ -249,7 +261,8 @@ function StudioPage() {
   const engine = useAudioEngine(studioState.mixer);
   const recording = useStudioRecording(engine);
   const { status: recordingStatus, hasPendingSave, stopAndSave } = recording;
-  const shouldBlockExit = recordingStatus === 'recording' || (recordingStatus === 'error' && hasPendingSave);
+  const shouldBlockExit = recordingStatus === RecordingStatus.Recording
+    || (recordingStatus === RecordingStatus.Error && hasPendingSave);
   const navigationBlocker = useBlocker(shouldBlockExit);
   const autoSaveNavigation = useRef(false);
   const loadedTrackIds = useMemo<Record<DeckId, string | null>>(() => ({
@@ -281,13 +294,13 @@ function StudioPage() {
   const applyingRemoteRef = useRef(false);
   const studioSnapshotRef = useRef(studioState);
   const commitStudio = useCallback((command: StudioCommand) => {
-    if (command.action === 'hydrate') {
+    if (command.action === StudioActionType.Hydrate) {
       studioSnapshotRef.current = command.value;
     } else {
       studioSnapshotRef.current = reduceStudioSnapshot(studioSnapshotRef.current, command);
     }
     dispatchStudio(command);
-    if (command.action === 'hydrate' || applyingRemoteRef.current) return;
+    if (command.action === StudioActionType.Hydrate || applyingRemoteRef.current) return;
     const socket = roomSocketRef.current;
     if (!roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
     socket.send(JSON.stringify({
@@ -346,7 +359,8 @@ function StudioPage() {
 
   useEffect(() => {
     const shouldAutoSave =
-      recordingStatus === 'recording' || (recordingStatus === 'error' && hasPendingSave);
+      recordingStatus === RecordingStatus.Recording
+      || (recordingStatus === RecordingStatus.Error && hasPendingSave);
     if (navigationBlocker.state !== 'blocked' || !shouldAutoSave || autoSaveNavigation.current) {
       if (navigationBlocker.state === 'blocked' && !shouldAutoSave) {
         navigationBlocker.proceed();
@@ -367,7 +381,7 @@ function StudioPage() {
   // Auto-load the first N ready tracks into the N decks, in DECK_IDS order.
   useEffect(() => {
     if (collabRoom || incomingRoomRef.current) return;
-    const next = library.songs.filter((song) => song.libraryStatus === 'ready');
+    const next = library.songs.filter((song) => song.libraryStatus === TrackLibraryStatus.Ready);
     let cancelled = false;
 
     const syncTracks = async () => {
@@ -418,7 +432,10 @@ function StudioPage() {
   const collabRoomId = collabRoom?.id;
   const sendRoomTransportCommand = useCallback((
     deck: DeckId,
-    command: 'play' | 'pause' | 'seek',
+    command:
+      | RoomTransportCommandType.Play
+      | RoomTransportCommandType.Pause
+      | RoomTransportCommandType.Seek,
     positionSeconds?: number,
     platterAngleDegrees?: number,
   ) => {
@@ -519,18 +536,18 @@ function StudioPage() {
           }
           if (snapshot) {
             studioSnapshotRef.current = snapshot;
-            dispatchStudio({ action: 'hydrate', value: snapshot });
+            dispatchStudio({ action: StudioActionType.Hydrate, value: snapshot });
             if (event.type === 'joined') {
               const commandId = String(event.seq ?? Date.now());
               setRoomTransportCommands({
                 [StreamDeckId.A]: {
-                  id: `${commandId}:A`, command: 'sync',
+                  id: `${commandId}:A`, command: RoomTransportCommandType.Sync,
                   playing: snapshot.decks[StreamDeckId.A].playing,
                   positionSeconds: snapshot.decks[StreamDeckId.A].positionSeconds,
                   receivedAtMs: performance.now(),
                 },
                 [StreamDeckId.B]: {
-                  id: `${commandId}:B`, command: 'sync',
+                  id: `${commandId}:B`, command: RoomTransportCommandType.Sync,
                   playing: snapshot.decks[StreamDeckId.B].playing,
                   positionSeconds: snapshot.decks[StreamDeckId.B].positionSeconds,
                   receivedAtMs: performance.now(),
@@ -543,7 +560,7 @@ function StudioPage() {
                 ...currentCommands,
                 ...(snapshot.decks[StreamDeckId.A].playing ? {
                   [StreamDeckId.A]: {
-                    id: `${commandId}:A`, command: 'sync', playing: true,
+                    id: `${commandId}:A`, command: RoomTransportCommandType.Sync, playing: true,
                     positionSeconds: snapshot.decks[StreamDeckId.A].positionSeconds, receivedAtMs,
                     platterRevision: currentCommands[StreamDeckId.A]?.platterRevision,
                     platterAngleDegrees: currentCommands[StreamDeckId.A]?.platterAngleDegrees,
@@ -551,7 +568,7 @@ function StudioPage() {
                 } : {}),
                 ...(snapshot.decks[StreamDeckId.B].playing ? {
                   [StreamDeckId.B]: {
-                    id: `${commandId}:B`, command: 'sync', playing: true,
+                    id: `${commandId}:B`, command: RoomTransportCommandType.Sync, playing: true,
                     positionSeconds: snapshot.decks[StreamDeckId.B].positionSeconds, receivedAtMs,
                     platterRevision: currentCommands[StreamDeckId.B]?.platterRevision,
                     platterAngleDegrees: currentCommands[StreamDeckId.B]?.platterAngleDegrees,
@@ -589,8 +606,10 @@ function StudioPage() {
             deck: command.deck,
             value: {
               ...current,
-              playing: command.command === 'play' ? true : command.command === 'pause' ? false : current.playing,
-              positionSeconds: command.command === 'seek' && Number.isFinite(command.positionSeconds)
+              playing: command.command === RoomTransportCommandType.Play
+                ? true
+                : command.command === RoomTransportCommandType.Pause ? false : current.playing,
+              positionSeconds: command.command === RoomTransportCommandType.Seek && Number.isFinite(command.positionSeconds)
                 ? command.positionSeconds!
                 : current.positionSeconds,
             },
@@ -651,7 +670,7 @@ function StudioPage() {
     }
   }, [engine, navigate]);
 
-  const startCollabRoom = useCallback(async (visibility: 'public' | 'private') => {
+  const startCollabRoom = useCallback(async (visibility: RoomVisibility) => {
     setCollabBusy(true);
     setCollabError(null);
     endingRoomRef.current = false;
@@ -799,7 +818,7 @@ function StudioPage() {
     return () => window.removeEventListener('pointerdown', handler);
   }, [engine]);
 
-  const ready = library.songs.filter((song) => song.libraryStatus === 'ready');
+  const ready = library.songs.filter((song) => song.libraryStatus === TrackLibraryStatus.Ready);
   const roomLibraryTracks = roomLibrary.map(trackFromRoomLibrary);
   const availableTracks = [
     ...ready,

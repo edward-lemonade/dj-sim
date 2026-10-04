@@ -1,14 +1,14 @@
 import type { ReactNode } from 'react';
 import { cn } from 'cn';
-import { Knob } from '@/components/Knob';
-import { Slider } from '@/components/Slider';
+import { Knob, KnobLabelPosition, KnobSize } from '@/components/Knob';
+import { Slider, SliderOrientation } from '@/components/Slider';
 import { DECK_IDS, DeckId } from '../hooks/useAudioEngine';
-import { FX_TYPES, type FxState, type FxType } from '../lib/utils/fxRack';
+import { FX_TYPES, FxType, type FxState } from '../lib/utils/fxRack';
 
 const TYPE_LABELS: Record<FxType, string> = {
-  echo: 'Echo',
-  reverb: 'Reverb',
-  flanger: 'Flanger',
+  [FxType.Echo]: 'Echo',
+  [FxType.Reverb]: 'Reverb',
+  [FxType.Flanger]: 'Flanger',
 };
 
 function FxButton({
@@ -61,22 +61,22 @@ export function EffectsUnit({
       </div>
       <div role="group" aria-label="Effect timing" className="border-t border-white/10 pt-2">
         <Knob
-          size="sm"
+          size={KnobSize.Small}
           label="Beats"
           value={value.division}
           min={0.25}
           max={4}
           step={0.01}
           defaultValue={1}
-          disabled={value.type === 'reverb'}
+          disabled={value.type === FxType.Reverb}
           onChange={(division) => onChange({ division })}
-          labelPosition="top"
+          labelPosition={KnobLabelPosition.Top}
         />
       </div>
       <div className="flex flex-col items-center justify-center gap-1 border-t border-white/10 pt-2">
         <span className="text-[9px] font-semibold uppercase tracking-wider text-zinc-500">Level</span>
         <Slider
-          orientation="vertical"
+          orientation={SliderOrientation.Vertical}
           label="Effect level"
           value={value.wet}
           onChange={(wet) => onChange({ wet })}

@@ -13,6 +13,18 @@ import { createPortal } from 'react-dom';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
 
+// eslint-disable-next-line react-refresh/only-export-components
+export enum AutomationUnit {
+  Beats = 'beats',
+  Seconds = 'seconds',
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export enum AutomationMode {
+  Knob = 'knob',
+  Slider = 'slider',
+  Tempo = 'tempo',
+}
 type Control = {
   label: string;
   value: number;
@@ -23,8 +35,12 @@ type Control = {
   referenceBpm?: number;
 };
 
-type AutomationUnit = 'beats' | 'seconds';
-type AutomationMode = 'knob' | 'slider' | 'tempo';
+enum AutomationEndpoint {
+  Low = 'low',
+  Mid = 'mid',
+  High = 'high',
+  Custom = 'custom',
+}
 type AutomationPopupState = { id: string; x: number; y: number } | null;
 
 type SelectionApi = {
@@ -131,7 +147,7 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
       if (!control || !Number.isFinite(target) || !Number.isFinite(duration) || duration <= 0) return;
       stopAutomation(id);
       const startValue = control.value;
-      const endValue = control.automationMode === 'tempo' ? target : clamp(target, control.min, control.max);
+      const endValue = control.automationMode === AutomationMode.Tempo ? target : clamp(target, control.min, control.max);
       let elapsed = 0;
       let previousTime: number | null = null;
       const animation = { frameId: 0 };
@@ -149,7 +165,7 @@ export function ControlSelectionProvider({ children, bpm = 0 }: { children: Reac
         if (automations.current.get(id) !== animation) return;
         if (previousTime !== null) {
           const deltaSeconds = (now - previousTime) / 1000;
-          elapsed += unit === 'beats' ? deltaSeconds * bpmRef.current / 60 : deltaSeconds;
+          elapsed += unit === AutomationUnit.Beats ? deltaSeconds * bpmRef.current / 60 : deltaSeconds;
         }
         previousTime = now;
         const progress = Math.min(1, elapsed / duration);
@@ -257,31 +273,33 @@ function AutomationPopup({
   onClose: () => void;
   onStart: (target: number, duration: number, unit: AutomationUnit) => void;
 }) {
-  const [endpoint, setEndpoint] = useState<'low' | 'mid' | 'high' | 'custom'>('high');
+  const [endpoint, setEndpoint] = useState<AutomationEndpoint>(AutomationEndpoint.High);
   const [customValue, setCustomValue] = useState('');
-  const [unit, setUnit] = useState<AutomationUnit>('beats');
+  const [unit, setUnit] = useState<AutomationUnit>(AutomationUnit.Beats);
   const [duration, setDuration] = useState('4');
   const customTarget = Number(customValue);
   const parsedDuration = Number(duration);
-  const mode = control.automationMode ?? 'slider';
+  const mode = control.automationMode ?? AutomationMode.Slider;
   const referenceBpm = control.referenceBpm ?? 0;
-  const rangeMin = mode === 'knob' ? -100 : mode === 'slider' ? 0 : referenceBpm * (1 + control.min / 100);
-  const rangeMax = mode === 'knob' ? 100 : mode === 'slider' ? 100 : referenceBpm * (1 + control.max / 100);
+  const rangeMin = mode === AutomationMode.Knob ? -100 : mode === AutomationMode.Slider ? 0 : referenceBpm * (1 + control.min / 100);
+  const rangeMax = mode === AutomationMode.Knob ? 100 : mode === AutomationMode.Slider ? 100 : referenceBpm * (1 + control.max / 100);
   const toControlValue = (value: number) => {
-    if (mode === 'tempo') return (value / referenceBpm - 1) * 100;
-    if (mode === 'knob') return control.min + ((value + 100) / 200) * (control.max - control.min);
+    if (mode === AutomationMode.Tempo) return (value / referenceBpm - 1) * 100;
+    if (mode === AutomationMode.Knob) return control.min + ((value + 100) / 200) * (control.max - control.min);
     return control.min + (value / 100) * (control.max - control.min);
   };
-  const endpointValue = endpoint === 'low' ? rangeMin : endpoint === 'mid' ? (rangeMin + rangeMax) / 2 : rangeMax;
-  const target = toControlValue(endpoint === 'custom' ? customTarget : endpointValue);
-  const customValueIsValid = mode === 'tempo'
+  const endpointValue = endpoint === AutomationEndpoint.Low
+    ? rangeMin
+    : endpoint === AutomationEndpoint.Mid ? (rangeMin + rangeMax) / 2 : rangeMax;
+  const target = toControlValue(endpoint === AutomationEndpoint.Custom ? customTarget : endpointValue);
+  const customValueIsValid = mode === AutomationMode.Tempo
     ? referenceBpm > 0 && customTarget > 0
     : customTarget >= rangeMin && customTarget <= rangeMax;
   const canStart = Number.isFinite(target)
-    && (endpoint !== 'custom' || (customValue.trim() !== '' && customValueIsValid))
+    && (endpoint !== AutomationEndpoint.Custom || (customValue.trim() !== '' && customValueIsValid))
     && Number.isFinite(parsedDuration)
     && parsedDuration > 0
-    && (unit !== 'beats' || bpm > 0);
+    && (unit !== AutomationUnit.Beats || bpm > 0);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -305,7 +323,7 @@ function AutomationPopup({
         <fieldset>
           <legend className="mb-0.5 text-[9px] uppercase tracking-wider text-zinc-400">Ending value</legend>
           <div className="grid grid-cols-4 gap-1">
-            {(['low', 'mid', 'high'] as const).map((option) => (
+            {[AutomationEndpoint.Low, AutomationEndpoint.Mid, AutomationEndpoint.High].map((option) => (
               <button
                 key={option}
                 type="button"
@@ -322,17 +340,17 @@ function AutomationPopup({
             <input
               type="text"
               inputMode="decimal"
-              aria-label={`${control.label} custom ending value${mode === 'tempo' ? ' in BPM' : ''}`}
-              placeholder={mode === 'tempo' ? 'BPM' : 'Custom'}
+              aria-label={`${control.label} custom ending value${mode === AutomationMode.Tempo ? ' in BPM' : ''}`}
+              placeholder={mode === AutomationMode.Tempo ? 'BPM' : 'Custom'}
               value={customValue}
-              onFocus={() => setEndpoint('custom')}
+              onFocus={() => setEndpoint(AutomationEndpoint.Custom)}
               onChange={(event) => {
                 setCustomValue(event.target.value);
-                setEndpoint('custom');
+                setEndpoint(AutomationEndpoint.Custom);
               }}
               className={cn(
                 'h-6 min-w-0 w-full border bg-[#0b0d10] px-0 text-center text-[9px] leading-none text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-orange-400',
-                endpoint === 'custom' ? 'border-orange-400 bg-orange-400/15 text-orange-200' : '',
+                endpoint === AutomationEndpoint.Custom ? 'border-orange-400 bg-orange-400/15 text-orange-200' : '',
               )}
             />
           </div>
@@ -340,7 +358,7 @@ function AutomationPopup({
         <fieldset className="mt-2">
           <legend className="mb-1 text-[9px] uppercase tracking-wider text-zinc-400">Ramp time</legend>
           <div className="grid grid-cols-2 gap-1">
-            {(['beats', 'seconds'] as const).map((option) => (
+            {[AutomationUnit.Beats, AutomationUnit.Seconds].map((option) => (
               <button
                 key={option}
                 type="button"
@@ -356,12 +374,12 @@ function AutomationPopup({
             ))}
           </div>
           <label className="mt-1.5 block text-[9px] uppercase tracking-wider text-zinc-400">
-            Duration {unit === 'beats' ? `(${bpm > 0 ? `${bpm.toFixed(1)} BPM` : 'BPM unavailable'})` : '(seconds)'}
+            Duration {unit === AutomationUnit.Beats ? `(${bpm > 0 ? `${bpm.toFixed(1)} BPM` : 'BPM unavailable'})` : '(seconds)'}
             <input
               type="number"
               value={duration}
               min="0.1"
-              step={unit === 'beats' ? '0.25' : '0.1'}
+              step={unit === AutomationUnit.Beats ? '0.25' : '0.1'}
               onChange={(event) => setDuration(event.target.value)}
               className="mt-1 h-6 w-full border bg-[#0b0d10] px-2 text-[9px] text-zinc-100 outline-none focus:border-orange-400"
             />
@@ -391,7 +409,7 @@ export function useSyncedControl({
   max,
   onChange,
   disabled,
-  automationMode = 'slider',
+  automationMode = AutomationMode.Slider,
   referenceBpm,
 }: Control & { disabled?: boolean }) {
   const context = useContext(SelectionContext);

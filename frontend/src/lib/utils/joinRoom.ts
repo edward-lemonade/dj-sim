@@ -1,5 +1,5 @@
 import { ApiError } from '@/lib/clients/axios';
-import type { CreatedRoom, RoomJoinResult } from '@/lib/types/Room';
+import { RoomStatus, type CreatedRoom, type RoomJoinResult } from '@/lib/types/Room';
 
 export const PENDING_ROOM_CODE_KEY = 'dj-sim.pendingRoomCode';
 export const PENDING_PUBLIC_ROOM_KEY = 'dj-sim.pendingPublicRoomId';
@@ -36,7 +36,7 @@ export function createdRoomFromJoin(joined: RoomJoinResult, fallbackCode = ''): 
     code: joined.code || fallbackCode,
     visibility: joined.room.visibility,
     capacity: joined.room.capacity,
-    status: 'active',
+    status: RoomStatus.Active,
     createdAt: joined.room.createdAt,
     eventUrl: joined.eventUrl,
     eventTicket: joined.eventTicket,

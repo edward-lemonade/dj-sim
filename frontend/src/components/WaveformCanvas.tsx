@@ -2,11 +2,24 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { drawMonoWaveform, drawRgbWaveform, type ThreeBandPeaks } from '@/lib/utils/threeBandWaveform';
 
+// eslint-disable-next-line react-refresh/only-export-components
+export enum WaveformVariant {
+  Zoomed = 'zoomed',
+  Overview = 'overview',
+  Mini = 'mini',
+}
+
 export enum BandOptions {Triple, Single}
+
+enum WaveformInteractionMode {
+  Pan = 'pan',
+  Seek = 'seek',
+  Viewport = 'viewport',
+}
 
 type WaveformCanvasProps = {
   peaks: ThreeBandPeaks | null;
-  variant: 'zoomed' | 'overview' | 'mini';
+  variant: WaveformVariant;
   bands?: BandOptions;
   viewStart?: number;
   viewEnd?: number;
@@ -46,7 +59,7 @@ export function WaveformCanvas({
   const ignoreNextScroll = useRef(false);
   const [containerWidth, setContainerWidth] = useState(0);
   const dragRef = useRef<{
-    mode: 'pan' | 'seek' | 'viewport';
+    mode: WaveformInteractionMode;
     lastX: number;
     moved: boolean;
     startView: number;
@@ -58,20 +71,20 @@ export function WaveformCanvas({
   // wheel-pan, scroll-sync), and only while interactive. A non-interactive zoomed
   // canvas (CDJ mode) renders as a plain <canvas>, sized by its parent, with its
   // view window driven entirely by the viewStart/viewEnd props.
-  const showScrollUI = variant === 'zoomed' && interactive;
+  const showScrollUI = variant === WaveformVariant.Zoomed && interactive;
 
   const redraw = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const full = variant !== 'zoomed';
-    const useRgb = (bands ?? (variant === 'zoomed' ? BandOptions.Triple : BandOptions.Single)) === BandOptions.Triple;
+    const full = variant !== WaveformVariant.Zoomed;
+    const useRgb = (bands ?? (variant === WaveformVariant.Zoomed ? BandOptions.Triple : BandOptions.Single)) === BandOptions.Triple;
     const draw = useRgb ? drawRgbWaveform : drawMonoWaveform;
-    const resolution = variant === 'mini' ? 3 : variant === 'overview' ? 2 : 1;
+    const resolution = variant === WaveformVariant.Mini ? 3 : variant === WaveformVariant.Overview ? 2 : 1;
     const opts = {
-      showViewport: variant === 'overview',
+      showViewport: variant === WaveformVariant.Overview,
       viewportStart: viewStart,
       viewportEnd: viewEnd,
-      background: variant === 'mini' ? '#15181d' : '#0b0d10',
+      background: variant === WaveformVariant.Mini ? '#15181d' : '#0b0d10',
       resolution,
       allowOutOfBoundsWindow: full ? false : allowOutOfBoundsWindow,
     };
@@ -155,7 +168,7 @@ export function WaveformCanvas({
     const rect = canvas.getBoundingClientRect();
     const x = Math.min(Math.max(0, clientX - rect.left), rect.width);
     const local = rect.width === 0 ? 0 : x / rect.width;
-    if (variant === 'zoomed') {
+    if (variant === WaveformVariant.Zoomed) {
       return viewStart + local * Math.max(1e-6, viewEnd - viewStart);
     }
     return local;
@@ -169,9 +182,11 @@ export function WaveformCanvas({
         if (!interactive || !peaks) return;
         (event.currentTarget as HTMLCanvasElement).setPointerCapture(event.pointerId);
         onInteractionChange?.(true);
-        const mode = variant === 'zoomed' ? 'pan' : variant === 'overview' ? 'viewport' : 'seek';
+        const mode = variant === WaveformVariant.Zoomed
+          ? WaveformInteractionMode.Pan
+          : variant === WaveformVariant.Overview ? WaveformInteractionMode.Viewport : WaveformInteractionMode.Seek;
         dragRef.current = { mode, lastX: event.clientX, moved: false, startView: viewStart };
-        if (variant === 'mini') onSeek?.(fractionAt(event.clientX));
+        if (variant === WaveformVariant.Mini) onSeek?.(fractionAt(event.clientX));
       }}
       onPointerMove={(event) => {
         const drag = dragRef.current;
@@ -181,18 +196,18 @@ export function WaveformCanvas({
         const canvas = canvasRef.current;
         if (!canvas) return;
         const rect = canvas.getBoundingClientRect();
-        if (drag.mode === 'pan' && onViewChange) {
+        if (drag.mode === WaveformInteractionMode.Pan && onViewChange) {
           const width = viewEnd - viewStart;
           const delta = rect.width === 0 ? 0 : -(dx / rect.width) * width;
           const nextStart = viewRef.current.viewStart + delta;
           viewRef.current.viewStart = nextStart;
           onViewChange(nextStart, zoom);
-        } else if (drag.mode === 'viewport' && onViewChange) {
+        } else if (drag.mode === WaveformInteractionMode.Viewport && onViewChange) {
           const delta = rect.width === 0 ? 0 : (dx / rect.width);
           const nextStart = viewRef.current.viewStart + delta;
           viewRef.current.viewStart = nextStart;
           onViewChange(nextStart, zoom);
-        } else if (drag.mode === 'seek') {
+        } else if (drag.mode === WaveformInteractionMode.Seek) {
           onSeek?.(fractionAt(event.clientX));
         }
         drag.lastX = event.clientX;
@@ -204,7 +219,7 @@ export function WaveformCanvas({
         if (!drag) return;
         if (!drag.moved) {
           onSeek?.(fractionAt(event.clientX));
-        } else if (drag.mode === 'viewport') {
+        } else if (drag.mode === WaveformInteractionMode.Viewport) {
           onSeek?.(viewStart + (viewEnd - viewStart) / 2);
         }
       }}

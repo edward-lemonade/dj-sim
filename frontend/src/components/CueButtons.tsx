@@ -1,10 +1,16 @@
 import { CUE_COLORS, CUE_LABELS } from "@/lib/types/Cues";
 
+// eslint-disable-next-line react-refresh/only-export-components
+export enum CueButtonMode {
+  Edit = 'edit',
+  Jump = 'jump',
+}
+
 export function CueButtons({
   cues,
   currentTime,
   disabled,
-  mode = 'edit',
+  mode = CueButtonMode.Edit,
   size = 18,
   onChange,
   onCueClick,
@@ -12,7 +18,7 @@ export function CueButtons({
   cues: Array<number | null>;
   currentTime: number;
   disabled?: boolean;
-  mode?: 'edit' | 'jump';
+  mode?: CueButtonMode;
   size?: number;
   onChange?: (next: Array<number | null>) => void;
   onCueClick?: (index: number) => void;
@@ -28,21 +34,21 @@ export function CueButtons({
       {CUE_LABELS.map((label, i) => {
         const set = cues[i] !== null;
         const color = CUE_COLORS[i];
-        const jumpDisabled = mode === 'jump' && !set;
+        const jumpDisabled = mode === CueButtonMode.Jump && !set;
         return (
           <button
             key={label}
             type="button"
             disabled={disabled || jumpDisabled}
             onClick={() => {
-              if (mode === 'jump') {
+              if (mode === CueButtonMode.Jump) {
                 if (set) onCueClick?.(i);
                 return;
               }
               toggle(i);
             }}
             title={
-              mode === 'jump'
+              mode === CueButtonMode.Jump
                 ? set
                   ? `Jump to cue ${label}`
                   : `Cue ${label} unset`
@@ -51,7 +57,7 @@ export function CueButtons({
                   : `Set cue ${label} at playhead`
             }
             aria-label={
-              mode === 'jump'
+              mode === CueButtonMode.Jump
                 ? set
                   ? `Jump to cue ${label}`
                   : `Cue ${label} unset`

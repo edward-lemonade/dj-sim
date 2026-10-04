@@ -1,7 +1,8 @@
 import { Pause, Play, SkipBack, SkipForward } from 'lucide-react';
-import { CueButtons } from '@/components/CueButtons';
-import type { TrackPlayer } from '@/hooks/useTrackPlayer';
+import { CueButtonMode, CueButtons } from '@/components/CueButtons';
+import { PlayerStatus, type TrackPlayer } from '@/hooks/useTrackPlayer';
 import type { DeckId } from '@/hooks/useAudioEngine';
+import { RoomTransportCommandType } from '@/lib/types/Room';
 
 const BEAT_STEPS = [1, 2, 4] as const;
 
@@ -13,17 +14,20 @@ export type DeckControlsProps = {
   cueDisabled?: boolean;
   label?: DeckId;
   onCue: () => void;
-  onTransportCommand?: (command: 'play' | 'pause' | 'seek', positionSeconds?: number) => void;
+  onTransportCommand?: (
+    command: RoomTransportCommandType.Play | RoomTransportCommandType.Pause | RoomTransportCommandType.Seek,
+    positionSeconds?: number,
+  ) => void;
 };
 
 export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, onCue, onTransportCommand }: DeckControlsProps) {
-  const playing = player.status === 'playing';
+  const playing = player.status === PlayerStatus.Playing;
   const beatSeconds = bpm > 0 ? 60 / bpm : 0;
   const nudgeDisabled = disabled || beatSeconds <= 0;
 
   const nudge = (beats: number) => {
     if (beatSeconds <= 0) return;
-    onTransportCommand?.('seek', player.currentTime + beats * beatSeconds);
+    onTransportCommand?.(RoomTransportCommandType.Seek, player.currentTime + beats * beatSeconds);
     player.skip(beats * beatSeconds);
   };
 
@@ -47,7 +51,10 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
           type="button"
           disabled={disabled}
           onClick={() => {
-            onTransportCommand?.(playing ? 'pause' : 'play', player.currentTime);
+            onTransportCommand?.(
+              playing ? RoomTransportCommandType.Pause : RoomTransportCommandType.Play,
+              player.currentTime,
+            );
             player.togglePlay();
           }}
           aria-label={playing ? (label ? `Pause deck ${label}` : 'Pause') : label ? `Play deck ${label}` : 'Play'}
@@ -66,7 +73,7 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
           type="button"
           disabled={disabled}
           onClick={() => {
-            onTransportCommand?.('seek', 0);
+            onTransportCommand?.(RoomTransportCommandType.Seek, 0);
             player.jumpStart();
           }}
           aria-label={label ? `Deck ${label} go to start` : 'Go to start'}
@@ -113,7 +120,7 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
           type="button"
           disabled={disabled}
           onClick={() => {
-            onTransportCommand?.('seek', Math.max(0, player.durationSeconds - 0.05));
+            onTransportCommand?.(RoomTransportCommandType.Seek, Math.max(0, player.durationSeconds - 0.05));
             player.jumpEnd();
           }}
           aria-label={label ? `Deck ${label} go to end` : 'Go to end'}
@@ -125,7 +132,7 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
       </div>
 
       <CueButtons
-        mode="jump"
+        mode={CueButtonMode.Jump}
         cues={cues}
         currentTime={player.currentTime}
         disabled={disabled}
@@ -133,7 +140,7 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
         onCueClick={(index) => {
           const time = cues[index];
           if (time != null) {
-            onTransportCommand?.('seek', time);
+            onTransportCommand?.(RoomTransportCommandType.Seek, time);
             player.seek(time);
           }
         }}

@@ -4,7 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
-import type { Track } from '@/lib/types/Track';
+import { ToastVariant } from '@/components/ui/toast';
+import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 import { CDJ } from '@/components/CDJ';
 import { Mixer } from '@/components/Mixer';
 import { StudioConsoleLayout } from '@/components/StudioConsoleLayout';
@@ -26,7 +27,7 @@ function toViewTrack(track: StreamDeckSnapshot['track']): Track | null {
     duration: `${Math.floor(track.durationSeconds / 60)}:${String(Math.floor(track.durationSeconds % 60)).padStart(2, '0')}`,
     coverLabel: '',
     coverUrl: track.coverUrl,
-    libraryStatus: 'ready',
+    libraryStatus: TrackLibraryStatus.Ready,
   };
 }
 
@@ -44,7 +45,7 @@ function StreamPage() {
   const [now, setNow] = useState(0);
   useEffect(() => {
     if (status !== StreamConnectionStatus.Error) return;
-    showToast(error ?? 'Could not connect to this stream.', 'error', {
+    showToast(error ?? 'Could not connect to this stream.', ToastVariant.Error, {
       dedupeKey: `stream-viewer-${streamId}`,
       actions: [
         { label: 'Reconnect', onClick: () => void connect() },
@@ -55,7 +56,7 @@ function StreamPage() {
 
   useEffect(() => {
     if (status === StreamConnectionStatus.Ended) {
-      showToast('This stream has ended.', 'info', {
+      showToast('This stream has ended.', ToastVariant.Info, {
         dedupeKey: `stream-ended-${streamId}`,
         duration: 8000,
         actions: [{ label: 'Back to Community', onClick: () => navigate('/community') }],
@@ -65,7 +66,7 @@ function StreamPage() {
 
   useEffect(() => {
     if (session && status === StreamConnectionStatus.Joining) {
-      showToast('Reconnecting to stream...', 'info', {
+      showToast('Reconnecting to stream...', ToastVariant.Info, {
         dedupeKey: `stream-reconnecting-${streamId}`,
         duration: 2500,
       });
@@ -74,7 +75,7 @@ function StreamPage() {
 
   useEffect(() => {
     if (needsAudioGesture) {
-      showToast('Audio playback needs your permission.', 'info', {
+      showToast('Audio playback needs your permission.', ToastVariant.Info, {
         dedupeKey: `stream-audio-${streamId}`,
         duration: 12000,
         actions: [{ label: 'Play stream', onClick: playAudio }],

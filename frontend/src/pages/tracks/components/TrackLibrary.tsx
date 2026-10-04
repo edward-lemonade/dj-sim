@@ -26,8 +26,9 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { SongCover } from '@/components/SongCover';
-import type { Track } from '@/lib/types/Track';
+import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 import { WaveformCanvas } from '../../../components/WaveformCanvas';
+import { WaveformVariant } from '@/components/WaveformCanvas';
 import { rowShift, useListItemMove } from '../../../hooks/useListItemMove'; // adjust path
 import { trackSeconds } from '@/lib/types/Cues';
 import { CueTicks } from '../../../components/CueTicks';
@@ -47,63 +48,93 @@ const COVER_WIDTH = 40;
 const ACTIONS_WIDTH = 64;
 const FIXED_TOTAL = GRIP_WIDTH + COVER_WIDTH + ACTIONS_WIDTH;
 
-type FixedColumnId = 'grip' | 'cover' | 'actions';
+enum FixedColumnId {
+  Grip = 'grip',
+  Cover = 'cover',
+  Actions = 'actions',
+}
+
 const FIXED_WIDTHS: Record<FixedColumnId, number> = {
-  grip: GRIP_WIDTH,
-  cover: COVER_WIDTH,
-  actions: ACTIONS_WIDTH,
+  [FixedColumnId.Grip]: GRIP_WIDTH,
+  [FixedColumnId.Cover]: COVER_WIDTH,
+  [FixedColumnId.Actions]: ACTIONS_WIDTH,
 };
 
-const FLEX_ORDER = ['title', 'artist', 'bpm', 'key', 'duration', 'waveform'] as const;
-type FlexColumnId = (typeof FLEX_ORDER)[number];
+enum FlexColumnId {
+  Title = 'title',
+  Artist = 'artist',
+  Bpm = 'bpm',
+  Key = 'key',
+  Duration = 'duration',
+  Waveform = 'waveform',
+}
+const FLEX_ORDER: FlexColumnId[] = [
+  FlexColumnId.Title,
+  FlexColumnId.Artist,
+  FlexColumnId.Bpm,
+  FlexColumnId.Key,
+  FlexColumnId.Duration,
+  FlexColumnId.Waveform,
+];
 
 const MIN_WIDTHS: Record<FlexColumnId, number> = {
-  title: 100,
-  artist: 80,
-  bpm: 44,
-  key: 44,
-  duration: 56,
-  waveform: 100,
+  [FlexColumnId.Title]: 100,
+  [FlexColumnId.Artist]: 80,
+  [FlexColumnId.Bpm]: 44,
+  [FlexColumnId.Key]: 44,
+  [FlexColumnId.Duration]: 56,
+  [FlexColumnId.Waveform]: 100,
 };
 
 const DEFAULT_WIDTHS: Record<FlexColumnId, number> = {
-  title: 260,
-  artist: 160,
-  bpm: 56,
-  key: 56,
-  duration: 68,
-  waveform: 200,
+  [FlexColumnId.Title]: 260,
+  [FlexColumnId.Artist]: 160,
+  [FlexColumnId.Bpm]: 56,
+  [FlexColumnId.Key]: 56,
+  [FlexColumnId.Duration]: 68,
+  [FlexColumnId.Waveform]: 200,
 };
 
 // 'custom' is the manual order, i.e. the order of the `songs` array itself.
 // Every other field is a derived view of it.
-type SortField = 'custom' | 'added' | 'title' | 'artist' | 'bpm' | 'key' | 'duration';
-type SortDirection = 'asc' | 'desc';
+enum SortField {
+  Custom = 'custom',
+  Added = 'added',
+  Title = 'title',
+  Artist = 'artist',
+  Bpm = 'bpm',
+  Key = 'key',
+  Duration = 'duration',
+}
+enum SortDirection {
+  Ascending = 'asc',
+  Descending = 'desc',
+}
 
 const SORT_LABELS: Record<SortField, string> = {
-  custom: 'Custom',
-  added: 'Date added',
-  title: 'Title',
-  artist: 'Artist',
-  bpm: 'BPM',
-  key: 'Key',
-  duration: 'Duration',
+  [SortField.Custom]: 'Custom',
+  [SortField.Added]: 'Date added',
+  [SortField.Title]: 'Title',
+  [SortField.Artist]: 'Artist',
+  [SortField.Bpm]: 'BPM',
+  [SortField.Key]: 'Key',
+  [SortField.Duration]: 'Duration',
 };
 
 // null = no value, always sorted to the end
-function sortValue(song: Track, field: Exclude<SortField, 'custom'>): string | number | null {
+function sortValue(song: Track, field: Exclude<SortField, SortField.Custom>): string | number | null {
   switch (field) {
-    case 'added':
+    case SortField.Added:
       return song.createdAt ?? null;
-    case 'title':
+    case SortField.Title:
       return song.title;
-    case 'artist':
+    case SortField.Artist:
       return song.artist;
-    case 'bpm':
+    case SortField.Bpm:
       return song.bpm > 0 ? song.bpm : null;
-    case 'key':
+    case SortField.Key:
       return song.key ? formatKey(song.key, KeyNotationType.Camelot) : null;
-    case 'duration':
+    case SortField.Duration:
       return trackSeconds(song);
   }
 }
@@ -162,8 +193,8 @@ export function TrackLibrary({
   const [keyNotation, setKeyNotation] = useState<KeyNotationType>(KeyNotationType.Camelot);
   const [query, setQuery] = useState('');
   const normalizedQuery = query.trim().toLowerCase();
-  const [sortField, setSortField] = useState<SortField>('custom');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [sortField, setSortField] = useState<SortField>(SortField.Custom);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(SortDirection.Ascending);
   // Memoized so the list handed to useListItemMove keeps the same identity
   // between renders (the hook re-renders this component on every pointer move
   // during a drag).
@@ -175,7 +206,7 @@ export function TrackLibrary({
             song.artist.toLowerCase().includes(normalizedQuery),
         )
       : songs;
-    if (sortField === 'custom') return filtered;
+    if (sortField === SortField.Custom) return filtered;
     return [...filtered].sort((a, b) => {
       const av = sortValue(a, sortField);
       const bv = sortValue(b, sortField);
@@ -184,7 +215,7 @@ export function TrackLibrary({
         typeof av === 'number' && typeof bv === 'number'
           ? av - bv
           : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' });
-      return sortDirection === 'asc' ? result : -result;
+      return sortDirection === SortDirection.Ascending ? result : -result;
     });
   }, [songs, normalizedQuery, sortField, sortDirection]);
 
@@ -207,8 +238,8 @@ export function TrackLibrary({
       const unchanged = next.length === current.length && next.every((song, i) => song.id === current[i].id);
       if (unchanged) return;
       setSongs(next);
-      setSortField('custom');
-      setSortDirection('asc');
+      setSortField(SortField.Custom);
+      setSortDirection(SortDirection.Ascending);
     },
     [setSongs],
   );
@@ -221,7 +252,7 @@ export function TrackLibrary({
     listRef: wrapperRef,
     rowGap: 0,
     listPadding: headerHeight,
-    canDrag: (song) => canReorder && song.libraryStatus !== 'uploading',
+    canDrag: (song) => canReorder && song.libraryStatus !== TrackLibraryStatus.Uploading,
   });
 
   useEffect(() => {
@@ -301,18 +332,18 @@ export function TrackLibrary({
   }, []);
 
   const columns: Array<[FlexColumnId | FixedColumnId, string]> = [
-    ['grip', ''],
-    ['cover', ''],
-    ['title', 'Title'],
-    ['artist', 'Artist'],
-    ['bpm', 'BPM'],
-    ['key', 'Key'],
-    ['duration', 'Duration'],
-    ['waveform', 'Waveform'],
-    ['actions', ''],
+    [FixedColumnId.Grip, ''],
+    [FixedColumnId.Cover, ''],
+    [FlexColumnId.Title, 'Title'],
+    [FlexColumnId.Artist, 'Artist'],
+    [FlexColumnId.Bpm, 'BPM'],
+    [FlexColumnId.Key, 'Key'],
+    [FlexColumnId.Duration, 'Duration'],
+    [FlexColumnId.Waveform, 'Waveform'],
+    [FixedColumnId.Actions, ''],
   ];
 
-  const isFixed = (id: string): id is FixedColumnId => id in FIXED_WIDTHS;
+  const isFixed = (id: string): id is FixedColumnId => Object.values(FixedColumnId).some((column) => column === id);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col border-t bg-[#0d0f12]">
@@ -336,7 +367,10 @@ export function TrackLibrary({
               <select
                 aria-label="Sort by"
                 value={sortField}
-                onChange={(event) => setSortField(event.target.value as SortField)}
+                onChange={(event) => {
+                  const selected = Object.values(SortField).find((field) => field === event.target.value);
+                  if (selected) setSortField(selected);
+                }}
                 className="h-full appearance-none rounded-l-md bg-transparent pl-2 pr-7 text-xs text-zinc-200 outline-none"
               >
                 {Object.entries(SORT_LABELS).map(([value, label]) => (
@@ -354,16 +388,20 @@ export function TrackLibrary({
                   <Button
                     variant="ghost"
                     size="icon-xs"
-                    aria-label={sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-                    disabled={sortField === 'custom'}
+                    aria-label={sortDirection === SortDirection.Ascending ? 'Ascending' : 'Descending'}
+                    disabled={sortField === SortField.Custom}
                     className="h-full w-7 rounded-l-none rounded-r-md text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-100 disabled:opacity-30"
-                    onClick={() => setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                    onClick={() => setSortDirection((current) => (
+                      current === SortDirection.Ascending
+                        ? SortDirection.Descending
+                        : SortDirection.Ascending
+                    ))}
                   />
                 }
               >
-                {sortDirection === 'asc' ? <ArrowUp /> : <ArrowDown />}
+                {sortDirection === SortDirection.Ascending ? <ArrowUp /> : <ArrowDown />}
               </TooltipTrigger>
-              <TooltipContent>{sortDirection === 'asc' ? 'Ascending' : 'Descending'}</TooltipContent>
+              <TooltipContent>{sortDirection === SortDirection.Ascending ? 'Ascending' : 'Descending'}</TooltipContent>
             </Tooltip>
           </div>
           <input
@@ -402,7 +440,7 @@ export function TrackLibrary({
                 return (
                   <th key={id} className="relative truncate border-b px-2 py-1 font-medium">
                     {label}
-                    {id === 'key' && (
+                    {id === FlexColumnId.Key && (
                       <Tooltip>
                         <TooltipTrigger
                           delay={0}
@@ -446,7 +484,7 @@ export function TrackLibrary({
             {visibleSongs.map((song, index) => {
               const selected = selectedId === song.id;
               const opened = openedId === song.id;
-              const analyzing = song.libraryStatus === 'analyzing';
+              const analyzing = song.libraryStatus === TrackLibraryStatus.Analyzing;
               const peaks = peaksFromOverview(song.waveformOverview);
 
               const isDragged = drag?.id === song.id;
@@ -472,8 +510,8 @@ export function TrackLibrary({
                   className={cn(
                     'cursor-default border-b/80',
                     selected ? 'bg-[#2a3340]' : opened ? 'bg-[#1c242e]' : 'hover:bg-[#171c22]',
-                    song.libraryStatus === 'error' && 'bg-red-950/40',
-                    song.libraryStatus === 'uploading' && 'opacity-60',
+                    song.libraryStatus === TrackLibraryStatus.Error && 'bg-red-950/40',
+                    song.libraryStatus === TrackLibraryStatus.Uploading && 'opacity-60',
                     isDragged && 'opacity-30',
                   )}
                 >
@@ -481,7 +519,7 @@ export function TrackLibrary({
                     <button
                       type="button"
                       aria-label={`Reorder ${song.title}`}
-                      disabled={song.libraryStatus === 'uploading' || !canReorder}
+                      disabled={song.libraryStatus === TrackLibraryStatus.Uploading || !canReorder}
                       onPointerDown={(event) => onRowPointerDown(event, song)}
                       className="flex h-6 w-full touch-none cursor-grab items-center justify-center text-zinc-600 hover:text-zinc-300 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"
                     >
@@ -503,11 +541,11 @@ export function TrackLibrary({
                   <td className="px-2 py-0.5 font-mono text-zinc-300">{song.duration}</td>
                   <td className="px-1 py-0.5">
                     <div className="h-6 relative overflow-hidden rounded-sm bg-[#15181d] text-zinc-400">
-                      {song.libraryStatus === 'uploading' ? (
+                      {song.libraryStatus === TrackLibraryStatus.Uploading ? (
                         <CircularProgress percent={song.uploadProgress} />
                       ) : (
                         <>
-                          {peaks ? <WaveformCanvas variant="mini" peaks={peaks} /> : null}
+                          {peaks ? <WaveformCanvas variant={WaveformVariant.Mini} peaks={peaks} /> : null}
                           <CueTicks cues={song.cues} seconds={trackSeconds(song)} />
                         </>
                       )}
@@ -523,7 +561,7 @@ export function TrackLibrary({
                               size="icon-xs"
                               aria-label="Delete track"
                               className="text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
-                              disabled={song.libraryStatus === 'uploading'}
+                              disabled={song.libraryStatus === TrackLibraryStatus.Uploading}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 void onDelete(song);
@@ -543,7 +581,7 @@ export function TrackLibrary({
                               size="icon-xs"
                               aria-label={analyzing ? 'Stop analysis' : 'Analyze track'}
                               className="group text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-100"
-                              disabled={song.libraryStatus === 'uploading'}
+                              disabled={song.libraryStatus === TrackLibraryStatus.Uploading}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 analyzing ? onCancelAnalyze(song) : onAnalyze(song);

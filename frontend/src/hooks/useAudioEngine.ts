@@ -42,7 +42,11 @@ import { FxRack, type FxDivision, type FxState } from "../lib/utils/fxRack";
 
 export enum DeckId {A,B}
 export const DECK_IDS: DeckId[] = [DeckId.A, DeckId.B];
-export type EQBand = 'low' | 'mid' | 'high';
+export enum EQBand {
+  Low = 'low',
+  Mid = 'mid',
+  High = 'high',
+}
 
 export interface AudioEngineOptions {
   /** Time constant (seconds) for param smoothing. Smaller = snappier, more click risk. */
@@ -569,9 +573,9 @@ export function useAudioEngine(state: MixerState): MixerAudioEngine {
   useEffect(() => {
     for (const id of DECK_IDS) {
       const channel = state.channelState[id];
-      engine.setEQ(id, 'low', channel.low);
-      engine.setEQ(id, 'mid', channel.mid);
-      engine.setEQ(id, 'high', channel.high);
+      engine.setEQ(id, EQBand.Low, channel.low);
+      engine.setEQ(id, EQBand.Mid, channel.mid);
+      engine.setEQ(id, EQBand.High, channel.high);
       engine.setFilter(id, channel.filter);
       engine.setChannelVolume(id, channel.volume);
       engine.setTempo(id, channel.tempo);

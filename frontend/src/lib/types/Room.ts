@@ -2,7 +2,14 @@ export enum RoomVisibility {
   Public = 'public',
   Private = 'private',
 }
- 
+
+export enum RoomTransportCommandType {
+  Play = 'play',
+  Pause = 'pause',
+  Seek = 'seek',
+  Sync = 'sync',
+}
+
 export enum RoomStatus {
   Active = 'active',
 }

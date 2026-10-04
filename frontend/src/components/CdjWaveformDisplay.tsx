@@ -1,13 +1,13 @@
 import { BandOptions } from '@/components/WaveformCanvas';
 import { computeCdjVisibleWindow, StageWaveform, WaveformDisplayMode } from '@/components/StageWaveform';
-import type { TrackPlayer } from '@/hooks/useTrackPlayer';
+import { PlayerStatus, type TrackPlayer } from '@/hooks/useTrackPlayer';
 import { normalizeCues } from '@/lib/types/Cues';
-import type { Track } from '@/lib/types/Track';
+import type { Track } from '@/lib/types/bruh';
 import { peaksFromOverview } from '@/lib/utils/threeBandWaveform';
 import { MiniWaveform } from './MiniWaveform';
 
 function getCdjWaveformData(track: Track | null, player: TrackPlayer) {
-  if (!track || player.status === 'idle' || player.status === 'error') return null;
+  if (!track || player.status === PlayerStatus.Idle || player.status === PlayerStatus.Error) return null;
 
   const playhead = player.durationSeconds > 0 ? player.currentTime / player.durationSeconds : undefined;
   const peaks = player.hiResPeaks ?? peaksFromOverview(track.waveformOverview);
@@ -36,7 +36,7 @@ export function CdjWaveformDisplay({
   showZoomControls?: boolean;
   onZoomBy?: (factor: number) => void;
 }) {
-  if (!track || player.status === 'idle') {
+  if (!track || player.status === PlayerStatus.Idle) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center bg-[#101214]">
         <p className="text-sm tracking-wide text-zinc-400">No track loaded</p>
@@ -44,7 +44,7 @@ export function CdjWaveformDisplay({
     );
   }
 
-  if (player.status === 'error') {
+  if (player.status === PlayerStatus.Error) {
     return (
       <div className="flex h-full min-h-0 items-center justify-center text-sm text-red-400">
         {player.errorMessage || 'Could not open track'}

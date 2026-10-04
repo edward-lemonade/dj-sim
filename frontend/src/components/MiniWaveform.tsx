@@ -1,10 +1,10 @@
 import { trackSeconds } from "@/lib/types/Cues";
 import { CueTicks } from "./CueTicks";
 import { Playhead } from "./Playhead";
-import { BandOptions, WaveformCanvas } from "./WaveformCanvas";
+import { BandOptions, WaveformCanvas, WaveformVariant } from "./WaveformCanvas";
 import { peaksFromOverview, type ThreeBandPeaks } from "@/lib/utils/threeBandWaveform";
 import type { TrackPlayer } from "@/hooks/useTrackPlayer";
-import type { Track } from "@/lib/types/Track";
+import type { Track } from "@/lib/types/bruh";
 import { cn } from 'cn';
 
 export function MiniWaveform({
@@ -34,7 +34,7 @@ export function MiniWaveform({
   return (
     <div className={cn('relative overflow-hidden', className)}>
       <WaveformCanvas
-        variant="overview"
+        variant={WaveformVariant.Overview}
         bands={BandOptions.Single}
         peaks={peaksFromOverview(track.waveformOverview) ?? peaks}
         viewStart={effectiveViewStart}

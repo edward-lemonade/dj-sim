@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronsLeft, ChevronsRight, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { TrackPlayer } from '../hooks/useTrackPlayer';
+import { PlayerStatus, type TrackPlayer } from '../hooks/useTrackPlayer';
 
 export function formatPlaybackTime(seconds: number, withCentiseconds = true) {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
@@ -27,8 +27,10 @@ export function TransportControls({
 }: {
   player: TrackPlayer;
 }) {
-  const playing = player.status === 'playing';
-  const disabled = player.status === 'idle' || player.status === 'loading' || player.status === 'error';
+  const playing = player.status === PlayerStatus.Playing;
+  const disabled = player.status === PlayerStatus.Idle
+    || player.status === PlayerStatus.Loading
+    || player.status === PlayerStatus.Error;
   const [draft, setDraft] = useState(formatPlaybackTime(player.currentTime));
 
   useEffect(() => {

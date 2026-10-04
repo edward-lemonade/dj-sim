@@ -9,20 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import type { CreatedRoom } from '@/lib/types/Room';
+import { RoomVisibility, type CreatedRoom } from '@/lib/types/Room';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useToast } from '@/components/ui/toast';
-
-const RecordingStatus = {
-  Idle: 'idle',
-  Starting: 'starting',
-  Recording: 'recording',
-  Saving: 'saving',
-  Error: 'error',
-} as const;
-
-type RecordingStatusValue = (typeof RecordingStatus)[keyof typeof RecordingStatus];
+import { ToastVariant, useToast } from '@/components/ui/toast';
+import { RecordingStatus } from '@/hooks/useStudioRecording';
 
 const controlHover = 'hover:bg-zinc-800 hover:text-zinc-300';
 
@@ -45,7 +36,7 @@ export function StudioTopbar({
   onCreateRoom,
   onEndRoom,
 }: {
-  recordingStatus: RecordingStatusValue;
+  recordingStatus: RecordingStatus;
   recordingError: string | null;
   hasPendingSave: boolean;
   onStartRecording: () => void;
@@ -60,7 +51,7 @@ export function StudioTopbar({
   collabRoom: CreatedRoom | null;
   collabBusy: boolean;
   collabError: string | null;
-  onCreateRoom: (visibility: 'public' | 'private') => Promise<void>;
+  onCreateRoom: (visibility: RoomVisibility) => Promise<void>;
   onEndRoom: () => Promise<void>;
 }) {
   const navigate = useNavigate();
@@ -68,7 +59,7 @@ export function StudioTopbar({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [exiting, setExiting] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
-  const [visibility, setVisibility] = useState<'public' | 'private'>('public');
+  const [visibility, setVisibility] = useState<RoomVisibility>(RoomVisibility.Public);
   const [endingRoom, setEndingRoom] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const exitBusyLabel = recordingStatus === RecordingStatus.Recording
@@ -81,7 +72,7 @@ export function StudioTopbar({
 
   useEffect(() => {
     if (recordingError) {
-      showToast(recordingError, 'error', {
+      showToast(recordingError, ToastVariant.Error, {
         dedupeKey: 'studio-recording',
         actions: hasPendingSave ? [{ label: 'Retry save', onClick: () => void onRetrySave() }] : undefined,
       });
@@ -89,11 +80,11 @@ export function StudioTopbar({
   }, [hasPendingSave, onRetrySave, recordingError, showToast]);
 
   useEffect(() => {
-    if (streamError) showToast(streamError, 'error', { dedupeKey: 'studio-stream' });
+    if (streamError) showToast(streamError, ToastVariant.Error, { dedupeKey: 'studio-stream' });
   }, [showToast, streamError]);
 
   useEffect(() => {
-    if (collabError) showToast(collabError, 'error', { dedupeKey: 'studio-collaboration' });
+    if (collabError) showToast(collabError, ToastVariant.Error, { dedupeKey: 'studio-collaboration' });
   }, [collabError, showToast]);
 
   const confirmExit = async () => {
@@ -294,9 +285,9 @@ export function StudioTopbar({
                   <input
                     type="radio"
                     name="room-visibility"
-                    value="public"
-                    checked={visibility === 'public'}
-                    onChange={() => setVisibility('public')}
+                    value={RoomVisibility.Public}
+                    checked={visibility === RoomVisibility.Public}
+                    onChange={() => setVisibility(RoomVisibility.Public)}
                     className="accent-cyan-400"
                   />
                   <span>Public — listed in Community</span>
@@ -305,9 +296,9 @@ export function StudioTopbar({
                   <input
                     type="radio"
                     name="room-visibility"
-                    value="private"
-                    checked={visibility === 'private'}
-                    onChange={() => setVisibility('private')}
+                    value={RoomVisibility.Private}
+                    checked={visibility === RoomVisibility.Private}
+                    onChange={() => setVisibility(RoomVisibility.Private)}
                     className="accent-cyan-400"
                   />
                   <span>Private — join by code only</span>

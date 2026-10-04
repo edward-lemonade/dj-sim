@@ -1,11 +1,11 @@
 import { TriangleAlert } from 'lucide-react';
 import { cn } from 'cn';
-import type { Track } from '@/lib/types/Track';
+import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 
 export function SongCover({ song, className }: { song: Track; className?: string }) {
   return (
     <div className={cn('relative h-12 w-12 shrink-0 overflow-hidden shadow-sm shadow-violet-500/20', className)}>
-      {song.libraryStatus === 'error' ? (
+      {song.libraryStatus === TrackLibraryStatus.Error ? (
         <div className="flex h-full w-full items-center justify-center bg-red-600 text-white" title={song.errorMessage || 'Upload failed'}>
           <TriangleAlert className="h-5 w-5" aria-hidden="true" />
         </div>

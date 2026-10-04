@@ -1,7 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
 
-type ToastVariant = 'success' | 'error' | 'info';
+// eslint-disable-next-line react-refresh/only-export-components
+export enum ToastVariant {
+  Success = 'success',
+  Error = 'error',
+  Info = 'info',
+}
 
 export type ToastAction = {
   label: string;
@@ -30,15 +35,15 @@ type ToastContextValue = {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const variantStyles: Record<ToastVariant, { icon: typeof Info; className: string }> = {
-  success: {
+  [ToastVariant.Success]: {
     icon: CircleCheck,
     className: 'border-emerald-300/30 bg-emerald-950/95 text-emerald-50',
   },
-  error: {
+  [ToastVariant.Error]: {
     icon: CircleAlert,
     className: 'border-rose-300/30 bg-rose-950/95 text-rose-50',
   },
-  info: {
+  [ToastVariant.Info]: {
     icon: Info,
     className: 'border-cyan-300/30 bg-slate-950/95 text-slate-50',
   },
@@ -48,14 +53,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(0);
 
-  const showToast = useCallback((message: string, variant: ToastVariant = 'info', options: ToastOptions = {}) => {
+  const showToast = useCallback((message: string, variant: ToastVariant = ToastVariant.Info, options: ToastOptions = {}) => {
     const toast: ToastItem = {
       id: ++nextId.current,
       message,
       variant,
       actions: options.actions,
       dedupeKey: options.dedupeKey,
-      duration: options.duration ?? (variant === 'error' ? 7000 : 5000),
+      duration: options.duration ?? (variant === ToastVariant.Error ? 7000 : 5000),
     };
     setToasts((current) => {
       const withoutDuplicate = toast.dedupeKey
@@ -109,7 +114,7 @@ function ToastMessage({
     return () => window.clearTimeout(timer);
   }, [onDismiss, toast.duration, toast.id]);
 
-  const role = toast.variant === 'error' ? 'alert' : 'status';
+  const role = toast.variant === ToastVariant.Error ? 'alert' : 'status';
 
   return (
     <div

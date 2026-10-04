@@ -1,4 +1,4 @@
-import type { Cues } from "./Cues";
+import type { Cues } from './Cues';
 
 export type WaveformOverview = {
   lows: number[];
@@ -22,7 +22,11 @@ export type TrackMeta = {
 // 'pending' until the Lambda reports back; bpm/beatOffset/key are 0/""
 // until then. 'failed' leaves bpm/beatOffset/key untouched (never
 // overwritten with zeros) — see backend UpdateAnalysisByObjectKey.
-export type TrackAnalysisStatus = 'pending' | 'complete' | 'failed';
+export enum TrackAnalysisStatus {
+  Pending = 'pending',
+  Complete = 'complete',
+  Failed = 'failed',
+}
 
 // what the server has
 export type TrackDTO = TrackMeta & {
@@ -45,13 +49,15 @@ export type TrackUpdateFields = Partial<{
 // 'analyzing' = uploaded, row exists, waiting on TrackDTO.analysisStatus
 // to leave 'pending'. Deliberately one status enum (not analysisStatus +
 // libraryStatus side by side) so the UI only ever branches on one field.
-export type TrackLibraryStatus = 'ready' | 'uploading' | 'analyzing' | 'error';
+export enum TrackLibraryStatus {
+  Ready = 'ready',
+  Uploading = 'uploading',
+  Analyzing = 'analyzing',
+  Error = 'error',
+}
+
 export type Track = TrackMeta &
-  Pick<TrackDTO, 
-    'id' | 
-    'duration'
-  > & 
-  {
+  Pick<TrackDTO, 'id' | 'duration'> & {
     createdAt?: string;
     coverLabel: string;
     coverUrl: string | null;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
 import { joinRoomByCode } from '@/lib/api/RoomsAPI';
 import {
@@ -62,7 +63,7 @@ function HomePage() {
 
   useEffect(() => {
     if (!error) return;
-    showToast(error, 'error', {
+    showToast(error, ToastVariant.Error, {
       dedupeKey: 'home-recordings',
       actions: recordings.length === 0
         ? [{
@@ -78,7 +79,7 @@ function HomePage() {
   }, [error, loadRecordings, recordings.length, showToast]);
 
   useEffect(() => {
-    if (joinError) showToast(joinError, 'error', { dedupeKey: 'home-room-join' });
+    if (joinError) showToast(joinError, ToastVariant.Error, { dedupeKey: 'home-room-join' });
   }, [joinError, showToast]);
 
   useEffect(() => {
@@ -180,7 +181,7 @@ function HomePage() {
       writeSessionValue(PENDING_ROOM_CODE_KEY, '');
       navigate('/studio', { state: { roomSession: createdRoomFromJoin(joined, code) } });
     } catch (cause) {
-      showToast(roomJoinErrorMessage(cause), 'error', { dedupeKey: 'home-room-join' });
+      showToast(roomJoinErrorMessage(cause), ToastVariant.Error, { dedupeKey: 'home-room-join' });
     } finally {
       setJoining(false);
     }
@@ -258,7 +259,7 @@ function HomePage() {
       anchor.download = `${recording.title}.mp3`;
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast('Recording download started.', 'success');
+      showToast('Recording download started.', ToastVariant.Success);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not download this recording.');
     }
@@ -279,7 +280,7 @@ function HomePage() {
       const updated = await RecordingsAPI.updateTitle(recording.id, title);
       setRecordings((current) => current.map((item) => item.id === updated.id ? updated : item));
       setEditingId(null);
-      showToast('Recording renamed.', 'success');
+      showToast('Recording renamed.', ToastVariant.Success);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not rename this recording.');
     }
@@ -292,7 +293,7 @@ function HomePage() {
       await RecordingsAPI.remove(recording.id);
       if (playingId === recording.id) stopPlayback();
       setRecordings((current) => current.filter((item) => item.id !== recording.id));
-      showToast('Recording deleted.', 'success');
+      showToast('Recording deleted.', ToastVariant.Success);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not delete this recording.');
     }

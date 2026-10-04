@@ -1,19 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export enum MetaFieldAlign {
+  Left = 'left',
+  Center = 'center',
+}
 
 export function MetaField({
   label,
   value,
   disabled,
   error,
-  align = 'left',
+  align = MetaFieldAlign.Left,
   onCommit,
 }: {
   label: string;
   value: string;
   disabled?: boolean;
   error?: string;
-  align?: 'left' | 'center';
+  align?: MetaFieldAlign;
   onCommit: (value: string) => Promise<unknown>;
 }) {
   const { showToast } = useToast();
@@ -46,12 +53,12 @@ export function MetaField({
       setDraft(valueRef.current);
       const message = cause instanceof Error ? cause.message : `Could not save ${label.toLowerCase()}.`;
       setFieldError(message);
-      showToast(message, 'error', { dedupeKey: `track-field-${label}` });
+      showToast(message, ToastVariant.Error, { dedupeKey: `track-field-${label}` });
     }
   };
 
   return (
-    <label className={`min-w-0 ${align === 'center' ? 'text-center' : ''}`}>
+    <label className={`min-w-0 ${align === MetaFieldAlign.Center ? 'text-center' : ''}`}>
       <p className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</p>
       <input
         value={draft}
@@ -59,7 +66,7 @@ export function MetaField({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => void commit()}
         className={`w-full truncate bg-transparent text-zinc-100 outline-none disabled:text-zinc-500 ${
-          align === 'center' ? 'text-center' : ''
+          align === MetaFieldAlign.Center ? 'text-center' : ''
         }`}
       />
       {(fieldError || error) && <p className="text-[10px] text-red-400">{fieldError || error}</p>}

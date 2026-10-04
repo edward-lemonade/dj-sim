@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { cn } from 'cn';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { Track } from '@/lib/types/Track';
+import { TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 import type { RoomTrack } from '@/lib/types/Room';
 import type { DeckId } from '../hooks/useAudioEngine';
 import { KeyNotationType } from '@/constants/KeyNotation';
@@ -65,7 +65,7 @@ export function TrackPicker({
 
   const sorted = useMemo(() => {
     return tracks
-      .filter((track) => track.libraryStatus === 'ready')
+      .filter((track) => track.libraryStatus === TrackLibraryStatus.Ready)
       .map((track) => ({
         track,
         // rounded so equal-ish tempos tie and the key sort can break them

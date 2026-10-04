@@ -4,19 +4,25 @@ import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/utils/trackMetadata';
 import { analyzeTrack, cancelTrackAnalysis, deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
 import { getCurrentUser, registerUser } from '@/lib/api/UserAPI';
 import { ApiError } from '@/lib/clients/axios';
-import type { TrackDTO, TrackUpdateFields } from '@/lib/types/Track';
-import type { Track } from '@/lib/types/Track';
+import {
+  TrackAnalysisStatus,
+  TrackLibraryStatus,
+  type Track,
+  type TrackDTO,
+  type TrackUpdateFields,
+} from '@/lib/types/bruh';
 import { useTrackUpload } from './useTrackUpload';
 import { normalizeCues } from '@/lib/types/Cues';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 
 export function trackToPool(track: TrackDTO): Track {
   const libraryStatus =
-    track.analysisStatus === 'pending'
-      ? 'analyzing'
-      : track.analysisStatus === 'failed'
-        ? 'error'
-        : 'ready';
+    track.analysisStatus === TrackAnalysisStatus.Pending
+      ? TrackLibraryStatus.Analyzing
+      : track.analysisStatus === TrackAnalysisStatus.Failed
+        ? TrackLibraryStatus.Error
+        : TrackLibraryStatus.Ready;
 
   return {
     id: track.id,
@@ -32,7 +38,7 @@ export function trackToPool(track: TrackDTO): Track {
     waveformOverview: track.waveformOverview ?? null,
     cues: normalizeCues(track.cues),
     libraryStatus,
-    errorMessage: track.analysisStatus === 'failed' ? 'Analysis failed — BPM and key were not detected' : undefined,
+    errorMessage: track.analysisStatus === TrackAnalysisStatus.Failed ? 'Analysis failed — BPM and key were not detected' : undefined,
   };
 }
 
@@ -69,13 +75,13 @@ export function useTrackLibrary() {
         const tracks = await listTracks();
         if (cancelled) return;
         setSongs((current) => {
-          const stillUploading = current.filter((song) => song.libraryStatus === 'uploading');
+          const stillUploading = current.filter((song) => song.libraryStatus === TrackLibraryStatus.Uploading);
           return [...stillUploading, ...tracks.map(trackToPool)];
         });
       } catch (cause) {
         if (!cancelled) {
           setSongs([]);
-          showToast(cause instanceof Error ? cause.message : 'Could not load your tracks.', 'error', {
+          showToast(cause instanceof Error ? cause.message : 'Could not load your tracks.', ToastVariant.Error, {
             dedupeKey: 'tracks-library-load',
           });
         }
@@ -95,7 +101,7 @@ export function useTrackLibrary() {
   // interval on every re-run, so once nothing is 'analyzing' anymore the
   // cleanup fires and no new interval is set — this stops on its own
   // rather than needing separate start/stop plumbing.
-  const hasAnalyzing = songs.some((song) => song.libraryStatus === 'analyzing');
+  const hasAnalyzing = songs.some((song) => song.libraryStatus === TrackLibraryStatus.Analyzing);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !hasAnalyzing) return;
@@ -104,7 +110,7 @@ export function useTrackLibrary() {
       try {
         const tracks = await listTracks();
         setSongs((current) => {
-          const stillUploading = current.filter((song) => song.libraryStatus === 'uploading');
+          const stillUploading = current.filter((song) => song.libraryStatus === TrackLibraryStatus.Uploading);
           return [...stillUploading, ...tracks.map(trackToPool)];
         });
       } catch {
@@ -123,7 +129,7 @@ export function useTrackLibrary() {
   }, []);
 
   const removeSong = useCallback(async (song: Track) => {
-    if (song.libraryStatus === 'uploading') return;
+    if (song.libraryStatus === TrackLibraryStatus.Uploading) return;
 
     // Was previously gated on libraryStatus === 'ready' — 'error' tracks
     // were only removed locally, leaving a ghost row server-side. Any
@@ -133,10 +139,10 @@ export function useTrackLibrary() {
       await deleteTrack(song.id);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Could not delete track';
-      showToast(message, 'error', { dedupeKey: `track-delete-${song.id}` });
+      showToast(message, ToastVariant.Error, { dedupeKey: `track-delete-${song.id}` });
       setSongs((current) =>
         current.map((item) =>
-          item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
+          item.id === song.id ? { ...item, libraryStatus: TrackLibraryStatus.Error, errorMessage: message } : item,
         ),
       );
       return;
@@ -152,11 +158,11 @@ export function useTrackLibrary() {
   }, [showToast]);
 
   const analyzeSong = useCallback(async (song: Track) => {
-    if (song.libraryStatus === 'uploading' || song.libraryStatus === 'analyzing') return;
+    if (song.libraryStatus === TrackLibraryStatus.Uploading || song.libraryStatus === TrackLibraryStatus.Analyzing) return;
 
     setSongs((current) =>
       current.map((item) =>
-        item.id === song.id ? { ...item, libraryStatus: 'analyzing', errorMessage: undefined } : item,
+        item.id === song.id ? { ...item, libraryStatus: TrackLibraryStatus.Analyzing, errorMessage: undefined } : item,
       ),
     );
 
@@ -164,35 +170,35 @@ export function useTrackLibrary() {
       await analyzeTrack(song.id);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Could not start analysis';
-      showToast(message, 'error', { dedupeKey: `track-analysis-${song.id}` });
+      showToast(message, ToastVariant.Error, { dedupeKey: `track-analysis-${song.id}` });
       setSongs((current) =>
         current.map((item) =>
-          item.id === song.id ? { ...item, libraryStatus: 'error', errorMessage: message } : item,
+          item.id === song.id ? { ...item, libraryStatus: TrackLibraryStatus.Error, errorMessage: message } : item,
         ),
       );
     }
   }, [showToast]);
 
   const cancelAnalysis = useCallback(async (song: Track) => {
-    if (song.libraryStatus !== 'analyzing') return;
+    if (song.libraryStatus !== TrackLibraryStatus.Analyzing) return;
 
     try {
       await cancelTrackAnalysis(song.id);
     } catch (cause) {
-      showToast(cause instanceof Error ? cause.message : 'Could not cancel track analysis.', 'error', {
+      showToast(cause instanceof Error ? cause.message : 'Could not cancel track analysis.', ToastVariant.Error, {
         dedupeKey: `track-analysis-cancel-${song.id}`,
       });
       return;
     }
 
     setSongs((current) =>
-      current.map((item) => (item.id === song.id ? { ...item, libraryStatus: 'ready' } : item)),
+      current.map((item) => (item.id === song.id ? { ...item, libraryStatus: TrackLibraryStatus.Ready } : item)),
     );
   }, [showToast]);
 
   const patchTrack = useCallback(async (id: string, fields: TrackUpdateFields) => {
     const previous = songsRef.current.find((song) => song.id === id);
-    if (!previous || previous.libraryStatus !== 'ready') {
+    if (!previous || previous.libraryStatus !== TrackLibraryStatus.Ready) {
       throw new ApiError('Track is not ready', 400);
     }
 

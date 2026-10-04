@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RecordingsAPI } from '@/lib/api/RecordingsAPI';
+import {
+  EncoderRequestType,
+  EncoderResponseType,
+  RecordingTapMessageType,
+} from '@/lib/types/RecordingEncoder';
 import type { MixerAudioEngine } from './useAudioEngine';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 
-type RecordingStatus = 'idle' | 'starting' | 'recording' | 'saving' | 'error';
+export enum RecordingStatus {
+  Idle = 'idle',
+  Starting = 'starting',
+  Recording = 'recording',
+  Saving = 'saving',
+  Error = 'error',
+}
 type EncoderMessage =
-  | { type: 'ready' }
-  | { type: 'chunk'; data: Uint8Array }
-  | { type: 'finalized' }
-  | { type: 'error'; message: string };
+  | { type: EncoderResponseType.Ready }
+  | { type: EncoderResponseType.Chunk; data: Uint8Array }
+  | { type: EncoderResponseType.Finalized }
+  | { type: EncoderResponseType.Error; message: string };
+type RecordingTapMessage =
+  | { type: RecordingTapMessageType.Samples; durationSeconds?: number; samples?: Float32Array }
+  | { type: RecordingTapMessageType.Stopped; durationSeconds?: number }
+  | { type: RecordingTapMessageType.Limit };
 
 const HOUR_SECONDS = 60 * 60;
 
@@ -19,7 +35,7 @@ function localRecordingTitle(date: Date): string {
 
 export function useStudioRecording(engine: MixerAudioEngine) {
   const { showToast } = useToast();
-  const [status, setStatus] = useState<RecordingStatus>('idle');
+  const [status, setStatus] = useState<RecordingStatus>(RecordingStatus.Idle);
   const [error, setError] = useState<string | null>(null);
   const [hasPendingSave, setHasPendingSave] = useState(false);
   const encoderRef = useRef<Worker | null>(null);
@@ -36,7 +52,7 @@ export function useStudioRecording(engine: MixerAudioEngine) {
   const savingPromiseRef = useRef<Promise<boolean> | null>(null);
 
   useEffect(() => {
-    if (pendingBlobRef.current && status === 'idle') {
+    if (pendingBlobRef.current && status === RecordingStatus.Idle) {
       console.warn('Recording state inconsistent: pending blob exists but status is idle. Cleaning up.');
       pendingBlobRef.current = null;
       chunksRef.current = [];
@@ -58,18 +74,18 @@ export function useStudioRecording(engine: MixerAudioEngine) {
   const uploadPending = useCallback(async (): Promise<boolean> => {
     const blob = pendingBlobRef.current;
     if (!blob) return true;
-    setStatus('saving');
+    setStatus(RecordingStatus.Saving);
     setError(null);
     try {
       await RecordingsAPI.upload(blob, startTitleRef.current, durationRef.current);
       pendingBlobRef.current = null;
       chunksRef.current = [];
       setHasPendingSave(false);
-      setStatus('idle');
-      showToast('Recording saved.', 'success');
+      setStatus(RecordingStatus.Idle);
+      showToast('Recording saved.', ToastVariant.Success);
       return true;
     } catch (cause) {
-      setStatus('error');
+      setStatus(RecordingStatus.Error);
       setError(cause instanceof Error ? cause.message : 'Could not save this recording. Retry or discard it.');
       return false;
     }
@@ -84,21 +100,21 @@ export function useStudioRecording(engine: MixerAudioEngine) {
       const worker = encoderRef.current;
 
       if (pendingBlobRef.current) return uploadPending();
-      if (status === 'error') {
+      if (status === RecordingStatus.Error) {
         return false;
       }
       if (!tap || !worker) {
-        return status === 'idle';
+        return status === RecordingStatus.Idle;
       }
 
-      setStatus('saving');
+      setStatus(RecordingStatus.Saving);
       try {
         await new Promise<void>((resolve, reject) => {
           stopResolveRef.current = resolve;
           finalizedRejectRef.current = reject;
-          tap.port.postMessage({ type: 'stop' });
+          tap.port.postMessage({ type: RecordingTapMessageType.Stop });
         });
-        worker.postMessage({ type: 'finish' });
+        worker.postMessage({ type: EncoderRequestType.Finish });
         await new Promise<void>((resolve, reject) => {
           finalizedResolveRef.current = resolve;
           finalizedRejectRef.current = reject;
@@ -113,7 +129,7 @@ export function useStudioRecording(engine: MixerAudioEngine) {
         return await uploadPending();
       } catch (cause) {
         cleanCapture();
-        setStatus('error');
+        setStatus(RecordingStatus.Error);
         setError(cause instanceof Error ? cause.message : 'Could not finalize the MP3 recording.');
         return false;
       }
@@ -127,8 +143,8 @@ export function useStudioRecording(engine: MixerAudioEngine) {
   }, [cleanCapture, status, uploadPending]);
 
   const start = useCallback(async () => {
-    if (status !== 'idle' && !(status === 'error' && !pendingBlobRef.current)) return;
-    setStatus('starting');
+    if (status !== RecordingStatus.Idle && !(status === RecordingStatus.Error && !pendingBlobRef.current)) return;
+    setStatus(RecordingStatus.Starting);
     setError(null);
     chunksRef.current = [];
     pendingBlobRef.current = null;
@@ -140,17 +156,17 @@ export function useStudioRecording(engine: MixerAudioEngine) {
       encoderRef.current = worker;
       worker.onmessage = (event: MessageEvent<EncoderMessage>) => {
         const message = event.data;
-        if (message.type === 'ready') {
+        if (message.type === EncoderResponseType.Ready) {
           readyResolveRef.current?.();
           readyResolveRef.current = null;
-        } else if (message.type === 'chunk') {
+        } else if (message.type === EncoderResponseType.Chunk) {
           const copy = new Uint8Array(message.data.byteLength);
           copy.set(message.data);
           chunksRef.current.push(copy.buffer);
-        } else if (message.type === 'finalized') {
+        } else if (message.type === EncoderResponseType.Finalized) {
           finalizedResolveRef.current?.();
           finalizedResolveRef.current = null;
-        } else if (message.type === 'error') {
+        } else if (message.type === EncoderResponseType.Error) {
           const failure = new Error(message.message);
           readyRejectRef.current?.(failure);
           finalizedRejectRef.current?.(failure);
@@ -158,10 +174,10 @@ export function useStudioRecording(engine: MixerAudioEngine) {
           readyRejectRef.current = null;
           finalizedRejectRef.current = null;
           if (tapRef.current) {
-            tapRef.current.port.postMessage({ type: 'stop' });
+            tapRef.current.port.postMessage({ type: RecordingTapMessageType.Stop });
           }
           cleanCapture();
-          setStatus('error');
+          setStatus(RecordingStatus.Error);
           setError(failure.message);
         }
       };
@@ -170,37 +186,40 @@ export function useStudioRecording(engine: MixerAudioEngine) {
         readyRejectRef.current?.(failure);
         finalizedRejectRef.current?.(failure);
         cleanCapture();
-        setStatus('error');
+        setStatus(RecordingStatus.Error);
         setError(failure.message);
       };
       await new Promise<void>((resolve, reject) => {
         readyResolveRef.current = resolve;
         readyRejectRef.current = reject;
-        worker.postMessage({ type: 'start', sampleRate: engine.context.sampleRate });
+        worker.postMessage({ type: EncoderRequestType.Start, sampleRate: engine.context.sampleRate });
       });
       readyRejectRef.current = null;
 
       const tap = await engine.createRecordingTap();
       tapRef.current = tap;
-      tap.port.onmessage = (event: MessageEvent<{ type: string; durationSeconds?: number; samples?: Float32Array }>) => {
-        if (event.data.type === 'samples' && event.data.samples) {
-          worker.postMessage({ type: 'samples', samples: event.data.samples }, [event.data.samples.buffer]);
-        } else if (event.data.type === 'stopped') {
+      tap.port.onmessage = (event: MessageEvent<RecordingTapMessage>) => {
+        if (event.data.type === RecordingTapMessageType.Samples && event.data.samples) {
+          worker.postMessage(
+            { type: EncoderRequestType.Samples, samples: event.data.samples },
+            [event.data.samples.buffer],
+          );
+        } else if (event.data.type === RecordingTapMessageType.Stopped) {
           durationRef.current = Math.min(HOUR_SECONDS, event.data.durationSeconds ?? 0);
           stopResolveRef.current?.();
           stopResolveRef.current = null;
-        } else if (event.data.type === 'limit') {
+        } else if (event.data.type === RecordingTapMessageType.Limit) {
           durationRef.current = HOUR_SECONDS;
           void stopAndSave();
         }
       };
       tap.port.start();
       startTitleRef.current = localRecordingTitle(new Date());
-      tap.port.postMessage({ type: 'start' });
-      setStatus('recording');
+      tap.port.postMessage({ type: RecordingTapMessageType.Start });
+      setStatus(RecordingStatus.Recording);
     } catch (cause) {
       cleanCapture();
-      setStatus('error');
+      setStatus(RecordingStatus.Error);
       setError(cause instanceof Error ? cause.message : 'Could not start recording.');
     }
   }, [cleanCapture, engine, status, stopAndSave]);
@@ -211,7 +230,7 @@ export function useStudioRecording(engine: MixerAudioEngine) {
     pendingBlobRef.current = null;
     setHasPendingSave(false);
     setError(null);
-    setStatus('idle');
+    setStatus(RecordingStatus.Idle);
   }, [cleanCapture]);
 
   return {

@@ -3,9 +3,10 @@ import { coverLabelFromTitle, readTrackMetadata } from '@/lib/utils/trackMetadat
 import { computeOverviewFromFile } from '@/lib/utils/threeBandWaveform';
 import { uploadTrack } from '@/lib/api/TrackAPI';
 import { ApiError } from '@/lib/clients/axios';
-import type { Track } from '@/lib/types/Track';
+import { TrackAnalysisStatus, TrackLibraryStatus, type Track } from '@/lib/types/bruh';
 import { emptyCues, normalizeCues } from '@/lib/types/Cues';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 
 export function useTrackUpload({
   setSongs,
@@ -23,7 +24,7 @@ export function useTrackUpload({
     try {
       metadata = await readTrackMetadata(file);
     } catch (cause) {
-      showToast(`${file.name}: ${cause instanceof Error ? cause.message : 'Could not read track metadata.'}`, 'error', {
+      showToast(`${file.name}: ${cause instanceof Error ? cause.message : 'Could not read track metadata.'}`, ToastVariant.Error, {
         dedupeKey: `track-upload-${pendingId}`,
       });
       return;
@@ -40,7 +41,7 @@ export function useTrackUpload({
       coverUrl: metadata.coverUrl,
       waveformOverview: null,
       cues: emptyCues(),
-      libraryStatus: 'uploading',
+      libraryStatus: TrackLibraryStatus.Uploading,
       uploadProgress: 0,
     };
 
@@ -86,7 +87,9 @@ export function useTrackUpload({
                 coverLabel: coverLabelFromTitle(saved.title || metadata.title),
                 coverUrl: finalCoverUrl,
                 waveformOverview: saved.waveformOverview ?? waveformOverview,
-                libraryStatus: saved.analysisStatus === 'pending' ? 'analyzing' : 'ready',
+                libraryStatus: saved.analysisStatus === TrackAnalysisStatus.Pending
+                  ? TrackLibraryStatus.Analyzing
+                  : TrackLibraryStatus.Ready,
                 uploadProgress: undefined,
                 cues: normalizeCues(saved.cues),
                 errorMessage: undefined,
@@ -94,14 +97,14 @@ export function useTrackUpload({
             : song,
         ),
       );
-      showToast(`${metadata.title || file.name} uploaded.`, 'success');
+      showToast(`${metadata.title || file.name} uploaded.`, ToastVariant.Success);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : 'Upload failed';
-      showToast(`${file.name}: ${message}`, 'error', { dedupeKey: `track-upload-${pendingId}` });
+      showToast(`${file.name}: ${message}`, ToastVariant.Error, { dedupeKey: `track-upload-${pendingId}` });
       setSongs((current) =>
         current.map((song) =>
           song.id === pendingId
-            ? { ...song, libraryStatus: 'error', uploadProgress: undefined, errorMessage: message }
+            ? { ...song, libraryStatus: TrackLibraryStatus.Error, uploadProgress: undefined, errorMessage: message }
             : song,
         ),
       );

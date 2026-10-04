@@ -4,6 +4,7 @@ import { useAuth, useUser } from '@clerk/react';
 import { Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
+import { ToastVariant } from '@/components/ui/toast';
 import { listStreams } from '@/lib/api/StreamsAPI';
 import { joinPublicRoom, listRooms } from '@/lib/api/RoomsAPI';
 import type { ListedRoom } from '@/lib/types/Room';
@@ -136,7 +137,7 @@ function CommunityPage() {
 
   useEffect(() => {
     if (!streamsError) return;
-    showToast(streamsError, 'error', {
+    showToast(streamsError, ToastVariant.Error, {
       dedupeKey: 'community-streams-load',
       actions: [{ label: 'Retry', onClick: retryStreams }],
     });
@@ -144,18 +145,18 @@ function CommunityPage() {
 
   useEffect(() => {
     if (!roomsError) return;
-    showToast(roomsError, 'error', {
+    showToast(roomsError, ToastVariant.Error, {
       dedupeKey: 'community-rooms-load',
       actions: [{ label: 'Retry', onClick: retryRooms }],
     });
   }, [retryRooms, roomsError, showToast]);
 
   useEffect(() => {
-    if (joinError) showToast(joinError, 'error', { dedupeKey: 'community-room-join' });
+    if (joinError) showToast(joinError, ToastVariant.Error, { dedupeKey: 'community-room-join' });
   }, [joinError, showToast]);
 
   useEffect(() => {
-    if (roomClosed) showToast('Room closed. Choose another live stream or public room.', 'info', { dedupeKey: 'community-room-closed' });
+    if (roomClosed) showToast('Room closed. Choose another live stream or public room.', ToastVariant.Info, { dedupeKey: 'community-room-closed' });
   }, [roomClosed, showToast]);
 
   useEffect(() => {

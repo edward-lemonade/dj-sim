@@ -1,7 +1,19 @@
 import { useCallback, useRef } from 'react';
 import { cn } from 'cn';
-import { useSyncedControl } from '@/components/ControlSelection';
-import type { ControlId } from '@/lib/types/Control';
+import { AutomationMode, useSyncedControl } from '@/components/ControlSelection';
+import { ControlReleaseReason, type ControlId } from '@/lib/types/Control';
+
+// eslint-disable-next-line react-refresh/only-export-components
+export enum KnobSize {
+  Small = 'sm',
+  Medium = 'md',
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export enum KnobLabelPosition {
+  Top = 'top',
+  Bottom = 'bottom',
+}
 
 type KnobProps = {
   label: string;
@@ -12,13 +24,13 @@ type KnobProps = {
   step?: number;
   defaultValue?: number;
   disabled?: boolean;
-  size?: 'sm' | 'md';
-  labelPosition?: 'top' | 'bottom';
+  size?: KnobSize;
+  labelPosition?: KnobLabelPosition;
   controlId?: ControlId;
   leaseOwner?: string;
   isLeasedByOther?: boolean;
   onLeaseAcquire?: (controlId: ControlId) => void;
-  onLeaseRelease?: (controlId: ControlId, reason?: string) => void;
+  onLeaseRelease?: (controlId: ControlId, reason?: ControlReleaseReason) => void;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -34,8 +46,8 @@ export function Knob({
   step = 0.02,
   defaultValue = 0,
   disabled,
-  size = 'md',
-  labelPosition = 'bottom',
+  size = KnobSize.Medium,
+  labelPosition = KnobLabelPosition.Bottom,
   controlId,
   leaseOwner,
   isLeasedByOther,
@@ -53,7 +65,7 @@ export function Knob({
     max,
     onChange,
     disabled,
-    automationMode: 'knob',
+    automationMode: AutomationMode.Knob,
   });
 
   const nudge = useCallback(
@@ -65,7 +77,10 @@ export function Knob({
   );
 
   return (
-    <div className={cn('flex items-center gap-1', labelPosition === 'top' ? 'flex-col-reverse' : 'flex-col')}>
+    <div className={cn(
+      'flex items-center gap-1',
+      labelPosition === KnobLabelPosition.Top ? 'flex-col-reverse' : 'flex-col',
+    )}>
       <div
         role="slider"
         tabIndex={disabled || automating || isLeasedByOther ? -1 : 0}
@@ -104,7 +119,7 @@ export function Knob({
           dragRef.current = null;
         }}
         onPointerCancel={() => {
-          if (controlId) onLeaseRelease?.(controlId, 'pointer-cancel');
+          if (controlId) onLeaseRelease?.(controlId, ControlReleaseReason.PointerCancel);
           dragRef.current = null;
         }}
         onDoubleClick={() => {
