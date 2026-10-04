@@ -15,3 +15,8 @@ export async function getCurrentUser(): Promise<User | null> {
   const { data } = await axiosClient.get<User | null>(API_ROUTES.user.me);
   return data;
 }
+
+export async function ensureCurrentUser(username: string): Promise<User> {
+  const existing = await getCurrentUser();
+  return existing ?? registerUser({ username });
+}

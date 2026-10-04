@@ -8,16 +8,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Matches the Lambda's result JSON (handler.py): bucket, object_key, bpm,
-// grid_offset_sec, key, key_confidence, duration_sec, status,
-// result_location, and on failure an "error" string. Only the fields we
-// act on are bound here — extras are ignored by ShouldBindJSON.
+// Matches the Lambda's result JSON (handler.py). The Lambda calls the
+// source object key "s3_key"; object_key is also accepted for compatibility.
 type analysisWebhookPayload struct {
-	ObjectKey     string  `json:"object_key" binding:"required"`
+	ObjectKey     string  `json:"object_key"`
+	S3Key         string  `json:"s3_key"`
 	BPM           float64 `json:"bpm"`
 	GridOffsetSec float64 `json:"grid_offset_sec"`
 	Key           string  `json:"key"`
 	Status        string  `json:"status" binding:"required"`
+}
+
+func (p analysisWebhookPayload) sourceObjectKey() string {
+	if p.ObjectKey != "" {
+		return p.ObjectKey
+	}
+	return p.S3Key
 }
 
 func (h *TrackHandler) AnalysisWebhook(c *gin.Context) {
@@ -27,8 +33,14 @@ func (h *TrackHandler) AnalysisWebhook(c *gin.Context) {
 		return
 	}
 
+	objectKey := payload.sourceObjectKey()
+	if objectKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "object key is required"})
+		return
+	}
+
 	result := track.AnalysisResult{
-		ObjectKey:  payload.ObjectKey,
+		ObjectKey:  objectKey,
 		BPM:        int(payload.BPM + 0.5), // round to nearest — BPM is always positive
 		BeatOffset: payload.GridOffsetSec,
 		Key:        payload.Key,

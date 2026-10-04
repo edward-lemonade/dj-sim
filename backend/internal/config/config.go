@@ -38,6 +38,11 @@ func Load() Config {
 	_ = godotenv.Load()
 	_ = godotenv.Load(".env")
 
+	analysisPrefix := getEnv("AWS_S3_ANALYSIS_KEY", "")
+	if analysisPrefix == "" {
+		analysisPrefix = getEnv("AWS_S3_ANALYSIS_PREFIX", "")
+	}
+
 	return Config{
 		Port:           getEnv("PORT", "8080"),
 		DatabaseURL:    getEnv("DATABASE_URL", ""),
@@ -46,7 +51,7 @@ func Load() Config {
 
 		S3Bucket:           getEnv("AWS_S3_BUCKET", ""),
 		S3TracksKey:        getEnv("AWS_S3_TRACKS_KEY", ""),
-		S3AnalysisPrefix:   getEnv("AWS_S3_ANALYSIS_PREFIX", ""),
+		S3AnalysisPrefix:   analysisPrefix,
 		S3RecordingsKey:    getEnv("AWS_S3_RECORDINGS_KEY", ""),
 		S3Region:           getEnv("AWS_REGION", ""),
 		AWSAccessKeyID:     getEnv("AWS_ACCESS_KEY_ID", ""),

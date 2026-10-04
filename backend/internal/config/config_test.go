@@ -47,3 +47,36 @@ func TestLoadReadsRecordingKey(t *testing.T) {
 		t.Fatalf("S3RecordingsKey = %q, want recordings/", cfg.S3RecordingsKey)
 	}
 }
+
+func TestLoadReadsAnalysisKeyAndLegacyPrefix(t *testing.T) {
+	tests := []struct {
+		name         string
+		analysisKey  string
+		legacyPrefix string
+		wantPrefix   string
+	}{
+		{
+			name:         "canonical key",
+			analysisKey:  "analysis-key/",
+			legacyPrefix: "analysis-prefix/",
+			wantPrefix:   "analysis-key/",
+		},
+		{
+			name:         "legacy prefix",
+			legacyPrefix: "analysis/",
+			wantPrefix:   "analysis/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AWS_S3_ANALYSIS_KEY", tt.analysisKey)
+			t.Setenv("AWS_S3_ANALYSIS_PREFIX", tt.legacyPrefix)
+
+			cfg := Load()
+			if cfg.S3AnalysisPrefix != tt.wantPrefix {
+				t.Fatalf("S3AnalysisPrefix = %q, want %q", cfg.S3AnalysisPrefix, tt.wantPrefix)
+			}
+		})
+	}
+}

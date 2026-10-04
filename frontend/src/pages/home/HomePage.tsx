@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
 import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
+import { ensureCurrentUser } from '@/lib/api/UserAPI';
 import { joinRoomByCode } from '@/lib/api/RoomsAPI';
 import {
   PENDING_ROOM_CODE_KEY,
@@ -32,6 +33,10 @@ function formatDuration(seconds: number): string {
 function HomePage() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const registrationUsername =
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress?.split('@')[0] ||
+    (user ? `user-${user.id.slice(-8)}` : null);
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -49,17 +54,24 @@ function HomePage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
 
-  const loadRecordings = useCallback(async () => {
+  const loadRecordings = useCallback(async (isActive: () => boolean = () => true) => {
     try {
+      if (isSignedIn && registrationUsername) {
+        await ensureCurrentUser(registrationUsername);
+      }
       const items = await RecordingsAPI.list();
-      setRecordings(items);
-      setError(null);
+      if (isActive()) {
+        setRecordings(items);
+        setError(null);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load your recordings.');
+      if (isActive()) {
+        setError(cause instanceof Error ? cause.message : 'Could not load your recordings.');
+      }
     } finally {
-      setLoading(false);
+      if (isActive()) setLoading(false);
     }
-  }, []);
+  }, [isSignedIn, registrationUsername]);
 
   useEffect(() => {
     if (!error) return;
@@ -83,28 +95,13 @@ function HomePage() {
   }, [joinError, showToast]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
+    if (!isLoaded || !isSignedIn || !registrationUsername) return;
     let active = true;
-    const fetchRecordings = async () => {
-      try {
-        const items = await RecordingsAPI.list();
-        if (active) {
-          setRecordings(items);
-          setError(null);
-        }
-      } catch (cause) {
-        if (active) {
-          setError(cause instanceof Error ? cause.message : 'Could not load your recordings.');
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    void fetchRecordings();
+    void loadRecordings(() => active);
     return () => {
       active = false;
     };
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, registrationUsername, loadRecordings]);
 
   useEffect(() => {
     const saved = normalizeRoomCode(readSessionValue(PENDING_ROOM_CODE_KEY));

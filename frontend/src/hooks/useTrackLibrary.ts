@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useUser } from '@clerk/react';
 import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/utils/trackMetadata';
 import { analyzeTrack, cancelTrackAnalysis, deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
-import { getCurrentUser, registerUser } from '@/lib/api/UserAPI';
+import { ensureCurrentUser } from '@/lib/api/UserAPI';
 import { ApiError } from '@/lib/clients/axios';
 import {
   TrackAnalysisStatus,
@@ -63,14 +63,11 @@ export function useTrackLibrary() {
       }
 
       try {
-        const existing = await getCurrentUser();
-        if (!existing) {
-          const username =
-            user.username ||
-            user.primaryEmailAddress?.emailAddress?.split('@')[0] ||
-            `user-${user.id.slice(-8)}`;
-          await registerUser({ username });
-        }
+        const username =
+          user.username ||
+          user.primaryEmailAddress?.emailAddress?.split('@')[0] ||
+          `user-${user.id.slice(-8)}`;
+        await ensureCurrentUser(username);
 
         const tracks = await listTracks();
         if (cancelled) return;
