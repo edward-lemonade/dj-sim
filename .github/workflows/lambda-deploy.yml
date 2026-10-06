@@ -79,6 +79,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Configure Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Initialize Terraform
+        run: terraform init -input=false
+
+      - name: Create ECR repository
+        run: terraform apply -input=false -auto-approve -target=aws_ecr_repository.track_analyzer
+
       - name: Log in to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -96,12 +105,6 @@ jobs:
             --tag "$ECR_REGISTRY/$LAMBDA_FUNCTION_NAME:$IMAGE_TAG" \
             .
           docker push "$ECR_REGISTRY/$LAMBDA_FUNCTION_NAME:$IMAGE_TAG"
-
-      - name: Configure Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Initialize Terraform
-        run: terraform init -input=false
 
       - name: Create Terraform plan
         run: terraform plan -input=false -no-color -out=tfplan -var="image_tag=$IMAGE_TAG"

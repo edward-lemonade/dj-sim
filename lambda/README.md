@@ -96,11 +96,12 @@ terraform apply -var image_tag=v2
 ## GitHub Actions deployment
 
 The `Deploy track analyzer Lambda` workflow runs `terraform plan` for pull
-requests that change `lambda/` and builds/pushes a commit-tagged image before
-applying Terraform after those changes reach `main`. It uses the existing S3
-Terraform backend configured in `terraform/backend.tf`; configure the GitHub
-AWS credentials with access to that state bucket and lock file, ECR, Lambda,
-and the resources managed by this Terraform configuration.
+requests that change `lambda/`. After changes reach `main`, it creates the ECR
+repository if needed, builds and pushes a commit-tagged image, then plans and
+applies the remaining infrastructure. It uses the S3 Terraform backend
+configured in `terraform/backend.tf`; configure the GitHub AWS credentials
+with access to that state bucket and lock file, ECR, Lambda, and the resources
+managed by this Terraform configuration.
 
 Configure these GitHub repository secrets:
 
@@ -118,11 +119,10 @@ Configure these GitHub repository variables:
 - `LAMBDA_FUNCTION_NAME` (optional; defaults to `track-analyzer`)
 - `BACKEND_WEBHOOK_URL` (optional)
 
-The ECR repository must already exist in the account, as in the manual
-bootstrap steps above. The Terraform state backend is fixed to `us-west-1`
-in `terraform/backend.tf`, so the credentials also need access to that
-region's state bucket. Pull-request plans use a temporary image tag; the
-image is built and pushed only by the `main` deployment job.
+The Terraform state backend is fixed to `us-west-1` in `terraform/backend.tf`,
+so the credentials also need access to that region's state bucket.
+Pull-request plans use a temporary image tag; the image is built and pushed
+only by the `main` deployment job.
 
 `build_and_push.sh` builds with `--provenance=false --sbom=false`. Without
 those, current Docker/BuildKit attaches attestation manifests on push,
