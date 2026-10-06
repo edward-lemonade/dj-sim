@@ -70,6 +70,13 @@ variable "backend_webhook_api_key" {
   sensitive   = true
 }
 
+variable "iam_role_name" {
+  description = "IAM execution role name; defaults to the function name with -role appended"
+  type        = string
+  default     = ""
+}
+
 locals {
   results_bucket_name = var.results_bucket_name != "" ? var.results_bucket_name : var.bucket_name
+  iam_role_name       = var.iam_role_name != "" ? var.iam_role_name : "${var.function_name}-role"
 }
