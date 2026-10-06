@@ -98,10 +98,11 @@ terraform apply -var image_tag=v2
 The `Deploy track analyzer Lambda` workflow runs `terraform plan` for pull
 requests that change `lambda/`. After changes reach `main`, it creates the ECR
 repository if needed, builds and pushes a commit-tagged image, then plans and
-applies the remaining infrastructure. It uses the S3 Terraform backend
-configured in `terraform/backend.tf`; configure the GitHub AWS credentials
-with access to that state bucket and lock file, ECR, Lambda, and the resources
-managed by this Terraform configuration.
+applies the remaining infrastructure. The workflow uses the separate
+`lambda/prod/terraform.tfstate` key so it does not refresh or alter the
+development deployment tracked at the default backend key. Configure the
+GitHub AWS credentials with access to that state bucket and lock file, ECR,
+Lambda, and the resources managed by this Terraform configuration.
 
 Configure these GitHub repository secrets:
 
@@ -117,12 +118,15 @@ Configure these GitHub repository variables:
 - `LAMBDA_RESULTS_PREFIX` (optional; defaults to `analysis`)
 - `LAMBDA_RESULTS_BUCKET_NAME` (optional; defaults to the track bucket)
 - `LAMBDA_FUNCTION_NAME` (optional; defaults to `track-analyzer`)
+- `LAMBDA_IAM_ROLE_NAME` (optional; defaults to `track-analyzer-prod-role`)
 - `BACKEND_WEBHOOK_URL` (optional)
 
 The Terraform state backend is fixed to `us-west-1` in `terraform/backend.tf`,
 so the credentials also need access to that region's state bucket.
 Pull-request plans use a temporary image tag; the image is built and pushed
-only by the `main` deployment job.
+only by the `main` deployment job. IAM role names are account-wide, so
+production uses its own role name to coexist with the development role even
+though both deployments use `track-analyzer` as the Lambda function name.
 
 `build_and_push.sh` builds with `--provenance=false --sbom=false`. Without
 those, current Docker/BuildKit attaches attestation manifests on push,
