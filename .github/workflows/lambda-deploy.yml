@@ -28,8 +28,8 @@ jobs:
       run:
         working-directory: lambda/terraform
     env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-west-2' }}
       TF_VAR_bucket_name: ${{ vars.LAMBDA_BUCKET_NAME }}
       TF_VAR_track_prefix: ${{ vars.LAMBDA_TRACK_PREFIX || 'tracks/' }}
       TF_VAR_results_prefix: ${{ vars.LAMBDA_RESULTS_PREFIX || 'analysis' }}
@@ -63,8 +63,8 @@ jobs:
       run:
         working-directory: lambda/terraform
     env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-west-2' }}
       TF_VAR_bucket_name: ${{ vars.LAMBDA_BUCKET_NAME }}
       TF_VAR_track_prefix: ${{ vars.LAMBDA_TRACK_PREFIX || 'tracks/' }}
       TF_VAR_results_prefix: ${{ vars.LAMBDA_RESULTS_PREFIX || 'analysis' }}

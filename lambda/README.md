@@ -110,7 +110,7 @@ Configure these GitHub repository secrets:
 
 Configure these GitHub repository variables:
 
-- `AWS_REGION` (Lambda/ECR deployment region)
+- `AWS_REGION` (Lambda/ECR deployment region; defaults to `us-west-2`)
 - `LAMBDA_BUCKET_NAME` (required)
 - `LAMBDA_TRACK_PREFIX` (optional; defaults to `tracks/`)
 - `LAMBDA_RESULTS_PREFIX` (optional; defaults to `analysis`)
