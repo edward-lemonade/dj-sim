@@ -1,5 +1,5 @@
 import { UserButton, useAuth } from '@clerk/react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from 'cn';
 type NavItem = { to: string; label: string; end?: boolean };
@@ -10,13 +10,7 @@ const navItems: NavItem[] = [
   { to: '/community', label: 'Community' },
 ];
 
-// Routes that fill the space under the top bar edge-to-edge.
-const FULL_BLEED_PATHS = ['/', '/tracks', '/community'];
-
 function AppLayout() {
-  const { pathname } = useLocation();
-  const isFullBleed = FULL_BLEED_PATHS.includes(pathname);
-
   return (
     <div className="flex h-svh min-h-0 flex-col bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.16),_transparent_45%),linear-gradient(180deg,#05070d_0%,#0a0e17_45%,#0d1119_100%)] text-slate-100">
       {/* Flush top bar: fixed height, full width, identical on every route */}
@@ -52,14 +46,8 @@ function AppLayout() {
 
       {/* Content: home, tracks and community fill the remaining space edge-to-edge,
           other pages get a centered readable column. Neither is a floating "bubble". */}
-      <div className={cn('flex min-h-0 flex-1 flex-col', isFullBleed ? 'overflow-hidden' : 'overflow-y-auto')}>
-        <div
-          className={cn(
-            isFullBleed
-              ? 'flex h-full min-h-0 flex-1 flex-col'
-              : 'mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8',
-          )}
-        >
+      <div className={'flex min-h-0 flex-1 flex-col overflow-hidden'}>
+        <div className={'flex h-full min-h-0 flex-1 flex-col'}>
           <Outlet />
         </div>
       </div>

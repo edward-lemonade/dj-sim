@@ -1,6 +1,7 @@
 import { useAuth, useUser } from '@clerk/react';
 import { Download, Pause, Play, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -8,6 +9,7 @@ import { ToastVariant } from '@/components/ui/toast';
 import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
 import { ensureCurrentUser } from '@/lib/api/UserAPI';
 import { joinRoomByCode } from '@/lib/api/RoomsAPI';
+import { queryKeys } from '@/lib/queryClient';
 import {
   PENDING_ROOM_CODE_KEY,
   createdRoomFromJoin,
@@ -33,14 +35,31 @@ function formatDuration(seconds: number): string {
 function HomePage() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const queryClient = useQueryClient();
   const registrationUsername =
     user?.username ||
     user?.primaryEmailAddress?.emailAddress?.split('@')[0] ||
     (user ? `user-${user.id.slice(-8)}` : null);
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [loading, setLoading] = useState(true);
+  const recordingsQuery = useQuery({
+    queryKey: queryKeys.recordings(user?.id ?? null),
+    enabled: isLoaded && Boolean(isSignedIn && user && registrationUsername),
+    queryFn: async () => {
+      if (!registrationUsername) throw new Error('Cannot load recordings without a signed-in user.');
+      await ensureCurrentUser(registrationUsername);
+      return RecordingsAPI.list();
+    },
+  });
+  const {
+    data: recordingsData,
+    error: recordingsError,
+    isError: recordingsIsError,
+    isPending: recordingsLoading,
+    refetch: refetchRecordings,
+  } = recordingsQuery;
+  const recordings = recordingsData ?? [];
+  const loading = recordingsLoading;
   const [error, setError] = useState<string | null>(null);
   const [digits, setDigits] = useState<string[]>(() => Array(ROOM_CODE_LENGTH).fill(''));
   const joinCode = digits.join('');
@@ -54,54 +73,28 @@ function HomePage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
 
-  const loadRecordings = useCallback(async (isActive: () => boolean = () => true) => {
-    try {
-      if (isSignedIn && registrationUsername) {
-        await ensureCurrentUser(registrationUsername);
-      }
-      const items = await RecordingsAPI.list();
-      if (isActive()) {
-        setRecordings(items);
-        setError(null);
-      }
-    } catch (cause) {
-      if (isActive()) {
-        setError(cause instanceof Error ? cause.message : 'Could not load your recordings.');
-      }
-    } finally {
-      if (isActive()) setLoading(false);
-    }
-  }, [isSignedIn, registrationUsername]);
-
   useEffect(() => {
-    if (!error) return;
-    showToast(error, ToastVariant.Error, {
-      dedupeKey: 'home-recordings',
-      actions: recordings.length === 0
-        ? [{
-            label: 'Retry',
-            onClick: () => {
-              setLoading(true);
-              setError(null);
-              void loadRecordings();
-            },
-          }]
-        : undefined,
-    });
-  }, [error, loadRecordings, recordings.length, showToast]);
+    if (!recordingsError) return;
+    showToast(
+      recordingsError instanceof Error ? recordingsError.message : 'Could not load your recordings.',
+      ToastVariant.Error,
+      {
+        dedupeKey: 'home-recordings',
+        actions: recordings.length === 0
+          ? [{
+              label: 'Retry',
+              onClick: () => {
+                void refetchRecordings();
+              },
+            }]
+          : undefined,
+      },
+    );
+  }, [recordings.length, recordingsError, refetchRecordings, showToast]);
 
   useEffect(() => {
     if (joinError) showToast(joinError, ToastVariant.Error, { dedupeKey: 'home-room-join' });
   }, [joinError, showToast]);
-
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn || !registrationUsername) return;
-    let active = true;
-    void loadRecordings(() => active);
-    return () => {
-      active = false;
-    };
-  }, [isLoaded, isSignedIn, registrationUsername, loadRecordings]);
 
   useEffect(() => {
     const saved = normalizeRoomCode(readSessionValue(PENDING_ROOM_CODE_KEY));
@@ -275,7 +268,9 @@ function HomePage() {
     setError(null);
     try {
       const updated = await RecordingsAPI.updateTitle(recording.id, title);
-      setRecordings((current) => current.map((item) => item.id === updated.id ? updated : item));
+      queryClient.setQueryData<Recording[]>(queryKeys.recordings(user?.id ?? null), (current) =>
+        (current ?? []).map((item) => item.id === updated.id ? updated : item),
+      );
       setEditingId(null);
       showToast('Recording renamed.', ToastVariant.Success);
     } catch (cause) {
@@ -289,7 +284,9 @@ function HomePage() {
     try {
       await RecordingsAPI.remove(recording.id);
       if (playingId === recording.id) stopPlayback();
-      setRecordings((current) => current.filter((item) => item.id !== recording.id));
+      queryClient.setQueryData<Recording[]>(queryKeys.recordings(user?.id ?? null), (current) =>
+        (current ?? []).filter((item) => item.id !== recording.id),
+      );
       showToast('Recording deleted.', ToastVariant.Success);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not delete this recording.');
@@ -416,7 +413,7 @@ function HomePage() {
                 </Link>
               </div>
             </div>
-          ) : error && recordings.length === 0 ? (
+          ) : (recordingsIsError || error) && recordings.length === 0 ? (
             <div className="py-4 text-center">
               <p className="text-sm text-slate-400">Recordings are temporarily unavailable.</p>
             </div>
