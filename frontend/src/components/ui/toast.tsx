@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
+import { API_REQUEST_SLOW_EVENT } from '@/lib/apiEvents';
 
 // eslint-disable-next-line react-refresh/only-export-components
 export enum ToastVariant {
@@ -75,6 +76,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const contextValue = useMemo(() => ({ showToast }), [showToast]);
+
+  useEffect(() => {
+    const showColdStartNotice = () => {
+      showToast('Our server is cold-starting, please wait a few seconds...', ToastVariant.Info, {
+        dedupeKey: 'api-cold-start',
+      });
+    };
+    window.addEventListener(API_REQUEST_SLOW_EVENT, showColdStartNotice);
+    return () => window.removeEventListener(API_REQUEST_SLOW_EVENT, showColdStartNotice);
+  }, [showToast]);
 
   return (
     <ToastContext.Provider value={contextValue}>

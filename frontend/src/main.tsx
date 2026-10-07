@@ -8,6 +8,8 @@ import { ENV } from './config/env';
 import { setAuthTokenGetter } from '@/lib/clients/axios';
 import { TooltipProvider } from './components/ui/tooltip.tsx';
 import { ToastProvider } from './components/ui/toast.tsx';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryClient';
 
 function ClerkAxiosBridge() {
   const { getToken } = useAuth();
@@ -26,7 +28,9 @@ createRoot(document.getElementById('root')!).render(
       <ClerkAxiosBridge />
       <TooltipProvider delay={0.2}>
         <ToastProvider>
-          <RouterProvider router={router} />
+          <QueryClientProvider client={queryClient}>
+            <RouterProvider router={router} />
+          </QueryClientProvider>
         </ToastProvider>
       </TooltipProvider>
     </ClerkProvider>

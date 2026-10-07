@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { RecordingsAPI } from '@/lib/api/RecordingsAPI';
 import {
   EncoderRequestType,
@@ -35,6 +36,7 @@ function localRecordingTitle(date: Date): string {
 
 export function useStudioRecording(engine: MixerAudioEngine) {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<RecordingStatus>(RecordingStatus.Idle);
   const [error, setError] = useState<string | null>(null);
   const [hasPendingSave, setHasPendingSave] = useState(false);
@@ -78,6 +80,7 @@ export function useStudioRecording(engine: MixerAudioEngine) {
     setError(null);
     try {
       await RecordingsAPI.upload(blob, startTitleRef.current, durationRef.current);
+      void queryClient.invalidateQueries({ queryKey: ['recordings'] });
       pendingBlobRef.current = null;
       chunksRef.current = [];
       setHasPendingSave(false);
@@ -89,7 +92,7 @@ export function useStudioRecording(engine: MixerAudioEngine) {
       setError(cause instanceof Error ? cause.message : 'Could not save this recording. Retry or discard it.');
       return false;
     }
-  }, [showToast]);
+  }, [queryClient, showToast]);
 
   const stopAndSave = useCallback(async (): Promise<boolean> => {
     if (savingPromiseRef.current) return savingPromiseRef.current;

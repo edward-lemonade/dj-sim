@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, type SetStateAction } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser } from '@clerk/react';
 import { coverLabelFromTitle, revokeCoverUrl } from '@/lib/utils/trackMetadata';
 import { analyzeTrack, cancelTrackAnalysis, deleteTrack, listTracks, updateTrack } from '@/lib/api/TrackAPI';
 import { ensureCurrentUser } from '@/lib/api/UserAPI';
+import { queryKeys } from '@/lib/queryClient';
 import { ApiError } from '@/lib/clients/axios';
 import {
   TrackAnalysisStatus,
@@ -45,85 +47,41 @@ export function trackToPool(track: TrackDTO): Track {
 export function useTrackLibrary() {
   const { user, isLoaded, isSignedIn } = useUser();
   const { showToast } = useToast();
-  const [songs, setSongs] = useState<Track[]>([]);
-  const [isLoadingTracks, setIsLoadingTracks] = useState(true);
-  const songsRef = useRef<Track[]>([]);
-  const { uploadRef, handleUpload } = useTrackUpload({ setSongs, isSignedIn });
-  songsRef.current = songs;
-
+  const queryClient = useQueryClient();
+  const trackLibraryKey = useMemo(() => queryKeys.trackLibrary(user?.id ?? null), [user?.id]);
+  const setSongs = useCallback((updater: SetStateAction<Track[]>) => {
+    queryClient.setQueryData<Track[]>(trackLibraryKey, (current) =>
+      typeof updater === 'function' ? updater(current ?? []) : updater,
+    );
+  }, [queryClient, trackLibraryKey]);
+  const tracksQuery = useQuery({
+    queryKey: trackLibraryKey,
+    enabled: isLoaded && Boolean(isSignedIn && user),
+    queryFn: async () => {
+      if (!user) throw new Error('Cannot load tracks without a signed-in user.');
+      const username =
+        user.username ||
+        user.primaryEmailAddress?.emailAddress?.split('@')[0] ||
+        `user-${user.id.slice(-8)}`;
+      await ensureCurrentUser(username);
+      const tracks = await listTracks();
+      const stillUploading = (queryClient.getQueryData<Track[]>(trackLibraryKey) ?? [])
+        .filter((song) => song.libraryStatus === TrackLibraryStatus.Uploading);
+      return [...stillUploading, ...tracks.map(trackToPool)];
+    },
+    refetchInterval: (query) =>
+      query.state.data?.some((song) => song.libraryStatus === TrackLibraryStatus.Analyzing) ? 4000 : false,
+  });
+  const songs = tracksQuery.data ?? [];
+  const isLoadingTracks = isLoaded && Boolean(isSignedIn) && tracksQuery.isPending;
   useEffect(() => {
-    if (!isLoaded) return;
-
-    let cancelled = false;
-
-    async function loadPool() {
-      if (!isSignedIn || !user) {
-        if (!cancelled) setSongs([]);
-        return;
-      }
-
-      try {
-        const username =
-          user.username ||
-          user.primaryEmailAddress?.emailAddress?.split('@')[0] ||
-          `user-${user.id.slice(-8)}`;
-        await ensureCurrentUser(username);
-
-        const tracks = await listTracks();
-        if (cancelled) return;
-        setSongs((current) => {
-          const stillUploading = current.filter((song) => song.libraryStatus === TrackLibraryStatus.Uploading);
-          return [...stillUploading, ...tracks.map(trackToPool)];
-        });
-      } catch (cause) {
-        if (!cancelled) {
-          setSongs([]);
-          showToast(cause instanceof Error ? cause.message : 'Could not load your tracks.', ToastVariant.Error, {
-            dedupeKey: 'tracks-library-load',
-          });
-        }
-      }
+    if (tracksQuery.isLoadingError && isLoaded && isSignedIn) {
+      showToast(tracksQuery.error instanceof Error ? tracksQuery.error.message : 'Could not load your tracks.', ToastVariant.Error, {
+        dedupeKey: 'tracks-library-load',
+      });
     }
-
-    void loadPool().finally(() => {
-      if (!cancelled) setIsLoadingTracks(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoaded, isSignedIn, showToast, user?.id]);
-
-  // Poll while anything is still being analyzed server-side. The effect
-  // re-runs whenever hasAnalyzing flips: React clears the previous
-  // interval on every re-run, so once nothing is 'analyzing' anymore the
-  // cleanup fires and no new interval is set — this stops on its own
-  // rather than needing separate start/stop plumbing.
-  const hasAnalyzing = songs.some((song) => song.libraryStatus === TrackLibraryStatus.Analyzing);
-
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn || !hasAnalyzing) return;
-
-    const interval = window.setInterval(async () => {
-      try {
-        const tracks = await listTracks();
-        setSongs((current) => {
-          const stillUploading = current.filter((song) => song.libraryStatus === TrackLibraryStatus.Uploading);
-          return [...stillUploading, ...tracks.map(trackToPool)];
-        });
-      } catch {
-        // Transient poll failure — just try again on the next tick rather
-        // than surfacing an error for a background refresh.
-      }
-    }, 4000);
-
-    return () => window.clearInterval(interval);
-  }, [isLoaded, isSignedIn, hasAnalyzing]);
-
-  useEffect(() => {
-    return () => {
-      songsRef.current.forEach((song) => revokeCoverUrl(song.coverUrl));
-    };
-  }, []);
+  }, [isLoaded, isSignedIn, showToast, tracksQuery.error, tracksQuery.isLoadingError]);
+  const { uploadRef, handleUpload } = useTrackUpload({ setSongs, isSignedIn });
 
   const removeSong = useCallback(async (song: Track) => {
     if (song.libraryStatus === TrackLibraryStatus.Uploading) return;
@@ -152,7 +110,7 @@ export function useTrackLibrary() {
       }
       return next;
     });
-  }, [showToast]);
+  }, [setSongs, showToast]);
 
   const analyzeSong = useCallback(async (song: Track) => {
     if (song.libraryStatus === TrackLibraryStatus.Uploading || song.libraryStatus === TrackLibraryStatus.Analyzing) return;
@@ -174,7 +132,7 @@ export function useTrackLibrary() {
         ),
       );
     }
-  }, [showToast]);
+  }, [setSongs, showToast]);
 
   const cancelAnalysis = useCallback(async (song: Track) => {
     if (song.libraryStatus !== TrackLibraryStatus.Analyzing) return;
@@ -191,10 +149,10 @@ export function useTrackLibrary() {
     setSongs((current) =>
       current.map((item) => (item.id === song.id ? { ...item, libraryStatus: TrackLibraryStatus.Ready } : item)),
     );
-  }, [showToast]);
+  }, [setSongs, showToast]);
 
   const patchTrack = useCallback(async (id: string, fields: TrackUpdateFields) => {
-    const previous = songsRef.current.find((song) => song.id === id);
+    const previous = (queryClient.getQueryData<Track[]>(trackLibraryKey) ?? []).find((song) => song.id === id);
     if (!previous || previous.libraryStatus !== TrackLibraryStatus.Ready) {
       throw new ApiError('Track is not ready', 400);
     }
@@ -211,7 +169,7 @@ export function useTrackLibrary() {
       setSongs((current) => current.map((song) => (song.id === id ? previous : song)));
       throw error;
     }
-  }, []);
+  }, [queryClient, setSongs, trackLibraryKey]);
 
   return {
     songs,

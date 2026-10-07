@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/react';
 import { Eye } from 'lucide-react';
@@ -7,8 +8,9 @@ import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
 import { listStreams } from '@/lib/api/StreamsAPI';
 import { joinPublicRoom, listRooms } from '@/lib/api/RoomsAPI';
+import { queryKeys } from '@/lib/queryClient';
 import type { ListedRoom } from '@/lib/types/Room';
-import type { ListedStream, ListedStreamRoom } from '@/lib/types/Stream';
+import type { ListedStreamRoom } from '@/lib/types/Stream';
 import {
   PENDING_PUBLIC_ROOM_KEY,
   createdRoomFromJoin,
@@ -36,60 +38,48 @@ const UNSKEW = 'md:[transform:skewX(16deg)]';
 function CommunityPage() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
+  const avatarUrl = user?.imageUrl ?? '';
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
-  const [streams, setStreams] = useState<ListedStream[]>([]);
-  const [rooms, setRooms] = useState<ListedRoom[]>([]);
-  const [streamsLoading, setStreamsLoading] = useState(true);
-  const [roomsLoading, setRoomsLoading] = useState(true);
-  const [streamsError, setStreamsError] = useState<string | null>(null);
-  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const streamsQuery = useQuery({
+    queryKey: queryKeys.streams,
+    queryFn: listStreams,
+    refetchInterval: 10000,
+  });
+  const roomsQuery = useQuery({
+    queryKey: queryKeys.rooms,
+    queryFn: listRooms,
+    refetchInterval: 10000,
+  });
+  const {
+    data: streamsData,
+    error: streamsError,
+    isPending: streamsLoading,
+    refetch: refetchStreams,
+  } = streamsQuery;
+  const {
+    data: roomsData,
+    error: roomsError,
+    isPending: roomsLoading,
+    refetch: refetchRooms,
+  } = roomsQuery;
+  const streams = streamsData ?? [];
+  const rooms = roomsData ?? [];
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null);
   const [now, setNow] = useState(0);
   const roomClosed = Boolean((location.state as { roomClosed?: boolean } | null)?.roomClosed);
   const pendingJoinRef = useRef(false);
 
-  const refreshStreams = useCallback(async () => {
-    try {
-      const current = await listStreams();
-      setStreams(current);
-      setStreamsError(null);
-    } catch (cause) {
-      setStreamsError(cause instanceof Error ? cause.message : 'Could not load streams.');
-    } finally {
-      setStreamsLoading(false);
-    }
-  }, []);
-
-  const refreshRooms = useCallback(async () => {
-    try {
-      const current = await listRooms();
-      setRooms(current);
-      setRoomsError(null);
-    } catch (cause) {
-      setRoomsError(cause instanceof Error ? cause.message : 'Could not load public rooms.');
-    } finally {
-      setRoomsLoading(false);
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    await Promise.all([refreshStreams(), refreshRooms()]);
-  }, [refreshRooms, refreshStreams]);
-
   const retryStreams = useCallback(() => {
-    setStreamsLoading(true);
-    setStreamsError(null);
-    void refreshStreams();
-  }, [refreshStreams]);
+    void refetchStreams();
+  }, [refetchStreams]);
 
   const retryRooms = useCallback(() => {
-    setRoomsLoading(true);
-    setRoomsError(null);
-    void refreshRooms();
-  }, [refreshRooms]);
+    void refetchRooms();
+  }, [refetchRooms]);
 
   const joinListedRoom = useCallback(async (room: ListedRoom) => {
     setJoinError(null);
@@ -105,15 +95,17 @@ function CommunityPage() {
     }
     setJoiningRoomId(room.id);
     try {
-      const joined = await joinPublicRoom(room.id, user?.imageUrl ?? '');
+      const joined = await joinPublicRoom(room.id, avatarUrl);
       writeSessionValue(PENDING_PUBLIC_ROOM_KEY, '');
+      void queryClient.invalidateQueries({ queryKey: queryKeys.rooms });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.streams });
       navigate('/studio', { state: { roomSession: createdRoomFromJoin(joined) } });
     } catch (cause) {
       setJoinError(roomJoinErrorMessage(cause));
     } finally {
       setJoiningRoomId(null);
     }
-  }, [isLoaded, isSignedIn, navigate, user?.imageUrl]);
+  }, [avatarUrl, isLoaded, isSignedIn, navigate, queryClient]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || pendingJoinRef.current) return;
@@ -121,9 +113,11 @@ function CommunityPage() {
     if (!pendingId) return;
     pendingJoinRef.current = true;
     setJoiningRoomId(pendingId);
-    void joinPublicRoom(pendingId, user?.imageUrl ?? '')
+    void joinPublicRoom(pendingId, avatarUrl)
       .then((joined) => {
         writeSessionValue(PENDING_PUBLIC_ROOM_KEY, '');
+        void queryClient.invalidateQueries({ queryKey: queryKeys.rooms });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.streams });
         navigate('/studio', { state: { roomSession: createdRoomFromJoin(joined) } });
       })
       .catch((cause: unknown) => {
@@ -133,11 +127,11 @@ function CommunityPage() {
       .finally(() => {
         setJoiningRoomId(null);
       });
-  }, [isLoaded, isSignedIn, navigate, user?.imageUrl]);
+  }, [avatarUrl, isLoaded, isSignedIn, navigate, queryClient]);
 
   useEffect(() => {
     if (!streamsError) return;
-    showToast(streamsError, ToastVariant.Error, {
+    showToast(streamsError instanceof Error ? streamsError.message : 'Could not load streams.', ToastVariant.Error, {
       dedupeKey: 'community-streams-load',
       actions: [{ label: 'Retry', onClick: retryStreams }],
     });
@@ -145,7 +139,7 @@ function CommunityPage() {
 
   useEffect(() => {
     if (!roomsError) return;
-    showToast(roomsError, ToastVariant.Error, {
+    showToast(roomsError instanceof Error ? roomsError.message : 'Could not load public rooms.', ToastVariant.Error, {
       dedupeKey: 'community-rooms-load',
       actions: [{ label: 'Retry', onClick: retryRooms }],
     });
@@ -160,15 +154,9 @@ function CommunityPage() {
   }, [roomClosed, showToast]);
 
   useEffect(() => {
-    const initialLoad = window.setTimeout(() => void refresh(), 0);
-    const poll = window.setInterval(() => void refresh(), 10000);
     const clock = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => {
-      window.clearTimeout(initialLoad);
-      window.clearInterval(poll);
-      window.clearInterval(clock);
-    };
-  }, [refresh]);
+    return () => window.clearInterval(clock);
+  }, []);
 
   return (
     <main className="relative flex h-full min-h-0 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
