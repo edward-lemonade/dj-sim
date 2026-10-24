@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecret string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -29,8 +29,9 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 	r.Use(middleware.CORS(corsOrigin))
 
 	userRepo := user.NewRepository(db)
-	userSvc := user.NewService(userRepo)
+	userSvc := user.NewService(userRepo, store, analysisPrefix)
 	userHandler := &handler.UserHandler{Users: userSvc}
+	clerkWebhookHandler := &handler.ClerkWebhookHandler{Users: userSvc, Secret: clerkWebhookSecret}
 
 	trackRepo := track.NewRepository(db)
 	trackSvc := track.NewService(trackRepo, store, tracksPrefix, analysisPrefix)
@@ -89,6 +90,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, store *storage.S
 
 	sessions := middleware.NewSessionVerifier(clerkSecretKey)
 	r.GET("/health", handler.Health)
+	r.POST("/webhooks/clerk", clerkWebhookHandler.Handle)
 	r.GET("/rooms", roomHandler.ListPublic)
 	r.GET("/streams", streamHandler.List)
 	r.POST("/streams/:id/join", middleware.OptionalAuth(userRepo, sessions), streamHandler.Join)
