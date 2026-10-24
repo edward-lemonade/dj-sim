@@ -14,6 +14,7 @@ type Config struct {
 	Port               string
 	DatabaseURL        string
 	ClerkSecretKey     string
+	ClerkWebhookSecret string
 	CORSOrigin         string
 	S3Bucket           string
 	S3TracksKey        string
@@ -44,10 +45,11 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:           getEnv("PORT", "8080"),
-		DatabaseURL:    getEnv("DATABASE_URL", ""),
-		ClerkSecretKey: getEnv("CLERK_SECRET_KEY", ""),
-		CORSOrigin:     getEnv("CORS_ORIGIN", "*"),
+		Port:               getEnv("PORT", "8080"),
+		DatabaseURL:        getEnv("DATABASE_URL", ""),
+		ClerkSecretKey:     getEnv("CLERK_SECRET_KEY", ""),
+		ClerkWebhookSecret: getEnv("CLERK_WEBHOOK_SECRET", ""),
+		CORSOrigin:         getEnv("CORS_ORIGIN", "*"),
 
 		S3Bucket:           getEnv("AWS_S3_BUCKET", ""),
 		S3TracksKey:        getEnv("AWS_S3_TRACKS_KEY", ""),
