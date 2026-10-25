@@ -276,8 +276,10 @@ clock and extrapolate play and snapshot positions to account for relay/network
 transit. Play commands schedule a shared near-future start so the initiating
 member does not begin before peers receive the command. Small ongoing drift is
 corrected with brief, pitch-compensated tempo adjustments rather than repeated
-hard seeks. Explicit pause and seek commands align every local playhead to the
-initiating member's position.
+hard seeks. Position extrapolation uses the source deck's playback rate so
+non-unity tempo does not create steadily accumulating phase error. Explicit
+pause and seek commands align every local playhead to the initiating member's
+position.
 
 To simulate room-relay latency locally, set the backend environment variable
 `ROOM_FAKE_SERVER_DELAY` to a Go duration such as `250ms`. It delays delivery

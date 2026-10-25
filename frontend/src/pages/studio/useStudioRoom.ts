@@ -40,6 +40,7 @@ export type RoomTransportCommand = {
   playing?: boolean;
   initialSync?: boolean;
   positionSeconds?: number;
+  rate?: number;
   sentAtServerMs?: number;
   playAtServerMs?: number;
   playAtPerformanceMs?: number;
@@ -55,6 +56,7 @@ type RoomTransportCommandPayload = {
     | RoomTransportCommandType.Pause
     | RoomTransportCommandType.Seek;
   positionSeconds?: number;
+  rate?: number;
   sentAtServerMs?: number;
   playAtServerMs?: number;
   platterAngleDegrees?: number;
@@ -194,6 +196,7 @@ function isRoomTransportCommand(value: unknown): value is RoomTransportCommandPa
     && (command.deck === StreamDeckId.A || command.deck === StreamDeckId.B)
     && (command.sentAtServerMs === undefined || Number.isFinite(command.sentAtServerMs))
     && (command.playAtServerMs === undefined || Number.isFinite(command.playAtServerMs))
+    && (command.rate === undefined || (Number.isFinite(command.rate) && command.rate > 0))
     && (
       command.command === RoomTransportCommandType.Play
       || command.command === RoomTransportCommandType.Pause
@@ -285,12 +288,13 @@ export function useStudioRoom({
     const offset = roomClockOffsetMsRef.current;
     return offset === null ? undefined : performanceTimeMs + offset;
   }, []);
-  const extrapolatePosition = useCallback((positionSeconds: number, sentAtServerMs?: number) => {
+  const extrapolatePosition = useCallback((positionSeconds: number, sentAtServerMs?: number, rate = 1) => {
     const offset = roomClockOffsetMsRef.current;
     if (offset === null || typeof sentAtServerMs !== 'number' || !Number.isFinite(sentAtServerMs)) {
       return positionSeconds;
     }
-    return positionSeconds + Math.max(0, performance.now() + offset - sentAtServerMs) / 1000;
+    const playbackRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    return positionSeconds + Math.max(0, performance.now() + offset - sentAtServerMs) / 1000 * playbackRate;
   }, []);
 
   const commitStudioLocal = useCallback((command: StudioCommand) => {
@@ -372,6 +376,7 @@ export function useStudioRoom({
         initiatedByUserId: roomUserId ?? undefined,
         command,
         positionSeconds,
+        rate: studioSnapshotRef.current.decks[deck].rate,
         sentAtServerMs,
         playAtServerMs,
         playAtPerformanceMs: playAtServerMs === undefined
@@ -389,6 +394,7 @@ export function useStudioRoom({
         deck,
         command,
         positionSeconds,
+        rate: studioSnapshotRef.current.decks[deck].rate,
         sentAtServerMs,
         playAtServerMs,
         platterAngleDegrees,
@@ -528,14 +534,24 @@ export function useStudioRoom({
                   id: `${commandId}:A`, command: RoomTransportCommandType.Sync,
                   initialSync: true,
                   playing: localSnapshot.decks[StreamDeckId.A].playing,
-                  positionSeconds: extrapolatePosition(localSnapshot.decks[StreamDeckId.A].positionSeconds, event.sentAtServerMs),
+                  positionSeconds: extrapolatePosition(
+                    localSnapshot.decks[StreamDeckId.A].positionSeconds,
+                    event.sentAtServerMs,
+                    localSnapshot.decks[StreamDeckId.A].rate,
+                  ),
+                  rate: localSnapshot.decks[StreamDeckId.A].rate,
                   receivedAtMs,
                 },
                 [StreamDeckId.B]: {
                   id: `${commandId}:B`, command: RoomTransportCommandType.Sync,
                   initialSync: true,
                   playing: localSnapshot.decks[StreamDeckId.B].playing,
-                  positionSeconds: extrapolatePosition(localSnapshot.decks[StreamDeckId.B].positionSeconds, event.sentAtServerMs),
+                  positionSeconds: extrapolatePosition(
+                    localSnapshot.decks[StreamDeckId.B].positionSeconds,
+                    event.sentAtServerMs,
+                    localSnapshot.decks[StreamDeckId.B].rate,
+                  ),
+                  rate: localSnapshot.decks[StreamDeckId.B].rate,
                   receivedAtMs,
                 },
               });
@@ -550,7 +566,12 @@ export function useStudioRoom({
                   && !localPauseOverridesRef.current[StreamDeckId.A] ? {
                   [StreamDeckId.A]: {
                     id: `${event.seq ?? Date.now()}:A`, command: RoomTransportCommandType.Sync, playing: true,
-                    positionSeconds: extrapolatePosition(localSnapshot.decks[StreamDeckId.A].positionSeconds, event.sentAtServerMs),
+                    positionSeconds: extrapolatePosition(
+                      localSnapshot.decks[StreamDeckId.A].positionSeconds,
+                      event.sentAtServerMs,
+                      localSnapshot.decks[StreamDeckId.A].rate,
+                    ),
+                    rate: localSnapshot.decks[StreamDeckId.A].rate,
                     receivedAtMs,
                     sentAtServerMs: event.sentAtServerMs,
                     platterRevision: currentCommands[StreamDeckId.A]?.platterRevision,
@@ -561,7 +582,12 @@ export function useStudioRoom({
                   && !localPauseOverridesRef.current[StreamDeckId.B] ? {
                   [StreamDeckId.B]: {
                     id: `${event.seq ?? Date.now()}:B`, command: RoomTransportCommandType.Sync, playing: true,
-                    positionSeconds: extrapolatePosition(localSnapshot.decks[StreamDeckId.B].positionSeconds, event.sentAtServerMs),
+                    positionSeconds: extrapolatePosition(
+                      localSnapshot.decks[StreamDeckId.B].positionSeconds,
+                      event.sentAtServerMs,
+                      localSnapshot.decks[StreamDeckId.B].rate,
+                    ),
+                    rate: localSnapshot.decks[StreamDeckId.B].rate,
                     receivedAtMs,
                     sentAtServerMs: event.sentAtServerMs,
                     platterRevision: currentCommands[StreamDeckId.B]?.platterRevision,
@@ -628,7 +654,7 @@ export function useStudioRoom({
           const positionSeconds = typeof command.positionSeconds === 'number'
             ? command.command === RoomTransportCommandType.Play
               ? command.playAtServerMs === undefined
-                ? extrapolatePosition(command.positionSeconds, command.sentAtServerMs)
+                ? extrapolatePosition(command.positionSeconds, command.sentAtServerMs, command.rate)
                 : command.positionSeconds
               : command.positionSeconds
             : undefined;
@@ -663,6 +689,7 @@ export function useStudioRoom({
                 : String(event.seq ?? Date.now()),
               command: command.command,
               positionSeconds,
+              rate: command.rate,
               sentAtServerMs: command.sentAtServerMs,
               playAtServerMs: command.playAtServerMs,
               playAtPerformanceMs,

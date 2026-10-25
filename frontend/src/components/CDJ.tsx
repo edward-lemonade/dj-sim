@@ -48,6 +48,7 @@ export type CDJProps = {
     playing?: boolean;
     initialSync?: boolean;
     positionSeconds?: number;
+    rate?: number;
     playAtServerMs?: number;
     playAtPerformanceMs?: number;
     platterAngleDegrees?: number;
@@ -223,8 +224,10 @@ export function CDJ({
     const nowMs = performance.now();
     const elapsedSeconds = pendingTransport.command === RoomTransportCommandType.Play
       && pendingTransport.playAtPerformanceMs !== undefined
-      ? Math.max(0, nowMs - pendingTransport.playAtPerformanceMs) / 1000
-      : isAdvancing ? Math.max(0, nowMs - pendingTransport.receivedAtMs) / 1000 : 0;
+      ? Math.max(0, nowMs - pendingTransport.playAtPerformanceMs) / 1000 * (pendingTransport.rate ?? 1)
+      : isAdvancing
+        ? Math.max(0, nowMs - pendingTransport.receivedAtMs) / 1000 * (pendingTransport.rate ?? 1)
+        : 0;
     const positionSeconds = typeof pendingTransport.positionSeconds === 'number'
       ? pendingTransport.positionSeconds + elapsedSeconds
       : undefined;
@@ -247,7 +250,7 @@ export function CDJ({
         syncCorrectionTimeoutRef.current = window.setTimeout(() => {
           engine?.setSyncCorrection(deckId, 1);
           syncCorrectionTimeoutRef.current = null;
-        }, 1200);
+        }, 5000);
       }
     } else {
       engine?.setSyncCorrection(deckId, 1);
@@ -307,16 +310,21 @@ export function CDJ({
     onBeatCountChange(deckId, beatCount);
   }, [deckId, onBeatCountChange, player.durationSeconds, track?.bpm, track?.id]);
 
+  const reportTransportState = useEffectEvent(() => {
+    if (!onTransportUpdate) return;
+    onTransportUpdate(deckId, {
+      playing: !player.audioElement.paused,
+      positionSeconds: player.audioElement.currentTime || 0,
+      durationSeconds: Number.isFinite(player.audioElement.duration) ? player.audioElement.duration : 0,
+      rate: player.audioElement.playbackRate,
+    });
+  });
+
   useEffect(() => {
     if (!onTransportUpdate) return;
     const timer = window.setInterval(() => {
-      onTransportUpdate(deckId, {
-        playing: !player.audioElement.paused,
-        positionSeconds: player.audioElement.currentTime || 0,
-        durationSeconds: Number.isFinite(player.audioElement.duration) ? player.audioElement.duration : 0,
-        rate: player.audioElement.playbackRate,
-      });
-    }, 250);
+      reportTransportState();
+    }, 50);
     return () => window.clearInterval(timer);
   }, [deckId, onTransportUpdate, player.audioElement]);
 
