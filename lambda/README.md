@@ -147,7 +147,7 @@ response = lambda_client.invoke(
     InvocationType="RequestResponse",  # synchronous — waits for the result
     Payload=json.dumps({
         "bucket": "YOUR_BUCKET",
-        "key": "tracks/song.mp3",
+        "key": "tracks/YOUR_USER_ID/song-UUID.mp3",
         "trackId": "abc123",  # optional, echoed back in the result
     }).encode(),
 )
@@ -157,8 +157,11 @@ print(result)
 ```
 
 Use `InvocationType="Event"` if the backend shouldn't block — then read the
-result back from `s3://YOUR_BUCKET/analysis/tracks/song.mp3.json` (or via
-`backend_webhook_url` in tfvars), same as the S3-triggered path does.
+result back from
+`s3://YOUR_BUCKET/analysis/tracks/YOUR_USER_ID/song-UUID.mp3.json` (or via
+`backend_webhook_url` in tfvars), same as the S3-triggered path does. The
+Lambda treats the source key as opaque, so user-scoped track keys require no
+Lambda environment-variable or notification-filter changes.
 
 ## Notes
 

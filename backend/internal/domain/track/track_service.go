@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -83,7 +82,7 @@ func (s *Service) Upload(ctx context.Context, userID string, input UploadInput) 
 		contentType = mimeTypeForFile(input.FileName)
 	}
 
-	objectKey, err := s.buildTrackObjectKey(input.FileName)
+	objectKey, err := s.buildTrackObjectKey(userID, input.FileName)
 	if err != nil {
 		return nil, err
 	}
@@ -324,12 +323,21 @@ func (s *Service) CancelAnalysis(ctx context.Context, id, userID string) error {
 
 // --- internal helpers ---
 
-func (s *Service) buildTrackObjectKey(fileName string) (string, error) {
+func (s *Service) buildTrackObjectKey(userID, fileName string) (string, error) {
 	if s.tracksPrefix == "" {
 		return "", fmt.Errorf("AWS_S3_TRACKS_KEY is not configured")
 	}
-	datePath := time.Now().UTC().Format("2006/01/02")
-	return fmt.Sprintf("%s/%s/%s-%s", s.tracksPrefix, datePath, uuid.NewString(), sanitizeFileName(fileName)), nil
+	parsedUserID, err := uuid.Parse(userID)
+	if err != nil {
+		return "", fmt.Errorf("invalid user ID for track object key: %w", err)
+	}
+
+	safeFileName := sanitizeFileName(fileName)
+	extension := filepath.Ext(safeFileName)
+	fileNameWithoutExtension := strings.TrimSuffix(safeFileName, extension)
+	uniqueFileName := fmt.Sprintf("%s-%s%s", fileNameWithoutExtension, uuid.NewString(), extension)
+
+	return fmt.Sprintf("%s/%s/%s", s.tracksPrefix, parsedUserID, uniqueFileName), nil
 }
 
 func isAudioUpload(fileName, contentTypeHeader string) bool {

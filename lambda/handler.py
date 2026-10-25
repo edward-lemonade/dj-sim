@@ -5,7 +5,7 @@ Invocation modes
 -----------------
 1. S3 event notification (async, ObjectCreated:*) — event has "Records".
 2. Direct/manual invoke from the backend (RequestResponse or Event) with:
-       {"bucket": "my-bucket", "key": "tracks/song.mp3"}
+       {"bucket": "my-bucket", "key": "tracks/{userId}/song-{uuid}.mp3"}
    Any extra fields you send (e.g. "trackId") are echoed back in the result,
    so you can correlate the response with your own record.
 
