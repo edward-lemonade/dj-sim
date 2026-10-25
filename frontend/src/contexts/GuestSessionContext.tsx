@@ -214,17 +214,13 @@ export function GuestSessionProvider({ children }: { children: ReactNode }) {
     retry,
   };
 
-  if (!ready) {
+  if (!ready && currentResult?.error) {
     return (
       <main className="grid min-h-svh place-items-center bg-[#101214] px-6 text-center text-zinc-200">
         <div>
-          <p role="status">{currentResult?.error ? 'Could not start your session.' : 'Starting your session...'}</p>
-          {currentResult?.error && (
-            <>
-              <p className="mt-2 max-w-lg text-sm text-zinc-400">{currentResult.error}</p>
-              <button className="mt-4 underline" onClick={retry}>Try again</button>
-            </>
-          )}
+          <p role="alert">Could not start your session.</p>
+          <p className="mt-2 max-w-lg text-sm text-zinc-400">{currentResult.error}</p>
+          <button className="mt-4 underline" onClick={retry}>Try again</button>
         </div>
       </main>
     );

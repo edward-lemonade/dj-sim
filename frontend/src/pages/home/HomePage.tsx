@@ -1,8 +1,9 @@
 import { useAuth, useUser } from '@clerk/react';
-import { Download, Pause, Play, Trash2 } from 'lucide-react';
+import { Download, Loader2, Pause, Play, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
+import { useGuestSession } from '@/contexts/GuestSessionContext';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
@@ -42,6 +43,7 @@ function HomePage() {
     (user ? `user-${user.id.slice(-8)}` : null);
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const guestSession = useGuestSession();
   const recordingsQuery = useQuery({
     queryKey: queryKeys.recordings(user?.id ?? null),
     enabled: isLoaded && Boolean(isSignedIn && user && registrationUsername),
@@ -159,7 +161,10 @@ function HomePage() {
       return;
     }
     setJoinError(null);
-    if (!isLoaded) return;
+    if (!isLoaded || !guestSession.ready) {
+      setJoinError('Your session is still being prepared. Please try again shortly.');
+      return;
+    }
     setJoining(true);
     try {
       const joined = await joinRoomByCode(code, user?.imageUrl ?? '');
@@ -389,7 +394,9 @@ function HomePage() {
             </div>
           )}
           {!isLoaded || (isSignedIn && loading) ? (
-            <p className="py-6 text-center text-sm text-slate-400" role="status">Loading recordings...</p>
+            <div className="flex flex-1 flex-col items-center justify-center py-6 text-center md:pl-[32%] md:pr-10">
+              <Loader2 className="animate-spin group-hover:hidden size-10" />
+            </div>
           ) : !isSignedIn ? (
             <div className="flex flex-1 flex-col items-center justify-center py-6 text-center md:pl-[32%] md:pr-10">
               <p className="text-sm text-slate-400">Log in or register to see and save your sets.</p>

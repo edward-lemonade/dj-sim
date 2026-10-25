@@ -27,6 +27,7 @@ export function StudioTopbar({
   onDiscard,
   canRecord,
   canBroadcast,
+  sessionReady,
   streamLive,
   streamViewerCount,
   streamError,
@@ -47,6 +48,7 @@ export function StudioTopbar({
   onDiscard: () => void;
   canRecord: boolean;
   canBroadcast: boolean;
+  sessionReady: boolean;
   streamLive: boolean;
   streamViewerCount: number;
   streamError: string | null;
@@ -170,9 +172,13 @@ export function StudioTopbar({
               {streamViewerCount}
             </span>
           </Button>
-        ) : canBroadcast ? (
+        ) : canBroadcast && sessionReady ? (
           <Button type="button" size="sm" className={controlHover} onClick={onStartStream}>
             <Radio className="text-purple-500" /> Stream
+          </Button>
+        ) : canBroadcast ? (
+          <Button type="button" size="sm" disabled title="Your session is still being prepared">
+            Stream
           </Button>
         ) : (
           <Button type="button" size="sm" disabled title="Sign in to stream">
@@ -289,6 +295,7 @@ export function StudioTopbar({
               className="grid gap-4"
               onSubmit={(event) => {
                 event.preventDefault();
+                if (!sessionReady) return;
                 void onCreateRoom(visibility);
               }}
             >
@@ -328,7 +335,12 @@ export function StudioTopbar({
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={collabBusy} className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+                <Button
+                  type="submit"
+                  disabled={collabBusy || !sessionReady}
+                  title={sessionReady ? undefined : 'Your session is still being prepared'}
+                  className="bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+                >
                   {collabBusy ? <LoaderCircle className="animate-spin" /> : <Users />}
                   {collabBusy ? 'Connecting...' : 'Create room'}
                 </Button>

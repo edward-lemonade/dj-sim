@@ -16,10 +16,12 @@ export function TrackPreview({
   track,
   player,
   onPatch,
+  actionsReady,
 }: {
   track: Track | null;
   player: TrackPlayer;
   onPatch: (id: string, fields: TrackUpdateFields) => Promise<unknown>;
+  actionsReady: boolean;
 }) {
   const { showToast } = useToast();
   const { nudge: nudgeGrid } = useGridNudge({
@@ -65,18 +67,18 @@ export function TrackPreview({
         <CueButtons
           cues={cues}
           currentTime={player.currentTime}
-          disabled={track.libraryStatus !== TrackLibraryStatus.Ready}
+          disabled={!actionsReady || track.libraryStatus !== TrackLibraryStatus.Ready}
           onChange={setCues}
         />
-        <GridControls disabled={track.libraryStatus !== TrackLibraryStatus.Ready || track.bpm <= 0} onNudge={nudgeGrid} />
+        <GridControls disabled={!actionsReady || track.libraryStatus !== TrackLibraryStatus.Ready || track.bpm <= 0} onNudge={nudgeGrid} />
       </div>
 
       <div className="grid grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1fr)_minmax(3.5rem,auto)_minmax(3.5rem,auto)_minmax(3.5rem,auto)] items-center gap-2 bg-mist-900 px-3 py-2 text-xs">
         <SongCover song={track} className="h-8 w-8 shrink-0 rounded-sm shadow-none" />
-        <MetaField label="Title" value={track.title} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
-        <MetaField label="Artist" value={track.artist} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(artist) => onPatch(track.id, { artist })} />
-        <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />
-        <MetaField label="Key" value={track.key} disabled={track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(key) => onPatch(track.id, { key })} />
+        <MetaField label="Title" value={track.title} disabled={!actionsReady || track.libraryStatus !== TrackLibraryStatus.Ready} error={track.errorMessage} onCommit={(title) => onPatch(track.id, { title })} />
+        <MetaField label="Artist" value={track.artist} disabled={!actionsReady || track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(artist) => onPatch(track.id, { artist })} />
+        <MetaField label="BPM" value={track.bpm > 0 ? String(track.bpm) : ''} disabled={!actionsReady || track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(raw) => onPatch(track.id, { bpm: parseBpmInput(raw, track.bpm) })} />
+        <MetaField label="Key" value={track.key} disabled={!actionsReady || track.libraryStatus !== TrackLibraryStatus.Ready} onCommit={(key) => onPatch(track.id, { key })} />
         <div>
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">Time</p>
           <p className="truncate text-zinc-200">{player.durationSeconds > 0 ? formatPlaybackTime(player.durationSeconds, false) : track.duration}</p>

@@ -54,6 +54,7 @@ export function useTrackLibrary() {
     () => queryKeys.trackLibrary(user?.id ?? guestSession.guestUserId),
     [guestSession.guestUserId, user?.id],
   );
+  const sessionReady = guestSession.ready && isLoaded && (isSignedIn ? Boolean(user) : Boolean(guestSession.guestUserId));
   const setSongs = useCallback((updater: SetStateAction<Track[]>) => {
     queryClient.setQueryData<Track[]>(trackLibraryKey, (current) =>
       typeof updater === 'function' ? updater(current ?? []) : updater,
@@ -61,7 +62,7 @@ export function useTrackLibrary() {
   }, [queryClient, trackLibraryKey]);
   const tracksQuery = useQuery({
     queryKey: trackLibraryKey,
-    enabled: guestSession.ready && isLoaded && (isSignedIn ? Boolean(user) : true),
+    enabled: sessionReady,
     queryFn: async () => {
       if (isSignedIn) {
         if (!user) throw new Error('Cannot load tracks without a signed-in user.');
@@ -80,7 +81,7 @@ export function useTrackLibrary() {
       query.state.data?.some((song) => song.libraryStatus === TrackLibraryStatus.Analyzing) ? 4000 : false,
   });
   const songs = tracksQuery.data ?? [];
-  const isLoadingTracks = guestSession.ready && isLoaded && tracksQuery.isPending;
+  const isLoadingTracks = !sessionReady || tracksQuery.isPending;
   useEffect(() => {
     if (tracksQuery.isLoadingError && isLoaded && isSignedIn) {
       showToast(tracksQuery.error instanceof Error ? tracksQuery.error.message : 'Could not load your tracks.', ToastVariant.Error, {
@@ -88,9 +89,13 @@ export function useTrackLibrary() {
       });
     }
   }, [guestSession.ready, isLoaded, isSignedIn, showToast, tracksQuery.error, tracksQuery.isLoadingError]);
-  const { uploadRef, handleUpload } = useTrackUpload({ setSongs });
+  const { uploadRef, handleUpload } = useTrackUpload({ setSongs, sessionReady });
 
   const removeSong = useCallback(async (song: Track) => {
+    if (!sessionReady) {
+      showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
+      return;
+    }
     if (song.libraryStatus === TrackLibraryStatus.Uploading) return;
 
     // Was previously gated on libraryStatus === 'ready' — 'error' tracks
@@ -117,9 +122,13 @@ export function useTrackLibrary() {
       }
       return next;
     });
-  }, [setSongs, showToast]);
+  }, [sessionReady, setSongs, showToast]);
 
   const analyzeSong = useCallback(async (song: Track) => {
+    if (!sessionReady) {
+      showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
+      return;
+    }
     if (song.libraryStatus === TrackLibraryStatus.Uploading || song.libraryStatus === TrackLibraryStatus.Analyzing) return;
 
     setSongs((current) =>
@@ -139,9 +148,13 @@ export function useTrackLibrary() {
         ),
       );
     }
-  }, [setSongs, showToast]);
+  }, [sessionReady, setSongs, showToast]);
 
   const cancelAnalysis = useCallback(async (song: Track) => {
+    if (!sessionReady) {
+      showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
+      return;
+    }
     if (song.libraryStatus !== TrackLibraryStatus.Analyzing) return;
 
     try {
@@ -156,9 +169,12 @@ export function useTrackLibrary() {
     setSongs((current) =>
       current.map((item) => (item.id === song.id ? { ...item, libraryStatus: TrackLibraryStatus.Ready } : item)),
     );
-  }, [setSongs, showToast]);
+  }, [sessionReady, setSongs, showToast]);
 
   const patchTrack = useCallback(async (id: string, fields: TrackUpdateFields) => {
+    if (!sessionReady) {
+      throw new ApiError('Your session is still being prepared. Please try again shortly.', 503);
+    }
     const previous = (queryClient.getQueryData<Track[]>(trackLibraryKey) ?? []).find((song) => song.id === id);
     if (!previous || previous.libraryStatus !== TrackLibraryStatus.Ready) {
       throw new ApiError('Track is not ready', 400);
@@ -176,7 +192,7 @@ export function useTrackLibrary() {
       setSongs((current) => current.map((song) => (song.id === id ? previous : song)));
       throw error;
     }
-  }, [queryClient, setSongs, trackLibraryKey]);
+  }, [queryClient, sessionReady, setSongs, trackLibraryKey]);
 
   return {
     songs,
@@ -190,5 +206,6 @@ export function useTrackLibrary() {
     cancelAnalysis,
     patchTrack,
     isLoadingTracks,
+    sessionReady,
   };
 }

@@ -163,6 +163,7 @@ export function TrackLibrary({
   onAnalyze,
   onCancelAnalyze,
   loading,
+  actionsReady,
 }: {
   songs: Track[];
   setSongs: Dispatch<SetStateAction<Track[]>>;
@@ -176,6 +177,7 @@ export function TrackLibrary({
   onAnalyze: (song: Track) => void;
   onCancelAnalyze: (song: Track) => void;
   loading: boolean;
+  actionsReady: boolean;
 }) {
   const [widths, setWidths] = useState<Record<FlexColumnId, number>>(loadWidths);
   const dragCol = useRef<{
@@ -409,12 +411,15 @@ export function TrackLibrary({
             type="file"
             accept="audio/*"
             multiple
+            disabled={!actionsReady}
             className="hidden"
             onChange={onUpload}
           />
           <Button
             size="sm"
             className="h-7 bg-zinc-100 text-zinc-900 hover:bg-white"
+            disabled={!actionsReady}
+            title={actionsReady ? undefined : 'Your session is still being prepared'}
             onClick={() => uploadRef.current?.click()}
           >
             <Upload className="mr-1.5 h-3.5 w-3.5" />
@@ -502,7 +507,9 @@ export function TrackLibrary({
                   data-song-row
                   data-drag-row
                   onClick={() => onSelect(song.id)}
-                  onDoubleClick={() => onOpen(opened ? null : song)}
+                  onDoubleClick={() => {
+                    if (actionsReady) onOpen(opened ? null : song);
+                  }}
                   style={{
                     transform: shift ? `translateY(${shift}px)` : undefined,
                     transition: drag ? 'transform 150ms ease' : undefined,
@@ -561,7 +568,7 @@ export function TrackLibrary({
                               size="icon-xs"
                               aria-label="Delete track"
                               className="text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
-                              disabled={song.libraryStatus === TrackLibraryStatus.Uploading}
+                              disabled={!actionsReady || song.libraryStatus === TrackLibraryStatus.Uploading}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 void onDelete(song);
@@ -581,7 +588,7 @@ export function TrackLibrary({
                               size="icon-xs"
                               aria-label={analyzing ? 'Stop analysis' : 'Analyze track'}
                               className="group text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-100"
-                              disabled={song.libraryStatus === TrackLibraryStatus.Uploading}
+                              disabled={!actionsReady || song.libraryStatus === TrackLibraryStatus.Uploading}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 analyzing ? onCancelAnalyze(song) : onAnalyze(song);

@@ -10,13 +10,19 @@ import { ToastVariant } from '@/components/ui/toast';
 
 export function useTrackUpload({
   setSongs,
+  sessionReady,
 }: {
   setSongs: Dispatch<SetStateAction<Track[]>>;
+  sessionReady: boolean;
 }) {
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const { showToast } = useToast();
 
   const uploadOne = useCallback(async (file: File) => {
+    if (!sessionReady) {
+      showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
+      return;
+    }
     const pendingId = `upload-${crypto.randomUUID()}`;
     let metadata: Awaited<ReturnType<typeof readTrackMetadata>>;
     try {
@@ -103,15 +109,19 @@ export function useTrackUpload({
         ),
       );
     }
-  }, [setSongs, showToast]);
+  }, [sessionReady, setSongs, showToast]);
 
   const handleUpload = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (files.length === 0) return;
+    if (!sessionReady) {
+      showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
+      return;
+    }
 
     await Promise.all(files.map((file) => uploadOne(file)));
-  }, [uploadOne]);
+  }, [sessionReady, showToast, uploadOne]);
 
   return {
     uploadRef,
