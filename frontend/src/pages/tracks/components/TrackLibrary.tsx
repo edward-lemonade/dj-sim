@@ -1,7 +1,5 @@
 import {
-  type ChangeEvent,
   type Dispatch,
-  type MutableRefObject,
   type SetStateAction,
   useCallback,
   useEffect,
@@ -35,6 +33,8 @@ import { CueTicks } from '../../../components/CueTicks';
 import { CircularProgress } from '@/components/CircularProgress';
 import { KeyNotationType } from '@/constants/KeyNotation';
 import { formatKey, keyColor } from '@/lib/utils/formatKey';
+import type { PreparedTrackFile } from '@/hooks/useTrackUpload';
+import { TrackUploadModal } from './TrackUploadModal';
 
 const STORAGE_KEY = 'dj-sim.tracks.columnWidths';
 
@@ -155,8 +155,8 @@ export function TrackLibrary({
   setSongs,
   selectedId,
   openedId,
-  uploadRef,
-  onUpload,
+  onPrepareUploadFiles,
+  onUploadFiles,
   onSelect,
   onOpen,
   onDelete,
@@ -169,8 +169,8 @@ export function TrackLibrary({
   setSongs: Dispatch<SetStateAction<Track[]>>;
   selectedId: string | null;
   openedId: string | null;
-  uploadRef: MutableRefObject<HTMLInputElement | null>;
-  onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  onPrepareUploadFiles: (files: File[]) => Promise<PreparedTrackFile[]>;
+  onUploadFiles: (files: PreparedTrackFile[]) => Promise<void>;
   onSelect: (id: string) => void;
   onOpen: (song: Track | null) => void;
   onDelete: (song: Track) => void;
@@ -179,6 +179,7 @@ export function TrackLibrary({
   loading: boolean;
   actionsReady: boolean;
 }) {
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [widths, setWidths] = useState<Record<FlexColumnId, number>>(loadWidths);
   const dragCol = useRef<{
     leftId: FlexColumnId;
@@ -406,21 +407,12 @@ export function TrackLibrary({
               <TooltipContent>{sortDirection === SortDirection.Ascending ? 'Ascending' : 'Descending'}</TooltipContent>
             </Tooltip>
           </div>
-          <input
-            ref={uploadRef}
-            type="file"
-            accept="audio/*"
-            multiple
-            disabled={!actionsReady}
-            className="hidden"
-            onChange={onUpload}
-          />
           <Button
             size="sm"
             className="h-7 bg-zinc-100 text-zinc-900 hover:bg-white"
             disabled={!actionsReady}
             title={actionsReady ? undefined : 'Your session is still being prepared'}
-            onClick={() => uploadRef.current?.click()}
+            onClick={() => setUploadOpen(true)}
           >
             <Upload className="mr-1.5 h-3.5 w-3.5" />
             Upload
@@ -428,6 +420,14 @@ export function TrackLibrary({
         </div>
       </div>
 
+      <TrackUploadModal
+        open={uploadOpen}
+        songs={songs}
+        actionsReady={actionsReady}
+        onOpenChange={setUploadOpen}
+        onPrepareFiles={onPrepareUploadFiles}
+        onUploadFiles={onUploadFiles}
+      />
       <div ref={wrapperRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <table className="w-full border-separate border-spacing-0 text-left text-xs text-zinc-200" style={{ tableLayout: 'fixed' }}>
           <colgroup>
