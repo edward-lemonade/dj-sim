@@ -224,6 +224,7 @@ function StudioPage() {
     [studioState.decks],
   );
 
+  const sendTransportState = roomSession.sendTransportState;
   const reportTransport = useCallback((
     id: DeckId,
     next: { playing: boolean; positionSeconds: number; durationSeconds: number; rate: number },
@@ -240,7 +241,8 @@ function StudioPage() {
       deck: id === DeckId.A ? StreamDeckId.A : StreamDeckId.B,
       value: next,
     });
-  }, [studioState.decks]);
+    sendTransportState(id === DeckId.A ? StreamDeckId.A : StreamDeckId.B, next);
+  }, [sendTransportState, studioState.decks]);
 
   const streamCursors = useMemo<RoomCursor[]>(() => {
     const cursors = [...roomCursors];
