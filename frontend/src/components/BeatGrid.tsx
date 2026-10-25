@@ -59,7 +59,7 @@ export function BeatGrid({
   }
 
   return (
-    <div ref={ref} className="pointer-events-none absolute inset-x-2 top-2 bottom-0 z-[5] overflow-hidden">
+    <div ref={ref} className="pointer-events-none absolute inset-x-0 top-2 bottom-0 z-[5] overflow-hidden">
       {lines.map(({ k, x, isMeasure }) => (
         <div key={k} className="absolute inset-y-0 w-0" style={{ left: `${x}%` }}>
           {isMeasure ? (

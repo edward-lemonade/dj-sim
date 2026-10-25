@@ -11,6 +11,7 @@ import { EditWaveformDisplay } from '@/components/EditWaveformDisplay';
 import { MetaField } from '@/components/MetaField';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
+import { useEffect, useRef, useState } from 'react';
 
 export function TrackPreview({
   track,
@@ -24,10 +25,27 @@ export function TrackPreview({
   actionsReady: boolean;
 }) {
   const { showToast } = useToast();
-  const { nudge: nudgeGrid } = useGridNudge({
+  const waveformRef = useRef<HTMLDivElement>(null);
+  const [waveformWidth, setWaveformWidth] = useState(0);
+  useEffect(() => {
+    const element = waveformRef.current;
+    if (!element) return;
+    const updateWidth = () => {
+      const width = element.getBoundingClientRect().width;
+      setWaveformWidth((current) => current === width ? current : width);
+    };
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    updateWidth();
+    return () => observer.disconnect();
+  }, [player.status, track?.id]);
+  const visibleSeconds = (player.viewEnd - player.viewStart) * player.durationSeconds;
+  const secondsPerPixel = waveformWidth > 0 ? visibleSeconds / waveformWidth : 0;
+  const { offset: beatOffset, nudge: nudgeGrid } = useGridNudge({
     trackId: track?.id ?? null,
     bpm: track?.bpm ?? 0,
     savedOffset: track?.beatOffset ?? 0,
+    secondsPerPixel,
     save: (id, beatOffset) => onPatch(id, { beatOffset }),
   });
 
@@ -51,15 +69,18 @@ export function TrackPreview({
   return (
     <section className="flex min-h-0 shrink-0 flex-col bg-mist-900 border-b border-slate/40">
       {player.status === PlayerStatus.Error ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-zinc-400">
+        <div ref={waveformRef} className="flex h-56 min-w-0 shrink-0 items-center justify-center text-sm text-zinc-400">
           Track preview is unavailable.
         </div>
       ) : (
-        <EditWaveformDisplay 
-          track={track} 
-          player={player} 
-          bands={BandOptions.Triple}
-        />
+        <div ref={waveformRef} className="min-w-0 shrink-0">
+          <EditWaveformDisplay
+            track={track}
+            player={player}
+            beatOffset={beatOffset}
+            bands={BandOptions.Triple}
+          />
+        </div>
       )}
 
       <div className="flex items-center justify-center gap-10 border-y bg-mist-900 px-3 py-1.5">

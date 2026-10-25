@@ -10,10 +10,12 @@ import { MiniWaveform } from './MiniWaveform';
 export function EditWaveformDisplay({
   track,
   player,
+  beatOffset,
   bands = BandOptions.Triple,
 }: {
   track: Track | null;
   player: TrackPlayer;
+  beatOffset: number;
   bands?: BandOptions;
 }) {
   if (!track || player.status === PlayerStatus.Idle) {
@@ -39,7 +41,7 @@ export function EditWaveformDisplay({
   const seekSnapped = (fraction: number) => {
     const duration = player.durationSeconds;
     const seconds = fraction * duration;
-    player.seek(snapToBeat(seconds, track.bpm, track.beatOffset, duration));
+    player.seek(snapToBeat(seconds, track.bpm, beatOffset, duration));
   };
 
   return (
@@ -49,7 +51,7 @@ export function EditWaveformDisplay({
         player={player}
         playhead={playhead}
         bpm={track.bpm}
-        beatOffset={track.beatOffset}
+        beatOffset={beatOffset}
         displayMode={WaveformDisplayMode.EDIT}
         cues={cues}
         bands={bands}
