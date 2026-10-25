@@ -75,6 +75,8 @@ interface DeckNodes {
   mediaElement: HTMLMediaElement | null;
   mediaSource: MediaElementAudioSourceNode | null;
   pitchNode: AudioWorkletNode | null;
+  tempoRate: number;
+  syncCorrection: number;
   /** Ratio to apply once pitchNode finishes loading, if set before it was ready. */
   pendingRatio: number | null;
   /** In-flight scratch grain, if the platter is currently being dragged. */
@@ -182,6 +184,8 @@ export class MixerAudioEngine {
       mediaElement: null,
       mediaSource: null,
       pitchNode: null,
+      tempoRate: 1,
+      syncCorrection: 1,
       pendingRatio: null,
       scratchSource: null,
       scratchGain: null,
@@ -365,18 +369,24 @@ export class MixerAudioEngine {
 
   setTempo(deckId: DeckId, percent: number) {
     if (!Number.isFinite(percent) || percent <= -100) return;
-    const rate = 1 + percent / 100;
     const deck = this.deck(deckId);
-    if (deck.mediaElement) {
-      deck.mediaElement.playbackRate = rate;
-    }
+    deck.tempoRate = 1 + percent / 100;
+    this.applyDeckPlaybackRate(deck);
+  }
 
+  setSyncCorrection(deckId: DeckId, correction: number) {
+    const deck = this.deck(deckId);
+    deck.syncCorrection = clamp(correction, 0.98, 1.02);
+    this.applyDeckPlaybackRate(deck);
+  }
+
+  private applyDeckPlaybackRate(deck: DeckNodes) {
+    const rate = deck.tempoRate * deck.syncCorrection;
+    if (deck.mediaElement) deck.mediaElement.playbackRate = rate;
     const correctionRatio = 1 / rate;
     if (deck.pitchNode) {
       setPitchRatio(deck.pitchNode, correctionRatio);
     } else {
-      // Worklet not ready yet — queue it, applied in connectMediaElement's
-      // .then() once the node exists.
       deck.pendingRatio = correctionRatio;
     }
   }

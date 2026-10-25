@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecret string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte, guestSessionTTL time.Duration, guestCookieSecure bool, guestCookieSameSite stdhttp.SameSite) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecret string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte, guestSessionTTL time.Duration, guestCookieSecure bool, guestCookieSameSite stdhttp.SameSite, fakeRoomServerDelay time.Duration) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -59,7 +59,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	roomRepo := room.NewInMemoryRepository()
 	roomManager := room.NewRoomManager()
 	roomSvc := room.NewService(roomRepo, roomCodePepper, roomManager)
-	roomHandler := handler.NewRoomHandler(roomSvc, corsOrigin)
+	roomHandler := handler.NewRoomHandler(roomSvc, corsOrigin, fakeRoomServerDelay)
 	streamSvc.SetRoomDirectory(roomSvc)
 	roomSvc.SetStreamTerminator(streamSvc)
 	roomSvc.SetTrackDirectory(trackSvc)

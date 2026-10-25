@@ -30,14 +30,20 @@ type MixerChangeAction = Extract<StudioAction, { action: StudioActionType.MixerC
 
 const ROOM_MIXER_UPDATE_INTERVAL_MS = 33;
 const ROOM_POINTER_UPDATE_INTERVAL_MS = 1000 / 30;
+const ROOM_PLAYOUT_LEAD_MS = 250;
 
 export type RoomTransportCommand = {
   id: string;
   platterRevision?: string;
+  initiatedByUserId?: string;
   command: RoomTransportCommandType;
   playing?: boolean;
   initialSync?: boolean;
   positionSeconds?: number;
+  rate?: number;
+  sentAtServerMs?: number;
+  playAtServerMs?: number;
+  playAtPerformanceMs?: number;
   platterAngleDegrees?: number;
   receivedAtMs: number;
 };
@@ -50,6 +56,9 @@ type RoomTransportCommandPayload = {
     | RoomTransportCommandType.Pause
     | RoomTransportCommandType.Seek;
   positionSeconds?: number;
+  rate?: number;
+  sentAtServerMs?: number;
+  playAtServerMs?: number;
   platterAngleDegrees?: number;
 };
 
@@ -57,6 +66,10 @@ type RoomRelayEvent = {
   type?: string;
   payload?: unknown;
   seq?: number;
+  sentAtServerMs?: number;
+  clientSentAtMs?: number;
+  serverReceivedAtMs?: number;
+  serverSentAtMs?: number;
   userId?: string;
   username?: string;
   avatarUrl?: string;
@@ -181,6 +194,9 @@ function isRoomTransportCommand(value: unknown): value is RoomTransportCommandPa
   const command = value as Partial<RoomTransportCommandPayload>;
   return command.action === 'transport-command'
     && (command.deck === StreamDeckId.A || command.deck === StreamDeckId.B)
+    && (command.sentAtServerMs === undefined || Number.isFinite(command.sentAtServerMs))
+    && (command.playAtServerMs === undefined || Number.isFinite(command.playAtServerMs))
+    && (command.rate === undefined || (Number.isFinite(command.rate) && command.rate > 0))
     && (
       command.command === RoomTransportCommandType.Play
       || command.command === RoomTransportCommandType.Pause
@@ -249,6 +265,7 @@ export function useStudioRoom({
   const roomSocketRef = useRef<WebSocket | null>(null);
   const roomEventsReadyRef = useRef(false);
   const publishRoomSnapshotsRef = useRef(false);
+  const roomClockOffsetMsRef = useRef<number | null>(null);
   const localPauseOverridesRef = useRef<Record<StreamDeckId, boolean>>({
     [StreamDeckId.A]: false,
     [StreamDeckId.B]: false,
@@ -267,6 +284,18 @@ export function useStudioRoom({
   const roomLibrary = roomLibraryState && roomLibraryState.roomId === room?.id
     ? roomLibraryState.tracks
     : [];
+  const toServerTimeMs = useCallback((performanceTimeMs = performance.now()) => {
+    const offset = roomClockOffsetMsRef.current;
+    return offset === null ? undefined : performanceTimeMs + offset;
+  }, []);
+  const extrapolatePosition = useCallback((positionSeconds: number, sentAtServerMs?: number, rate = 1) => {
+    const offset = roomClockOffsetMsRef.current;
+    if (offset === null || typeof sentAtServerMs !== 'number' || !Number.isFinite(sentAtServerMs)) {
+      return positionSeconds;
+    }
+    const playbackRate = Number.isFinite(rate) && rate > 0 ? rate : 1;
+    return positionSeconds + Math.max(0, performance.now() + offset - sentAtServerMs) / 1000 * playbackRate;
+  }, []);
 
   const commitStudioLocal = useCallback((command: StudioCommand) => {
     if (command.action === StudioActionType.Hydrate) {
@@ -336,12 +365,23 @@ export function useStudioRoom({
     const receivedAtMs = performance.now();
     if (command === RoomTransportCommandType.Pause) localPauseOverridesRef.current[deck] = true;
     if (command === RoomTransportCommandType.Play) localPauseOverridesRef.current[deck] = false;
+    const sentAtServerMs = toServerTimeMs(receivedAtMs);
+    const playAtServerMs = command === RoomTransportCommandType.Play && sentAtServerMs !== undefined
+      ? sentAtServerMs + ROOM_PLAYOUT_LEAD_MS
+      : undefined;
     setTransportCommands((currentCommands) => ({
       ...currentCommands,
       [deck]: {
         id: `local-${receivedAtMs}`,
+        initiatedByUserId: roomUserId ?? undefined,
         command,
         positionSeconds,
+        rate: studioSnapshotRef.current.decks[deck].rate,
+        sentAtServerMs,
+        playAtServerMs,
+        playAtPerformanceMs: playAtServerMs === undefined
+          ? undefined
+          : receivedAtMs + ROOM_PLAYOUT_LEAD_MS,
         platterAngleDegrees,
         receivedAtMs,
       },
@@ -354,13 +394,16 @@ export function useStudioRoom({
         deck,
         command,
         positionSeconds,
+        rate: studioSnapshotRef.current.decks[deck].rate,
+        sentAtServerMs,
+        playAtServerMs,
         platterAngleDegrees,
         ...(platterAngleDegrees === undefined
           ? {}
           : { controlId: deck === StreamDeckId.A ? ControlId.DeckAPlatter : ControlId.DeckBPlatter }),
       },
     }));
-  }, [engine, room?.id]);
+  }, [engine, room?.id, roomUserId, toServerTimeMs]);
 
   const sendControlLeaseEvent = useCallback((event: {
     type: string;
@@ -418,6 +461,27 @@ export function useStudioRoom({
     const handleMessage = (message: MessageEvent) => {
       try {
         const event = JSON.parse(String(message.data)) as RoomRelayEvent;
+        if (event.type === 'time-sync') {
+          const receivedAtMs = performance.now();
+          const sentAtMs = event.clientSentAtMs;
+          const serverReceivedAtMs = event.serverReceivedAtMs;
+          const serverSentAtMs = event.serverSentAtMs;
+          if (
+            typeof sentAtMs === 'number' && Number.isFinite(sentAtMs) &&
+            typeof serverReceivedAtMs === 'number' && Number.isFinite(serverReceivedAtMs) &&
+            typeof serverSentAtMs === 'number' && Number.isFinite(serverSentAtMs)
+          ) {
+            const roundTripMs = receivedAtMs - sentAtMs;
+            if (roundTripMs >= 0 && roundTripMs <= 2000) {
+              const measuredOffset = (serverReceivedAtMs + serverSentAtMs - sentAtMs - receivedAtMs) / 2;
+              const previousOffset = roomClockOffsetMsRef.current;
+              roomClockOffsetMsRef.current = previousOffset === null
+                ? measuredOffset
+                : previousOffset + (measuredOffset - previousOffset) * 0.2;
+            }
+          }
+          return;
+        }
         if (event.type === 'closed') {
           roomSocketRef.current = null;
           roomEventsReadyRef.current = false;
@@ -464,20 +528,31 @@ export function useStudioRoom({
                 [StreamDeckId.B]: false,
               };
               const commandId = String(event.seq ?? Date.now());
+              const receivedAtMs = performance.now();
               setTransportCommands({
                 [StreamDeckId.A]: {
                   id: `${commandId}:A`, command: RoomTransportCommandType.Sync,
                   initialSync: true,
                   playing: localSnapshot.decks[StreamDeckId.A].playing,
-                  positionSeconds: localSnapshot.decks[StreamDeckId.A].positionSeconds,
-                  receivedAtMs: performance.now(),
+                  positionSeconds: extrapolatePosition(
+                    localSnapshot.decks[StreamDeckId.A].positionSeconds,
+                    event.sentAtServerMs,
+                    localSnapshot.decks[StreamDeckId.A].rate,
+                  ),
+                  rate: localSnapshot.decks[StreamDeckId.A].rate,
+                  receivedAtMs,
                 },
                 [StreamDeckId.B]: {
                   id: `${commandId}:B`, command: RoomTransportCommandType.Sync,
                   initialSync: true,
                   playing: localSnapshot.decks[StreamDeckId.B].playing,
-                  positionSeconds: localSnapshot.decks[StreamDeckId.B].positionSeconds,
-                  receivedAtMs: performance.now(),
+                  positionSeconds: extrapolatePosition(
+                    localSnapshot.decks[StreamDeckId.B].positionSeconds,
+                    event.sentAtServerMs,
+                    localSnapshot.decks[StreamDeckId.B].rate,
+                  ),
+                  rate: localSnapshot.decks[StreamDeckId.B].rate,
+                  receivedAtMs,
                 },
               });
             } else {
@@ -491,7 +566,14 @@ export function useStudioRoom({
                   && !localPauseOverridesRef.current[StreamDeckId.A] ? {
                   [StreamDeckId.A]: {
                     id: `${event.seq ?? Date.now()}:A`, command: RoomTransportCommandType.Sync, playing: true,
-                    positionSeconds: localSnapshot.decks[StreamDeckId.A].positionSeconds, receivedAtMs,
+                    positionSeconds: extrapolatePosition(
+                      localSnapshot.decks[StreamDeckId.A].positionSeconds,
+                      event.sentAtServerMs,
+                      localSnapshot.decks[StreamDeckId.A].rate,
+                    ),
+                    rate: localSnapshot.decks[StreamDeckId.A].rate,
+                    receivedAtMs,
+                    sentAtServerMs: event.sentAtServerMs,
                     platterRevision: currentCommands[StreamDeckId.A]?.platterRevision,
                     platterAngleDegrees: currentCommands[StreamDeckId.A]?.platterAngleDegrees,
                   },
@@ -500,7 +582,14 @@ export function useStudioRoom({
                   && !localPauseOverridesRef.current[StreamDeckId.B] ? {
                   [StreamDeckId.B]: {
                     id: `${event.seq ?? Date.now()}:B`, command: RoomTransportCommandType.Sync, playing: true,
-                    positionSeconds: localSnapshot.decks[StreamDeckId.B].positionSeconds, receivedAtMs,
+                    positionSeconds: extrapolatePosition(
+                      localSnapshot.decks[StreamDeckId.B].positionSeconds,
+                      event.sentAtServerMs,
+                      localSnapshot.decks[StreamDeckId.B].rate,
+                    ),
+                    rate: localSnapshot.decks[StreamDeckId.B].rate,
+                    receivedAtMs,
+                    sentAtServerMs: event.sentAtServerMs,
                     platterRevision: currentCommands[StreamDeckId.B]?.platterRevision,
                     platterAngleDegrees: currentCommands[StreamDeckId.B]?.platterAngleDegrees,
                   },
@@ -557,6 +646,18 @@ export function useStudioRoom({
         }
         if (event.type === 'event' && isRoomTransportCommand(event.payload)) {
           const command = event.payload;
+          const receivedAtMs = performance.now();
+          const clockOffsetMs = roomClockOffsetMsRef.current;
+          const playAtPerformanceMs = typeof command.playAtServerMs === 'number' && clockOffsetMs !== null
+            ? command.playAtServerMs - clockOffsetMs
+            : undefined;
+          const positionSeconds = typeof command.positionSeconds === 'number'
+            ? command.command === RoomTransportCommandType.Play
+              ? command.playAtServerMs === undefined
+                ? extrapolatePosition(command.positionSeconds, command.sentAtServerMs, command.rate)
+                : command.positionSeconds
+              : command.positionSeconds
+            : undefined;
           if (command.command === RoomTransportCommandType.Pause) {
             localPauseOverridesRef.current[command.deck] = true;
           } else if (command.command === RoomTransportCommandType.Play) {
@@ -571,8 +672,8 @@ export function useStudioRoom({
               playing: command.command === RoomTransportCommandType.Play
                 ? true
                 : command.command === RoomTransportCommandType.Pause ? false : current.playing,
-              positionSeconds: command.command === RoomTransportCommandType.Seek && Number.isFinite(command.positionSeconds)
-                ? command.positionSeconds!
+              positionSeconds: positionSeconds !== undefined && Number.isFinite(positionSeconds)
+                ? positionSeconds
                 : current.positionSeconds,
             },
           };
@@ -582,13 +683,18 @@ export function useStudioRoom({
             ...currentCommands,
             [command.deck]: {
               id: String(event.seq ?? Date.now()),
+              initiatedByUserId: event.userId,
               platterRevision: command.platterAngleDegrees === undefined
                 ? currentCommands[command.deck]?.platterRevision
                 : String(event.seq ?? Date.now()),
               command: command.command,
-              positionSeconds: command.positionSeconds,
+              positionSeconds,
+              rate: command.rate,
+              sentAtServerMs: command.sentAtServerMs,
+              playAtServerMs: command.playAtServerMs,
+              playAtPerformanceMs,
               platterAngleDegrees: command.platterAngleDegrees ?? currentCommands[command.deck]?.platterAngleDegrees,
-              receivedAtMs: performance.now(),
+              receivedAtMs,
             },
           }));
           return;
@@ -634,13 +740,15 @@ export function useStudioRoom({
     for (const message of buffered?.messages ?? []) handleMessage(message);
     if (buffered?.closeEvent) handleClose();
     if (publishSnapshots) {
+      const sentAtServerMs = toServerTimeMs();
       socket.send(JSON.stringify({
         type: 'snapshot',
         t: engine?.context.currentTime ?? 0,
         payload: { ...studioSnapshotRef.current, pointer: null },
+        ...(sentAtServerMs === undefined ? {} : { sentAtServerMs }),
       }));
     }
-  }, [dispatchStudio, engine, navigate]);
+  }, [dispatchStudio, engine, extrapolatePosition, navigate, toServerTimeMs]);
 
   const startRoom = useCallback(async (visibility: RoomVisibility) => {
     if (!guestSession.ready) {
@@ -697,12 +805,13 @@ export function useStudioRoom({
   }, [attachRoomSession, guestSession.ready, navigate]);
 
   const endRoom = useCallback(async () => {
-    if (!room) return;
+    const roomId = room?.id;
+    if (!roomId) return;
     endingRoomRef.current = true;
     setError(null);
     try {
       await Promise.race([
-        leaveRoom(room.id),
+        leaveRoom(roomId),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error('End room timed out')), 5000)),
       ]);
       publishRoomSnapshotsRef.current = false;
@@ -728,7 +837,7 @@ export function useStudioRoom({
     pendingPointerRef.current = null;
     if (pointerEventTimerRef.current !== null) window.clearTimeout(pointerEventTimerRef.current);
     pointerEventTimerRef.current = null;
-  }, [room]);
+  }, [room?.id]);
 
   useEffect(() => {
     const roomId = room?.id;
@@ -745,6 +854,22 @@ export function useStudioRoom({
   useEffect(() => {
     studioSnapshotRef.current = studioState;
   }, [studioState]);
+
+  useEffect(() => {
+    const roomId = room?.id;
+    if (!roomId) return;
+    const sendTimeSync = () => {
+      const socket = roomSocketRef.current;
+      if (socket?.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify({
+        type: 'time-sync',
+        clientSentAtMs: performance.now(),
+      }));
+    };
+    sendTimeSync();
+    const interval = window.setInterval(sendTimeSync, 2000);
+    return () => window.clearInterval(interval);
+  }, [room]);
 
   const cleanupRoomSession = useEffectEvent(() => {
     if (room) {
@@ -764,18 +889,21 @@ export function useStudioRoom({
   }, []);
 
   useEffect(() => {
-    if (!room) return;
+    const roomId = room?.id;
+    if (!roomId) return;
     const interval = window.setInterval(() => {
       const socket = roomSocketRef.current;
       if (!publishRoomSnapshotsRef.current || socket?.readyState !== WebSocket.OPEN) return;
+      const sentAtServerMs = toServerTimeMs();
       socket.send(JSON.stringify({
         type: 'snapshot',
         t: engine?.context.currentTime ?? 0,
         payload: studioSnapshotRef.current,
+        ...(sentAtServerMs === undefined ? {} : { sentAtServerMs }),
       }));
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [engine, room]);
+  }, [engine, room?.id, toServerTimeMs]);
 
   useEffect(() => () => {
     roomSocketRef.current?.close();

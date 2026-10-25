@@ -231,7 +231,7 @@ function StudioPage() {
     const previous = studioState.decks[id === DeckId.A ? StreamDeckId.A : StreamDeckId.B];
     if (
       previous.playing === next.playing
-      && Math.abs(previous.positionSeconds - next.positionSeconds) < 0.2
+      && Math.abs(previous.positionSeconds - next.positionSeconds) < 0.02
       && Math.abs(previous.durationSeconds - next.durationSeconds) < 0.1
       && previous.rate === next.rate
     ) return;
@@ -347,6 +347,7 @@ function StudioPage() {
         deckId={id}
         label={id}
         engine={engine}
+        roomActive={Boolean(roomSession.room)}
         loadAudio={roomSession.loadTrackAudio}
         roomTransportCommand={roomSession.room ? roomSession.transportCommands[streamDeckId] ?? undefined : undefined}
         roomTracks={roomSession.room ? roomSession.roomLibrary : undefined}
