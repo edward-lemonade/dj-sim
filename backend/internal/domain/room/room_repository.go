@@ -600,6 +600,34 @@ func (r *Repository) Leave(ctx context.Context, roomID, userID string) (*LeaveRe
 	return &LeaveResult{}, nil
 }
 
+func (r *Repository) RemoveUserFromRooms(ctx context.Context, userID string) ([]UserRoomRemoval, error) {
+	var roomIDs []string
+	if r.db != nil {
+		if err := r.db.WithContext(ctx).Table("room_members").
+			Where("user_id = ?", userID).Pluck("room_id", &roomIDs).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		r.mu.RLock()
+		for roomID, members := range r.members {
+			if _, exists := members[userID]; exists {
+				roomIDs = append(roomIDs, roomID)
+			}
+		}
+		r.mu.RUnlock()
+	}
+
+	results := make([]UserRoomRemoval, 0, len(roomIDs))
+	for _, roomID := range roomIDs {
+		result, err := r.Leave(ctx, roomID, userID)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, UserRoomRemoval{RoomID: roomID, LeaveResult: *result})
+	}
+	return results, nil
+}
+
 func getListedRoom(tx *gorm.DB, item Room) (ListedRoom, error) {
 	type memberRow struct {
 		RoomID    string

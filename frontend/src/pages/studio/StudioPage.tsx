@@ -9,6 +9,7 @@ import { StudioTopbar } from '@/components/StudioTopbar';
 import { useAudioEngine, clamp, DECK_IDS, DeckId } from '@/hooks/useAudioEngine';
 import type { MixerState } from '@/hooks/useMixerState';
 import { useTrackLibrary } from '@/hooks/useTrackLibrary';
+import { useAuth } from '@clerk/react';
 import { MAX_PLAYER_ZOOM, MIN_PLAYER_ZOOM } from '@/hooks/useTrackPlayer';
 import { RecordingStatus, useStudioRecording } from '@/hooks/useStudioRecording';
 import { createStream } from '@/lib/api/StreamsAPI';
@@ -47,6 +48,7 @@ function reduceStudio(state: StudioSnapshot, command: StudioCommand): StudioSnap
 }
 
 function StudioPage() {
+  const { isSignedIn } = useAuth();
   const library = useTrackLibrary();
   const [studioState, dispatchStudio] = useReducer(reduceStudio, undefined, createInitialStudioSnapshot);
   const engine = useAudioEngine(studioState.mixer);
@@ -401,6 +403,8 @@ function StudioPage() {
             onStopAndSave={recording.stopAndSave}
             onRetrySave={recording.retrySave}
             onDiscard={recording.discard}
+            canRecord={Boolean(isSignedIn)}
+            canBroadcast={Boolean(isSignedIn)}
             streamLive={streaming.live}
             streamViewerCount={streaming.viewerCount}
             streamError={streamStartError ?? streaming.error}

@@ -10,10 +10,8 @@ import { ToastVariant } from '@/components/ui/toast';
 
 export function useTrackUpload({
   setSongs,
-  isSignedIn,
 }: {
   setSongs: Dispatch<SetStateAction<Track[]>>;
-  isSignedIn: boolean | undefined;
 }) {
   const uploadRef = useRef<HTMLInputElement | null>(null);
   const { showToast } = useToast();
@@ -56,10 +54,6 @@ export function useTrackUpload({
     };
 
     try {
-      if (!isSignedIn) {
-        throw new ApiError('Sign in to upload tracks', 401);
-      }
-
       let waveformOverview = null;
       try {
         waveformOverview = await computeOverviewFromFile(file);
@@ -109,7 +103,7 @@ export function useTrackUpload({
         ),
       );
     }
-  }, [isSignedIn, setSongs, showToast]);
+  }, [setSongs, showToast]);
 
   const handleUpload = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);

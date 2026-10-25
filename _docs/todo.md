@@ -1,2 +1,3 @@
 - search
 - spinner controls
+- guest sessions and account claiming (see [guest-sessions.md](guest-sessions.md))

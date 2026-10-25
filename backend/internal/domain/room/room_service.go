@@ -238,6 +238,31 @@ func (s *Service) CleanupRoomsNoMembers(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) CleanupUserRooms(ctx context.Context, userID string) error {
+	repository, ok := s.repository.(interface {
+		RemoveUserFromRooms(context.Context, string) ([]UserRoomRemoval, error)
+	})
+	if !ok {
+		return errors.New("room repository cannot remove expired guest memberships")
+	}
+	removed, err := repository.RemoveUserFromRooms(ctx, userID)
+	if err != nil {
+		return err
+	}
+	for _, result := range removed {
+		s.manager.RemoveMember(result.RoomID, userID)
+		if result.RoomClosed {
+			s.manager.Close(result.RoomID)
+			if result.StreamID != "" && s.streams != nil {
+				if err := s.streams.EndForced(ctx, result.StreamID); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Service) RelayManager() *RoomManager {
 	return s.manager
 }

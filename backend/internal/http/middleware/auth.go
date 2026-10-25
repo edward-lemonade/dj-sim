@@ -2,21 +2,42 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/user"
 	"github.com/gin-gonic/gin"
 )
 
 const (
-	clerkIDKey = "clerkID"
-	userKey    = "appUser"
+	clerkIDKey      = "clerkID"
+	userKey         = "appUser"
+	guestCookieName = "dj_guest_session"
 )
 
 type UserFinder interface {
 	FindByClerkID(ctx context.Context, clerkID string) (*user.User, error)
+}
+
+type GuestSessionResolver interface {
+	ResolveGuestSession(ctx context.Context, credential string, ttl time.Duration) (*user.User, error)
+}
+
+type GuestCookieOptions struct {
+	Name     string
+	TTL      time.Duration
+	Secure   bool
+	SameSite http.SameSite
+}
+
+func (o GuestCookieOptions) cookieName() string {
+	if o.Name == "" {
+		return guestCookieName
+	}
+	return o.Name
 }
 
 func ClerkID(c *gin.Context) string {
@@ -36,6 +57,52 @@ func Auth(users UserFinder, sessions *SessionVerifier) gin.HandlerFunc {
 		if !authenticate(c, users, sessions, false) {
 			return
 		}
+		c.Next()
+	}
+}
+
+func IdentityAuth(users UserFinder, sessions *SessionVerifier, guests GuestSessionResolver, options GuestCookieOptions) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := strings.TrimSpace(c.GetHeader("Authorization"))
+		if header != "" {
+			if !authenticate(c, users, sessions, false) {
+				return
+			}
+			c.Next()
+			return
+		}
+
+		cookie, err := c.Cookie(options.cookieName())
+		if err != nil || cookie == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "authentication required"})
+			return
+		}
+		if unsafeMethod(c.Request.Method) && subtle.ConstantTimeCompare(
+			[]byte(c.GetHeader("X-Guest-Request")), []byte("1"),
+		) != 1 {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "guest request marker is required"})
+			return
+		}
+
+		u, err := guests.ResolveGuestSession(c.Request.Context(), cookie, options.TTL)
+		if err != nil {
+			if errors.Is(err, user.ErrNotFound) || errors.Is(err, user.ErrGuestExpired) {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "guest session is invalid or expired"})
+				return
+			}
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "could not verify guest session"})
+			return
+		}
+		c.Set(userKey, u)
+		http.SetCookie(c.Writer, &http.Cookie{
+			Name:     options.cookieName(),
+			Value:    cookie,
+			Path:     "/",
+			MaxAge:   int(options.TTL.Seconds()),
+			HttpOnly: true,
+			Secure:   options.Secure,
+			SameSite: options.SameSite,
+		})
 		c.Next()
 	}
 }
@@ -89,10 +156,45 @@ func RequireUser() gin.HandlerFunc {
 	}
 }
 
-func CORS(origin string) gin.HandlerFunc {
+func RequirePermanentUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", origin)
-		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		u := CurrentUser(c)
+		if u == nil || u.ClerkID == nil {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "a registered account is required"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func unsafeMethod(method string) bool {
+	return method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
+}
+
+func CORS(origin string) gin.HandlerFunc {
+	allowedOrigins := make(map[string]struct{})
+	for _, value := range strings.Split(origin, ",") {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			allowedOrigins[value] = struct{}{}
+		}
+	}
+	return func(c *gin.Context) {
+		requestOrigin := c.GetHeader("Origin")
+		_, exactOriginAllowed := allowedOrigins[requestOrigin]
+		_, wildcardAllowed := allowedOrigins["*"]
+		if requestOrigin != "" && !exactOriginAllowed && !wildcardAllowed {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "origin is not allowed"})
+			return
+		}
+		if exactOriginAllowed {
+			c.Header("Access-Control-Allow-Origin", requestOrigin)
+			c.Header("Access-Control-Allow-Credentials", "true")
+			c.Header("Vary", "Origin")
+		} else if wildcardAllowed {
+			c.Header("Access-Control-Allow-Origin", "*")
+		}
+		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Guest-Request")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

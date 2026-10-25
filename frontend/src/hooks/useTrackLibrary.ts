@@ -14,6 +14,7 @@ import {
   type TrackUpdateFields,
 } from '@/lib/types/Track';
 import { useTrackUpload } from './useTrackUpload';
+import { useGuestSession } from '@/contexts/GuestSessionContext';
 import { normalizeCues } from '@/lib/types/Cues';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
@@ -46,9 +47,13 @@ export function trackToPool(track: TrackDTO): Track {
 
 export function useTrackLibrary() {
   const { user, isLoaded, isSignedIn } = useUser();
+  const guestSession = useGuestSession();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const trackLibraryKey = useMemo(() => queryKeys.trackLibrary(user?.id ?? null), [user?.id]);
+  const trackLibraryKey = useMemo(
+    () => queryKeys.trackLibrary(user?.id ?? guestSession.guestUserId),
+    [guestSession.guestUserId, user?.id],
+  );
   const setSongs = useCallback((updater: SetStateAction<Track[]>) => {
     queryClient.setQueryData<Track[]>(trackLibraryKey, (current) =>
       typeof updater === 'function' ? updater(current ?? []) : updater,
@@ -56,14 +61,16 @@ export function useTrackLibrary() {
   }, [queryClient, trackLibraryKey]);
   const tracksQuery = useQuery({
     queryKey: trackLibraryKey,
-    enabled: isLoaded && Boolean(isSignedIn && user),
+    enabled: guestSession.ready && isLoaded && (isSignedIn ? Boolean(user) : true),
     queryFn: async () => {
-      if (!user) throw new Error('Cannot load tracks without a signed-in user.');
-      const username =
-        user.username ||
-        user.primaryEmailAddress?.emailAddress?.split('@')[0] ||
-        `user-${user.id.slice(-8)}`;
-      await ensureCurrentUser(username);
+      if (isSignedIn) {
+        if (!user) throw new Error('Cannot load tracks without a signed-in user.');
+        const username =
+          user.username ||
+          user.primaryEmailAddress?.emailAddress?.split('@')[0] ||
+          `user-${user.id.slice(-8)}`;
+        await ensureCurrentUser(username);
+      }
       const tracks = await listTracks();
       const stillUploading = (queryClient.getQueryData<Track[]>(trackLibraryKey) ?? [])
         .filter((song) => song.libraryStatus === TrackLibraryStatus.Uploading);
@@ -73,15 +80,15 @@ export function useTrackLibrary() {
       query.state.data?.some((song) => song.libraryStatus === TrackLibraryStatus.Analyzing) ? 4000 : false,
   });
   const songs = tracksQuery.data ?? [];
-  const isLoadingTracks = isLoaded && Boolean(isSignedIn) && tracksQuery.isPending;
+  const isLoadingTracks = guestSession.ready && isLoaded && tracksQuery.isPending;
   useEffect(() => {
     if (tracksQuery.isLoadingError && isLoaded && isSignedIn) {
       showToast(tracksQuery.error instanceof Error ? tracksQuery.error.message : 'Could not load your tracks.', ToastVariant.Error, {
         dedupeKey: 'tracks-library-load',
       });
     }
-  }, [isLoaded, isSignedIn, showToast, tracksQuery.error, tracksQuery.isLoadingError]);
-  const { uploadRef, handleUpload } = useTrackUpload({ setSongs, isSignedIn });
+  }, [guestSession.ready, isLoaded, isSignedIn, showToast, tracksQuery.error, tracksQuery.isLoadingError]);
+  const { uploadRef, handleUpload } = useTrackUpload({ setSongs });
 
   const removeSong = useCallback(async (song: Track) => {
     if (song.libraryStatus === TrackLibraryStatus.Uploading) return;
@@ -175,7 +182,7 @@ export function useTrackLibrary() {
     songs,
     setSongs,
     isLoaded,
-    isSignedIn,
+    isSignedIn: Boolean(isSignedIn),
     uploadRef,
     handleUpload,
     removeSong,

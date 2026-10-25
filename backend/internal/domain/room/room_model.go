@@ -101,21 +101,21 @@ type memberLookup struct {
 }
 
 type ControlLease struct {
-	ControlID    string    `json:"controlId"`
-	OwnerID      string    `json:"ownerId"`
+	ControlID     string    `json:"controlId"`
+	OwnerID       string    `json:"ownerId"`
 	OwnerUsername string    `json:"ownerUsername"`
-	ExpiresAt    time.Time `json:"expiresAt"`
+	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
 type RoomTrack struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Artist       string `json:"artist"`
-	BPM          int    `json:"bpm"`
-	Key          string `json:"key"`
-	CoverURL     string `json:"coverUrl"`
-	OwnerID      string `json:"ownerId"`
-	OwnerUsername string `json:"ownerUsername"`
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Artist         string `json:"artist"`
+	BPM            int    `json:"bpm"`
+	Key            string `json:"key"`
+	CoverURL       string `json:"coverUrl"`
+	OwnerID        string `json:"ownerId"`
+	OwnerUsername  string `json:"ownerUsername"`
 	OwnerAvatarURL string `json:"ownerAvatarUrl"`
 }
 
@@ -140,6 +140,11 @@ type JoinResult struct {
 type LeaveResult struct {
 	RoomClosed bool   `json:"roomClosed"`
 	StreamID   string `json:"-"`
+}
+
+type UserRoomRemoval struct {
+	RoomID string
+	LeaveResult
 }
 
 type BroadcastListing struct {

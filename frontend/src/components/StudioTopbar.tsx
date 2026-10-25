@@ -25,6 +25,8 @@ export function StudioTopbar({
   onStopAndSave,
   onRetrySave,
   onDiscard,
+  canRecord,
+  canBroadcast,
   streamLive,
   streamViewerCount,
   streamError,
@@ -43,6 +45,8 @@ export function StudioTopbar({
   onStopAndSave: () => Promise<boolean>;
   onRetrySave: () => Promise<boolean>;
   onDiscard: () => void;
+  canRecord: boolean;
+  canBroadcast: boolean;
   streamLive: boolean;
   streamViewerCount: number;
   streamError: string | null;
@@ -138,10 +142,15 @@ export function StudioTopbar({
                 Discard
               </Button>
             </>
-          ) : (
+          ) : canRecord ? (
             <Button type="button" size="sm" className={controlHover} onClick={onStartRecording}>
               <Circle className="fill-red-500 text-red-500" />
               Record
+            </Button>
+          ) : (
+            <Button type="button" size="sm" disabled title="Sign in to save recordings">
+              <Circle className="fill-red-500 text-red-500" />
+              Sign in to record
             </Button>
           )}
         </div>
@@ -161,9 +170,13 @@ export function StudioTopbar({
               {streamViewerCount}
             </span>
           </Button>
-        ) : (
+        ) : canBroadcast ? (
           <Button type="button" size="sm" className={controlHover} onClick={onStartStream}>
             <Radio className="text-purple-500" /> Stream
+          </Button>
+        ) : (
+          <Button type="button" size="sm" disabled title="Sign in to stream">
+            Stream
           </Button>
         )}
         {collabRoom ? (
