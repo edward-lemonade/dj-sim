@@ -277,6 +277,10 @@ function StudioPage() {
 
   const startStreaming = useCallback(async () => {
     if (!engine) return;
+    if (!library.sessionReady) {
+      setStreamStartError('Your session is still being prepared. Please try again shortly.');
+      return;
+    }
     const name = window.prompt('Name your stream');
     if (name === null) return;
     setStreamStartError(null);
@@ -286,7 +290,7 @@ function StudioPage() {
     } catch (cause) {
       setStreamStartError(cause instanceof Error ? cause.message : 'Could not start streaming.');
     }
-  }, [engine, startStream, roomAvatarUrl, collabRoomId]);
+  }, [engine, library.sessionReady, startStream, roomAvatarUrl, collabRoomId]);
 
   const stopStreaming = useCallback(() => {
     if (window.confirm('Stop streaming? Viewers will be told the stream has ended.')) {
@@ -325,7 +329,9 @@ function StudioPage() {
     return () => window.removeEventListener('pointerdown', handler);
   }, [engine]);
 
-  const ready = library.songs.filter((song) => song.libraryStatus === TrackLibraryStatus.Ready);
+  const ready = library.sessionReady
+    ? library.songs.filter((song) => song.libraryStatus === TrackLibraryStatus.Ready)
+    : [];
   const roomLibraryTracks = roomSession.roomLibrary.map(trackFromRoomLibrary);
   const availableTracks = [
     ...ready,
@@ -349,6 +355,7 @@ function StudioPage() {
           ?? trackFromSnapshot(studioState.decks[streamDeckId].track)}
         tracks={availableTracks}
         onLoadTrack={async (trackId: string) => {
+          if (!library.sessionReady) return;
           const track = availableTracks.find((song) => song.id === trackId);
           roomSession.commitStudio({
             action: StudioActionType.TrackLoad,
@@ -405,6 +412,7 @@ function StudioPage() {
             onDiscard={recording.discard}
             canRecord={Boolean(isSignedIn)}
             canBroadcast={Boolean(isSignedIn)}
+            sessionReady={library.sessionReady}
             streamLive={streaming.live}
             streamViewerCount={streaming.viewerCount}
             streamError={streamStartError ?? streaming.error}

@@ -12,6 +12,7 @@ function TracksPage() {
   const opened = library.songs.find((song) => song.id === player.openedId) ?? null;
 
   const openTrack = (song: Track | null) => {
+    if (!library.sessionReady) return;
     if (song == null) {
       setSelectedId(null);
       void player.close();
@@ -24,11 +25,17 @@ function TracksPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#101214] text-zinc-200 shadow-lg">
-      <TrackPreview track={opened} player={player} onPatch={library.patchTrack} />
+      <TrackPreview
+        track={opened}
+        player={player}
+        onPatch={library.patchTrack}
+        actionsReady={library.sessionReady}
+      />
       <TrackLibrary
         songs={library.songs}
         setSongs={library.setSongs}
         loading={library.isLoadingTracks}
+        actionsReady={library.sessionReady}
         selectedId={selectedId}
         openedId={player.openedId}
         uploadRef={library.uploadRef}

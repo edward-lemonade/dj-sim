@@ -1,6 +1,7 @@
 import { useUser } from '@clerk/react';
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useGuestSession } from '@/contexts/GuestSessionContext';
 import { ENV } from '@/config/env';
 import { createRoom, fetchRoomTrackAudioBlob, getRoomLibrary, leaveRoom } from '@/lib/api/RoomsAPI';
 import { fetchTrackAudioBlob } from '@/lib/api/TrackAPI';
@@ -228,6 +229,7 @@ export function useStudioRoom({
   engine: MixerAudioEngine | null;
 }) {
   const { user } = useUser();
+  const guestSession = useGuestSession();
   const location = useLocation();
   const navigate = useNavigate();
   const avatarUrl = user?.imageUrl ?? '';
@@ -388,8 +390,10 @@ export function useStudioRoom({
 
   const roomId = room?.id;
   const loadTrackAudio = useCallback((trackId: string) => (
-    roomId ? fetchRoomTrackAudioBlob(roomId, trackId) : fetchTrackAudioBlob(trackId)
-  ), [roomId]);
+    !guestSession.ready
+      ? Promise.reject(new Error('Your session is still being prepared. Please try again shortly.'))
+      : roomId ? fetchRoomTrackAudioBlob(roomId, trackId) : fetchTrackAudioBlob(trackId)
+  ), [guestSession.ready, roomId]);
 
   const attachRoomSession = useCallback(async (nextRoom: CreatedRoom, publishSnapshots: boolean) => {
     const socket = await connectRoomRelay(nextRoom);
@@ -605,6 +609,10 @@ export function useStudioRoom({
   }, [dispatchStudio, engine, navigate]);
 
   const startRoom = useCallback(async (visibility: RoomVisibility) => {
+    if (!guestSession.ready) {
+      setError('Your session is still being prepared. Please try again shortly.');
+      return;
+    }
     setBusy(true);
     setError(null);
     endingRoomRef.current = false;
@@ -627,12 +635,12 @@ export function useStudioRoom({
     } finally {
       setBusy(false);
     }
-  }, [attachRoomSession, avatarUrl]);
+  }, [attachRoomSession, avatarUrl, guestSession.ready]);
 
   useEffect(() => {
     const incoming = incomingRoomRef.current;
+    if (!incoming || !guestSession.ready) return;
     incomingRoomRef.current = undefined;
-    if (!incoming) return;
     navigate('/studio', { replace: true, state: null });
     setBusy(true);
     setError(null);
@@ -652,7 +660,7 @@ export function useStudioRoom({
       setBusy(false);
       setIncomingRoomPending(false);
     });
-  }, [attachRoomSession, navigate]);
+  }, [attachRoomSession, guestSession.ready, navigate]);
 
   const endRoom = useCallback(async () => {
     if (!room) return;

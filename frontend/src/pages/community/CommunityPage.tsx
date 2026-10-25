@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, useUser } from '@clerk/react';
 import { Eye } from 'lucide-react';
+import { useGuestSession } from '@/contexts/GuestSessionContext';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
@@ -37,6 +38,7 @@ const UNSKEW = 'md:[transform:skewX(16deg)]';
 
 function CommunityPage() {
   const { isLoaded } = useAuth();
+  const guestSession = useGuestSession();
   const { user } = useUser();
   const avatarUrl = user?.imageUrl ?? '';
   const { showToast } = useToast();
@@ -83,7 +85,10 @@ function CommunityPage() {
 
   const joinListedRoom = useCallback(async (room: ListedRoom) => {
     setJoinError(null);
-    if (!isLoaded) return;
+    if (!isLoaded || !guestSession.ready) {
+      setJoinError('Your session is still being prepared. Please try again shortly.');
+      return;
+    }
     if (room.memberCount >= room.capacity) {
       setJoinError('Room full');
       return;
@@ -100,10 +105,10 @@ function CommunityPage() {
     } finally {
       setJoiningRoomId(null);
     }
-  }, [avatarUrl, isLoaded, navigate, queryClient]);
+  }, [avatarUrl, guestSession.ready, isLoaded, navigate, queryClient]);
 
   useEffect(() => {
-    if (!isLoaded || pendingJoinRef.current) return;
+    if (!isLoaded || !guestSession.ready || pendingJoinRef.current) return;
     const pendingId = readSessionValue(PENDING_PUBLIC_ROOM_KEY);
     if (!pendingId) return;
     pendingJoinRef.current = true;
@@ -122,7 +127,7 @@ function CommunityPage() {
       .finally(() => {
         setJoiningRoomId(null);
       });
-  }, [avatarUrl, isLoaded, navigate, queryClient]);
+  }, [avatarUrl, guestSession.ready, isLoaded, navigate, queryClient]);
 
   useEffect(() => {
     if (!streamsError) return;
@@ -285,7 +290,7 @@ function CommunityPage() {
                         <Button
                           type="button"
                           size="sm"
-                          disabled={full || joining || !isLoaded}
+                          disabled={full || joining || !isLoaded || !guestSession.ready}
                           aria-disabled={full}
                           title={full ? 'Room full' : undefined}
                           onClick={() => void joinListedRoom(room)}

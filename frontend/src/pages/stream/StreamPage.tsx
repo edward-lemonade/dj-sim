@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Home, LoaderCircle, RotateCw } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useGuestSession } from '@/contexts/GuestSessionContext';
 import { ControlSelectionProvider } from '@/components/ControlSelection';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast';
@@ -43,7 +44,8 @@ function formatTime(seconds: number) {
 function StreamPage() {
   const { streamId = '' } = useParams();
   const navigate = useNavigate();
-  const stream = useStreamViewer(streamId);
+  const guestSession = useGuestSession();
+  const stream = useStreamViewer(streamId, guestSession.ready);
   const { status, error, connect, session, needsAudioGesture, playAudio } = stream;
   const { showToast } = useToast();
   const [now, setNow] = useState(0);

@@ -323,7 +323,7 @@ export function useStreamPublisher(
   return { live, viewerCount, error, start, stop, publishSnapshot };
 }
 
-export function useStreamViewer(id: string) {
+export function useStreamViewer(id: string, enabled: boolean) {
   const [session, setSession] = useState<StreamConnection['session'] | null>(null);
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const [status, setStatus] = useState<StreamConnectionStatus>(StreamConnectionStatus.Joining);
@@ -363,6 +363,7 @@ export function useStreamViewer(id: string) {
   }, []);
 
   const connect = useCallback(async () => {
+    if (!enabled) return;
     const attempt = ++attemptRef.current;
     disposedRef.current = false;
     if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
@@ -582,7 +583,7 @@ export function useStreamViewer(id: string) {
         queueReconnect(3000);
       }
     }
-  }, [id, stopViewerAudio]);
+  }, [enabled, id, stopViewerAudio]);
 
   useEffect(() => {
     connectRef.current = connect;
@@ -690,6 +691,7 @@ export function useStreamViewer(id: string) {
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     const joinTimer = window.setTimeout(() => void connect(), 0);
     return () => {
       window.clearTimeout(joinTimer);
@@ -703,7 +705,7 @@ export function useStreamViewer(id: string) {
       });
       audioElementsRef.current = [];
     };
-  }, [connect]);
+  }, [connect, enabled]);
 
   const playAudio = useCallback(() => {
     audioElementsRef.current.forEach((audio) => void audio.play().catch(() => {
