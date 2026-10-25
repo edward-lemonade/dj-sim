@@ -89,7 +89,7 @@ export function useTrackLibrary() {
       });
     }
   }, [guestSession.ready, isLoaded, isSignedIn, showToast, tracksQuery.error, tracksQuery.isLoadingError]);
-  const { uploadRef, handleUpload } = useTrackUpload({ setSongs, sessionReady });
+  const { prepareFiles, uploadFiles } = useTrackUpload({ setSongs, sessionReady });
 
   const removeSong = useCallback(async (song: Track) => {
     if (!sessionReady) {
@@ -199,8 +199,8 @@ export function useTrackLibrary() {
     setSongs,
     isLoaded,
     isSignedIn: Boolean(isSignedIn),
-    uploadRef,
-    handleUpload,
+    prepareFiles,
+    uploadFiles,
     removeSong,
     analyzeSong,
     cancelAnalysis,

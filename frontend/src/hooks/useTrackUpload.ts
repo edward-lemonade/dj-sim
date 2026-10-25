@@ -1,5 +1,5 @@
-import { type ChangeEvent, type Dispatch, type SetStateAction, useCallback, useRef } from 'react';
-import { coverLabelFromTitle, readTrackMetadata } from '@/lib/utils/trackMetadata';
+import { type Dispatch, type SetStateAction, useCallback } from 'react';
+import { coverLabelFromTitle, readTrackMetadata, type ParsedTrackMetadata } from '@/lib/utils/trackMetadata';
 import { computeOverviewFromFile } from '@/lib/utils/threeBandWaveform';
 import { uploadTrack } from '@/lib/api/TrackAPI';
 import { ApiError } from '@/lib/clients/axios';
@@ -8,6 +8,23 @@ import { emptyCues, normalizeCues } from '@/lib/types/Cues';
 import { useToast } from '@/components/ui/toast';
 import { ToastVariant } from '@/components/ui/toast';
 
+export type PreparedTrackFile = {
+  id: string;
+  file: File;
+  metadata: ParsedTrackMetadata | null;
+  error: string | null;
+};
+
+const AUDIO_EXTENSIONS = new Set([
+  'aac', 'aif', 'aiff', 'alac', 'flac', 'm4a', 'mp3', 'oga', 'ogg',
+  'opus', 'wav', 'wave', 'wma',
+]);
+
+function isAudioFile(file: File) {
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+  return file.type.startsWith('audio/') || AUDIO_EXTENSIONS.has(extension);
+}
+
 export function useTrackUpload({
   setSongs,
   sessionReady,
@@ -15,24 +32,36 @@ export function useTrackUpload({
   setSongs: Dispatch<SetStateAction<Track[]>>;
   sessionReady: boolean;
 }) {
-  const uploadRef = useRef<HTMLInputElement | null>(null);
   const { showToast } = useToast();
 
-  const uploadOne = useCallback(async (file: File) => {
+  const prepareFiles = useCallback(async (files: File[]): Promise<PreparedTrackFile[]> => {
+    return Promise.all(files.map(async (file) => {
+      const id = `staged-${crypto.randomUUID()}`;
+      if (!isAudioFile(file)) {
+        return { id, file, metadata: null, error: 'This file does not appear to be a supported audio track.' };
+      }
+      try {
+        const metadata = await readTrackMetadata(file);
+        return { id, file, metadata, error: null };
+      } catch (cause) {
+        return {
+          id,
+          file,
+          metadata: null,
+          error: cause instanceof Error ? cause.message : 'Could not read track metadata.',
+        };
+      }
+    }));
+  }, []);
+
+  const uploadOne = useCallback(async (item: PreparedTrackFile) => {
+    const { file, metadata } = item;
+    if (!metadata) return;
     if (!sessionReady) {
       showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
       return;
     }
     const pendingId = `upload-${crypto.randomUUID()}`;
-    let metadata: Awaited<ReturnType<typeof readTrackMetadata>>;
-    try {
-      metadata = await readTrackMetadata(file);
-    } catch (cause) {
-      showToast(`${file.name}: ${cause instanceof Error ? cause.message : 'Could not read track metadata.'}`, ToastVariant.Error, {
-        dedupeKey: `track-upload-${pendingId}`,
-      });
-      return;
-    }
     const pending: Track = {
       id: pendingId,
       title: metadata.title,
@@ -111,9 +140,7 @@ export function useTrackUpload({
     }
   }, [sessionReady, setSongs, showToast]);
 
-  const handleUpload = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
+  const uploadFiles = useCallback(async (files: PreparedTrackFile[]) => {
     if (files.length === 0) return;
     if (!sessionReady) {
       showToast('Your session is still being prepared. Please try again shortly.', ToastVariant.Info);
@@ -124,7 +151,7 @@ export function useTrackUpload({
   }, [sessionReady, showToast, uploadOne]);
 
   return {
-    uploadRef,
-    handleUpload,
+    prepareFiles,
+    uploadFiles,
   };
 }

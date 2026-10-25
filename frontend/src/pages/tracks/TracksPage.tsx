@@ -38,8 +38,8 @@ function TracksPage() {
         actionsReady={library.sessionReady}
         selectedId={selectedId}
         openedId={player.openedId}
-        uploadRef={library.uploadRef}
-        onUpload={library.handleUpload}
+        onPrepareUploadFiles={library.prepareFiles}
+        onUploadFiles={library.uploadFiles}
         onSelect={setSelectedId}
         onOpen={openTrack}
         onDelete={(song) => {
