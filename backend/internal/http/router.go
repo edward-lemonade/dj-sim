@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	stdhttp "net/http"
 	"time"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/recording"
@@ -18,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecret string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte) *gin.Engine {
+func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecret string, store *storage.S3Store, tracksPrefix string, analysisPrefix string, recordingsPrefix string, analysisWebhookSecret string, liveKitURL string, liveKitAPIKey string, liveKitSecret string, roomCodePepper []byte, guestSessionTTL time.Duration, guestCookieSecure bool, guestCookieSameSite stdhttp.SameSite) *gin.Engine {
 	ctx := context.Background()
 
 	r := gin.Default()
@@ -30,12 +31,23 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 
 	userRepo := user.NewRepository(db)
 	userSvc := user.NewService(userRepo, store, analysisPrefix)
-	userHandler := &handler.UserHandler{Users: userSvc}
-	clerkWebhookHandler := &handler.ClerkWebhookHandler{Users: userSvc, Secret: clerkWebhookSecret}
-
+	guestCookie := middleware.GuestCookieOptions{
+		Name:     "dj_guest_session",
+		TTL:      guestSessionTTL,
+		Secure:   guestCookieSecure,
+		SameSite: guestCookieSameSite,
+	}
 	trackRepo := track.NewRepository(db)
 	trackSvc := track.NewService(trackRepo, store, tracksPrefix, analysisPrefix)
 	trackHandler := &handler.TrackHandler{Tracks: trackSvc}
+	userHandler := &handler.UserHandler{
+		Users:       userSvc,
+		Tracks:      trackSvc,
+		GuestCookie: guestCookie.Name,
+		GuestTTL:    guestCookie.TTL,
+	}
+	guestHandler := &handler.GuestSessionHandler{Users: userSvc, Cookie: guestCookie}
+	clerkWebhookHandler := &handler.ClerkWebhookHandler{Users: userSvc, Secret: clerkWebhookSecret}
 
 	recordingRepo := recording.NewRepository(db)
 	recordingSvc := recording.NewService(recordingRepo, store, recordingsPrefix)
@@ -52,6 +64,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	roomSvc.SetStreamTerminator(streamSvc)
 	roomSvc.SetTrackDirectory(trackSvc)
 	roomSvc.SetS3Store(store)
+	userSvc.SetGuestRoomCleanup(roomSvc.CleanupUserRooms)
 
 	if err := trackRepo.Migrate(ctx); err != nil {
 		log.Fatalf("migration failed: %v", err)
@@ -88,8 +101,24 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			deleted, err := userSvc.CleanupExpiredGuests(context.Background(), 100)
+			if err != nil {
+				log.Printf("expired guest cleanup failed: %v", err)
+				continue
+			}
+			if deleted > 0 {
+				log.Printf("expired guest cleanup: deleted %d guest session(s)", deleted)
+			}
+		}
+	}()
+
 	sessions := middleware.NewSessionVerifier(clerkSecretKey)
 	r.GET("/health", handler.Health)
+	r.POST("/guest/session", guestHandler.Create)
 	r.POST("/webhooks/clerk", clerkWebhookHandler.Handle)
 	r.GET("/rooms", roomHandler.ListPublic)
 	r.GET("/streams", streamHandler.List)
@@ -101,9 +130,14 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	auth := r.Group("/", middleware.Auth(userRepo, sessions))
 
 	auth.GET("/user/me", userHandler.Me)
+	auth.GET("/user/guest-session", userHandler.GuestSessionStatus)
 	auth.POST("/user", userHandler.Register)
+	auth.POST("/user/claim-guest", userHandler.ClaimGuest)
+	auth.POST("/user/decline-guest", userHandler.DeclineGuest)
 
-	tracks := auth.Group("/tracks", middleware.RequireUser())
+	identity := r.Group("/", middleware.IdentityAuth(userRepo, sessions, userSvc, guestCookie))
+
+	tracks := identity.Group("/tracks", middleware.RequireUser())
 	tracks.GET("", trackHandler.List)
 	tracks.POST("/upload", trackHandler.Upload)
 	tracks.PATCH("/:id", trackHandler.Update)
@@ -112,7 +146,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	tracks.POST("/:id/analyze", trackHandler.Analyze)
 	tracks.POST("/:id/analyze/cancel", trackHandler.CancelAnalysis)
 
-	recordings := auth.Group("/recordings", middleware.RequireUser())
+	recordings := auth.Group("/recordings", middleware.RequirePermanentUser())
 	recordings.GET("", recordingHandler.List)
 	recordings.POST("/upload", recordingHandler.Upload)
 	recordings.PATCH("/:id", recordingHandler.Update)
@@ -120,7 +154,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	recordings.GET("/:id/download", recordingHandler.Download)
 	recordings.DELETE("/:id", recordingHandler.Delete)
 
-	rooms := auth.Group("/rooms", middleware.RequireUser())
+	rooms := identity.Group("/rooms", middleware.RequireUser())
 	rooms.GET("/:id", roomHandler.Get)
 	rooms.GET("/:id/library", roomHandler.GetLibrary)
 	rooms.POST("", roomHandler.Create)

@@ -11,6 +11,13 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.ValidateGuestCORS(); err != nil {
+		log.Fatalf("CORS configuration invalid: %v", err)
+	}
+	guestTTL, guestCookieSecure, guestCookieSameSite, err := cfg.GuestCookieOptions()
+	if err != nil {
+		log.Fatalf("guest-session configuration invalid: %v", err)
+	}
 	roomCodePepper, err := cfg.RoomCodePepper()
 	if err != nil {
 		log.Fatalf("room-code configuration invalid: %v", err)
@@ -41,7 +48,7 @@ func main() {
 		log.Println("BACKEND_WEBHOOK_API_KEY not set — analysis webhook endpoint disabled, relying on S3 polling only")
 	}
 
-	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, cfg.ClerkWebhookSecret, store, cfg.S3TracksKey, cfg.S3AnalysisPrefix, cfg.S3RecordingsKey, cfg.AnalysisWebhookSecret, cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitSecret, roomCodePepper)
+	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, cfg.ClerkWebhookSecret, store, cfg.S3TracksKey, cfg.S3AnalysisPrefix, cfg.S3RecordingsKey, cfg.AnalysisWebhookSecret, cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitSecret, roomCodePepper, guestTTL, guestCookieSecure, guestCookieSameSite)
 
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("server failed: %v", err)

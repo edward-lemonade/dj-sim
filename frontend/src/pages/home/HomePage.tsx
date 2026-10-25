@@ -160,11 +160,6 @@ function HomePage() {
     }
     setJoinError(null);
     if (!isLoaded) return;
-    if (!isSignedIn) {
-      writeSessionValue(PENDING_ROOM_CODE_KEY, code);
-      navigate(`/login?redirect=${encodeURIComponent('/')}`);
-      return;
-    }
     setJoining(true);
     try {
       const joined = await joinRoomByCode(code, user?.imageUrl ?? '');

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/edward-lemonade/dj-sim-backend/internal/domain/track"
@@ -13,6 +14,7 @@ import (
 
 type TrackService interface {
 	ListByUserID(ctx context.Context, userID string) ([]track.Track, error)
+	CountByUserID(ctx context.Context, userID string) (int64, error)
 	Upload(ctx context.Context, userID string, input track.UploadInput) (*track.Track, error)
 	GetByIDForUser(ctx context.Context, id, userID string) (*track.Track, error)
 	Update(ctx context.Context, id, userID string, fields track.UpdateFields) (*track.Track, error)
@@ -52,8 +54,14 @@ func (h *TrackHandler) List(c *gin.Context) {
 
 func (h *TrackHandler) Upload(c *gin.Context) {
 	u := middleware.CurrentUser(c)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 100<<20)
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"message": "track upload exceeds the 100 MB limit"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"message": "file is required"})
 		return
 	}
@@ -62,6 +70,21 @@ func (h *TrackHandler) Upload(c *gin.Context) {
 	if header == nil || header.Filename == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "file is required"})
 		return
+	}
+	if header.Size > 100<<20 {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"message": "track upload exceeds the 100 MB limit"})
+		return
+	}
+	if u.ClerkID == nil {
+		count, err := h.Tracks.CountByUserID(c.Request.Context(), u.ID)
+		if err != nil {
+			app_error.WriteError(c, err)
+			return
+		}
+		if count >= 20 {
+			c.JSON(http.StatusTooManyRequests, gin.H{"message": "guest track limit reached; create an account to keep uploading"})
+			return
+		}
 	}
 
 	input := track.UploadInput{

@@ -29,6 +29,12 @@ func (r *Repository) ListByUserID(ctx context.Context, userID string) ([]Track, 
 	return tracks, err
 }
 
+func (r *Repository) CountByUserID(ctx context.Context, userID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&Track{}).Where("user_id = ?", userID).Count(&count).Error
+	return count, err
+}
+
 func (r *Repository) ListByUserIDs(ctx context.Context, userIDs []string) ([]Track, error) {
 	if len(userIDs) == 0 {
 		return []Track{}, nil

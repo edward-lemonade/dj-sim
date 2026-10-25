@@ -36,7 +36,7 @@ const LIST_SKEW = `${LIST_BASE} md:[transform:skewX(-16deg)]`;
 const UNSKEW = 'md:[transform:skewX(16deg)]';
 
 function CommunityPage() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded } = useAuth();
   const { user } = useUser();
   const avatarUrl = user?.imageUrl ?? '';
   const { showToast } = useToast();
@@ -84,11 +84,6 @@ function CommunityPage() {
   const joinListedRoom = useCallback(async (room: ListedRoom) => {
     setJoinError(null);
     if (!isLoaded) return;
-    if (!isSignedIn) {
-      writeSessionValue(PENDING_PUBLIC_ROOM_KEY, room.id);
-      navigate(`/login?redirect=${encodeURIComponent('/community')}`);
-      return;
-    }
     if (room.memberCount >= room.capacity) {
       setJoinError('Room full');
       return;
@@ -105,10 +100,10 @@ function CommunityPage() {
     } finally {
       setJoiningRoomId(null);
     }
-  }, [avatarUrl, isLoaded, isSignedIn, navigate, queryClient]);
+  }, [avatarUrl, isLoaded, navigate, queryClient]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || pendingJoinRef.current) return;
+    if (!isLoaded || pendingJoinRef.current) return;
     const pendingId = readSessionValue(PENDING_PUBLIC_ROOM_KEY);
     if (!pendingId) return;
     pendingJoinRef.current = true;
@@ -127,7 +122,7 @@ function CommunityPage() {
       .finally(() => {
         setJoiningRoomId(null);
       });
-  }, [avatarUrl, isLoaded, isSignedIn, navigate, queryClient]);
+  }, [avatarUrl, isLoaded, navigate, queryClient]);
 
   useEffect(() => {
     if (!streamsError) return;

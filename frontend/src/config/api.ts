@@ -1,7 +1,13 @@
 export const API_ROUTES = {
+  guest: {
+    session: '/guest/session',
+  },
   user: {
     me: '/user/me',
+    guestSession: '/user/guest-session',
     register: '/user',
+    claimGuest: '/user/claim-guest',
+    declineGuest: '/user/decline-guest',
   },
   track: {
     list: '/tracks',

@@ -34,6 +34,7 @@ function clearRequestTimer(config?: InternalAxiosRequestConfig) {
 
 export const axiosClient = axios.create({
   baseURL: ENV.apiBaseUrl,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -48,6 +49,7 @@ axiosClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) 
   if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
     config.headers.delete('Content-Type');
   }
+  config.headers.set('X-Guest-Request', '1');
 
   try {
     const raw = tokenGetter ? await tokenGetter() : await clerkGetToken();
