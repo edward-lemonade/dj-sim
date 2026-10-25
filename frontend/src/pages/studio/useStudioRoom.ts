@@ -36,6 +36,7 @@ export type RoomTransportCommand = {
   platterRevision?: string;
   command: RoomTransportCommandType;
   playing?: boolean;
+  initialSync?: boolean;
   positionSeconds?: number;
   platterAngleDegrees?: number;
   receivedAtMs: number;
@@ -248,6 +249,10 @@ export function useStudioRoom({
   const roomSocketRef = useRef<WebSocket | null>(null);
   const roomEventsReadyRef = useRef(false);
   const publishRoomSnapshotsRef = useRef(false);
+  const localPauseOverridesRef = useRef<Record<StreamDeckId, boolean>>({
+    [StreamDeckId.A]: false,
+    [StreamDeckId.B]: false,
+  });
   const endingRoomRef = useRef(false);
   const studioSnapshotRef = useRef(studioState);
   const pendingMixerEventsRef = useRef<Map<ControlId, MixerChangeAction>>(new Map());
@@ -328,6 +333,19 @@ export function useStudioRoom({
   ) => {
     const socket = roomSocketRef.current;
     if (!room?.id || !roomEventsReadyRef.current || !socket || socket.readyState !== WebSocket.OPEN) return;
+    const receivedAtMs = performance.now();
+    if (command === RoomTransportCommandType.Pause) localPauseOverridesRef.current[deck] = true;
+    if (command === RoomTransportCommandType.Play) localPauseOverridesRef.current[deck] = false;
+    setTransportCommands((currentCommands) => ({
+      ...currentCommands,
+      [deck]: {
+        id: `local-${receivedAtMs}`,
+        command,
+        positionSeconds,
+        platterAngleDegrees,
+        receivedAtMs,
+      },
+    }));
     socket.send(JSON.stringify({
       type: 'event',
       t: engine?.context.currentTime ?? 0,
@@ -441,16 +459,22 @@ export function useStudioRoom({
             studioSnapshotRef.current = localSnapshot;
             dispatchStudio({ action: StudioActionType.Hydrate, value: localSnapshot });
             if (event.type === 'joined') {
+              localPauseOverridesRef.current = {
+                [StreamDeckId.A]: false,
+                [StreamDeckId.B]: false,
+              };
               const commandId = String(event.seq ?? Date.now());
               setTransportCommands({
                 [StreamDeckId.A]: {
                   id: `${commandId}:A`, command: RoomTransportCommandType.Sync,
+                  initialSync: true,
                   playing: localSnapshot.decks[StreamDeckId.A].playing,
                   positionSeconds: localSnapshot.decks[StreamDeckId.A].positionSeconds,
                   receivedAtMs: performance.now(),
                 },
                 [StreamDeckId.B]: {
                   id: `${commandId}:B`, command: RoomTransportCommandType.Sync,
+                  initialSync: true,
                   playing: localSnapshot.decks[StreamDeckId.B].playing,
                   positionSeconds: localSnapshot.decks[StreamDeckId.B].positionSeconds,
                   receivedAtMs: performance.now(),
@@ -458,9 +482,13 @@ export function useStudioRoom({
               });
             } else {
               const receivedAtMs = performance.now();
+              for (const deck of [StreamDeckId.A, StreamDeckId.B]) {
+                if (!localSnapshot.decks[deck].playing) localPauseOverridesRef.current[deck] = false;
+              }
               setTransportCommands((currentCommands) => ({
                 ...currentCommands,
-                ...(localSnapshot.decks[StreamDeckId.A].playing ? {
+                ...(localSnapshot.decks[StreamDeckId.A].playing
+                  && !localPauseOverridesRef.current[StreamDeckId.A] ? {
                   [StreamDeckId.A]: {
                     id: `${event.seq ?? Date.now()}:A`, command: RoomTransportCommandType.Sync, playing: true,
                     positionSeconds: localSnapshot.decks[StreamDeckId.A].positionSeconds, receivedAtMs,
@@ -468,7 +496,8 @@ export function useStudioRoom({
                     platterAngleDegrees: currentCommands[StreamDeckId.A]?.platterAngleDegrees,
                   },
                 } : {}),
-                ...(localSnapshot.decks[StreamDeckId.B].playing ? {
+                ...(localSnapshot.decks[StreamDeckId.B].playing
+                  && !localPauseOverridesRef.current[StreamDeckId.B] ? {
                   [StreamDeckId.B]: {
                     id: `${event.seq ?? Date.now()}:B`, command: RoomTransportCommandType.Sync, playing: true,
                     positionSeconds: localSnapshot.decks[StreamDeckId.B].positionSeconds, receivedAtMs,
@@ -528,6 +557,11 @@ export function useStudioRoom({
         }
         if (event.type === 'event' && isRoomTransportCommand(event.payload)) {
           const command = event.payload;
+          if (command.command === RoomTransportCommandType.Pause) {
+            localPauseOverridesRef.current[command.deck] = true;
+          } else if (command.command === RoomTransportCommandType.Play) {
+            localPauseOverridesRef.current[command.deck] = false;
+          }
           const current = studioSnapshotRef.current.decks[command.deck];
           const action: StudioAction = {
             action: StudioActionType.Transport,
