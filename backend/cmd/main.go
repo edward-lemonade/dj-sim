@@ -22,6 +22,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("room-code configuration invalid: %v", err)
 	}
+	fakeRoomServerDelay, err := cfg.FakeRoomServerDelay()
+	if err != nil {
+		log.Fatalf("room-server-delay configuration invalid: %v", err)
+	}
 	if cfg.ClerkSecretKey == "" {
 		log.Fatal("CLERK_SECRET_KEY is required")
 	}
@@ -48,7 +52,7 @@ func main() {
 		log.Println("BACKEND_WEBHOOK_API_KEY not set — analysis webhook endpoint disabled, relying on S3 polling only")
 	}
 
-	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, cfg.ClerkWebhookSecret, store, cfg.S3TracksKey, cfg.S3AnalysisPrefix, cfg.S3RecordingsKey, cfg.AnalysisWebhookSecret, cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitSecret, roomCodePepper, guestTTL, guestCookieSecure, guestCookieSameSite)
+	r := http.New(db, cfg.CORSOrigin, cfg.ClerkSecretKey, cfg.ClerkWebhookSecret, store, cfg.S3TracksKey, cfg.S3AnalysisPrefix, cfg.S3RecordingsKey, cfg.AnalysisWebhookSecret, cfg.LiveKitURL, cfg.LiveKitAPIKey, cfg.LiveKitSecret, roomCodePepper, guestTTL, guestCookieSecure, guestCookieSameSite, fakeRoomServerDelay)
 
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("server failed: %v", err)

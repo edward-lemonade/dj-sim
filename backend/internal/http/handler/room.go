@@ -36,12 +36,63 @@ type RoomCreator interface {
 }
 
 type RoomHandler struct {
-	Rooms  RoomCreator
-	origin string
+	Rooms           RoomCreator
+	origin          string
+	fakeServerDelay time.Duration
 }
 
-func NewRoomHandler(service RoomCreator, origin string) *RoomHandler {
-	return &RoomHandler{Rooms: service, origin: origin}
+type delayedRoomEvent struct {
+	event room.RoomEvent
+	dueAt time.Time
+}
+
+func newDelayedRoomEventSender(
+	delay time.Duration,
+	send func(room.RoomEvent) error,
+	done <-chan struct{},
+	onError func(error),
+) func(room.RoomEvent) error {
+	if delay <= 0 {
+		return send
+	}
+
+	queue := make(chan delayedRoomEvent, 256)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case delivery := <-queue:
+				timer := time.NewTimer(time.Until(delivery.dueAt))
+				select {
+				case <-done:
+					timer.Stop()
+					return
+				case <-timer.C:
+					if err := send(delivery.event); err != nil {
+						onError(err)
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return func(event room.RoomEvent) error {
+		delivery := delayedRoomEvent{event: event, dueAt: time.Now().Add(delay)}
+		select {
+		case <-done:
+			return errors.New("room connection closed")
+		case queue <- delivery:
+			return nil
+		default:
+			return errors.New("room relay delivery queue full")
+		}
+	}
+}
+
+func NewRoomHandler(service RoomCreator, origin string, fakeServerDelay time.Duration) *RoomHandler {
+	return &RoomHandler{Rooms: service, origin: origin, fakeServerDelay: fakeServerDelay}
 }
 
 func (h *RoomHandler) ListPublic(c *gin.Context) {
@@ -250,6 +301,9 @@ func (h *RoomHandler) Events(c *gin.Context) {
 		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
+	done := make(chan struct{})
+	defer close(done)
+
 	var writeMu sync.Mutex
 	send := func(event room.RoomEvent) error {
 		writeMu.Lock()
@@ -257,9 +311,13 @@ func (h *RoomHandler) Events(c *gin.Context) {
 		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		return conn.WriteJSON(event)
 	}
+	relaySend := newDelayedRoomEventSender(h.fakeServerDelay, send, done, func(err error) {
+		log.Printf("relay room event to %s failed: %v", ticket.UserID, err)
+		_ = conn.Close()
+	})
 	connectionID := uuid.NewString()
 	detach, err := manager.Attach(roomID, room.RoomParticipant{
-		UserID: ticket.UserID, Username: ticket.Username, AvatarURL: ticket.AvatarURL, ConnectionID: connectionID, Send: send,
+		UserID: ticket.UserID, Username: ticket.Username, AvatarURL: ticket.AvatarURL, ConnectionID: connectionID, Send: relaySend,
 		Close: func() { _ = conn.Close() },
 	})
 	if err != nil {
@@ -275,7 +333,6 @@ func (h *RoomHandler) Events(c *gin.Context) {
 		}
 	}()
 
-	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(25 * time.Second)
 		defer ticker.Stop()
@@ -294,7 +351,6 @@ func (h *RoomHandler) Events(c *gin.Context) {
 			}
 		}
 	}()
-	defer close(done)
 
 	timeSyncWindowStart := time.Now()
 	timeSyncCount := 0

@@ -37,7 +37,8 @@ type Config struct {
 	LiveKitAPIKey string
 	LiveKitSecret string
 
-	RoomCodePepperHex string
+	RoomCodePepperHex   string
+	RoomFakeServerDelay string
 }
 
 var ErrInvalidRoomCodePepper = errors.New("ROOM_CODE_PEPPER_HEX must contain at least 64 hexadecimal characters")
@@ -74,7 +75,16 @@ func Load() Config {
 		LiveKitAPIKey:         getEnv("LIVEKIT_API_KEY", ""),
 		LiveKitSecret:         getEnv("LIVEKIT_API_SECRET", ""),
 		RoomCodePepperHex:     getEnv("ROOM_CODE_PEPPER_HEX", ""),
+		RoomFakeServerDelay:   getEnv("ROOM_FAKE_SERVER_DELAY", "0s"),
 	}
+}
+
+func (c Config) FakeRoomServerDelay() (time.Duration, error) {
+	delay, err := time.ParseDuration(c.RoomFakeServerDelay)
+	if err != nil || delay < 0 {
+		return 0, fmt.Errorf("ROOM_FAKE_SERVER_DELAY must be a non-negative duration")
+	}
+	return delay, nil
 }
 
 func (c Config) GuestCookieOptions() (time.Duration, bool, http.SameSite, error) {

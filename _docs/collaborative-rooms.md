@@ -279,6 +279,11 @@ corrected with brief, pitch-compensated tempo adjustments rather than repeated
 hard seeks. Explicit pause and seek commands align every local playhead to the
 initiating member's position.
 
+To simulate room-relay latency locally, set the backend environment variable
+`ROOM_FAKE_SERVER_DELAY` to a Go duration such as `250ms`. It delays delivery
+of room events to other members without pausing the sender's WebSocket reads;
+the default `0s` disables the delay.
+
 For v0, publish one room audio mix through LiveKit, not one separate stream per
 member. Select a connected room member as the audio publisher (the creator is
 the initial publisher when present); if that publisher leaves, transfer
