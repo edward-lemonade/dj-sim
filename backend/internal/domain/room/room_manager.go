@@ -546,6 +546,10 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 		if !validRoomPointer(incoming.Payload) {
 			return errors.New("invalid room pointer")
 		}
+	case "transport":
+		if !validRoomTransport(incoming.Payload) {
+			return errors.New("invalid room transport state")
+		}
 	case "control-acquire":
 		var payload struct {
 			ControlID string `json:"controlId"`
@@ -644,6 +648,23 @@ func validRoomPointer(payload json.RawMessage) bool {
 	return pointer.X >= 0 && pointer.X <= 1 && pointer.Y >= 0 && pointer.Y <= 1 &&
 		!math.IsNaN(pointer.X) && !math.IsInf(pointer.X, 0) &&
 		!math.IsNaN(pointer.Y) && !math.IsInf(pointer.Y, 0)
+}
+
+func validRoomTransport(payload json.RawMessage) bool {
+	var state struct {
+		Deck            string  `json:"deck"`
+		Playing         bool    `json:"playing"`
+		PositionSeconds float64 `json:"positionSeconds"`
+		DurationSeconds float64 `json:"durationSeconds"`
+		Rate            float64 `json:"rate"`
+	}
+	if err := json.Unmarshal(payload, &state); err != nil {
+		return false
+	}
+	return (state.Deck == "A" || state.Deck == "B") &&
+		state.PositionSeconds >= 0 && !math.IsNaN(state.PositionSeconds) && !math.IsInf(state.PositionSeconds, 0) &&
+		state.DurationSeconds >= 0 && !math.IsNaN(state.DurationSeconds) && !math.IsInf(state.DurationSeconds, 0) &&
+		state.Rate > 0 && !math.IsNaN(state.Rate) && !math.IsInf(state.Rate, 0)
 }
 
 func (m *RoomManager) RemoveMember(roomID, userID string) {

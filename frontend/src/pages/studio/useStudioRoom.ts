@@ -30,6 +30,7 @@ type MixerChangeAction = Extract<StudioAction, { action: StudioActionType.MixerC
 
 const ROOM_MIXER_UPDATE_INTERVAL_MS = 33;
 const ROOM_POINTER_UPDATE_INTERVAL_MS = 1000 / 30;
+const ROOM_TRANSPORT_UPDATE_INTERVAL_MS = 100;
 const ROOM_PLAYOUT_LEAD_MS = 250;
 
 export type RoomTransportCommand = {
@@ -277,6 +278,10 @@ export function useStudioRoom({
   const pointerEventTimerRef = useRef<number | null>(null);
   const pendingPointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastPointerSentAtRef = useRef(0);
+  const lastTransportSentAtRef = useRef<Record<StreamDeckId, number>>({
+    [StreamDeckId.A]: 0,
+    [StreamDeckId.B]: 0,
+  });
   const initialIncomingRoom = (location.state as { roomSession?: CreatedRoom } | null)?.roomSession;
   const incomingRoomRef = useRef(initialIncomingRoom);
   const [incomingRoomPending, setIncomingRoomPending] = useState(Boolean(initialIncomingRoom));
@@ -405,6 +410,30 @@ export function useStudioRoom({
     }));
   }, [engine, room?.id, roomUserId, toServerTimeMs]);
 
+  const sendTransportState = useCallback((
+    deck: StreamDeckId,
+    state: { playing: boolean; positionSeconds: number; durationSeconds: number; rate: number },
+  ) => {
+    const socket = roomSocketRef.current;
+    if (
+      !publishRoomSnapshotsRef.current
+      || !roomEventsReadyRef.current
+      || !socket
+      || socket.readyState !== WebSocket.OPEN
+    ) return;
+
+    const sentAtPerformanceMs = performance.now();
+    if (sentAtPerformanceMs - lastTransportSentAtRef.current[deck] < ROOM_TRANSPORT_UPDATE_INTERVAL_MS) return;
+    lastTransportSentAtRef.current[deck] = sentAtPerformanceMs;
+    const sentAtServerMs = toServerTimeMs(sentAtPerformanceMs);
+    socket.send(JSON.stringify({
+      type: 'transport',
+      t: engine?.context.currentTime ?? 0,
+      payload: { deck, ...state },
+      ...(sentAtServerMs === undefined ? {} : { sentAtServerMs }),
+    }));
+  }, [engine, toServerTimeMs]);
+
   const sendControlLeaseEvent = useCallback((event: {
     type: string;
     controlId: ControlId;
@@ -501,6 +530,47 @@ export function useStudioRoom({
           }
           return;
         }
+        if (event.type === 'transport' && event.payload && typeof event.payload === 'object') {
+          const state = event.payload as {
+            deck?: unknown;
+            playing?: unknown;
+            positionSeconds?: unknown;
+            durationSeconds?: unknown;
+            rate?: unknown;
+          };
+          if (
+            (state.deck !== StreamDeckId.A && state.deck !== StreamDeckId.B)
+            || typeof state.playing !== 'boolean'
+            || typeof state.positionSeconds !== 'number'
+            || !Number.isFinite(state.positionSeconds)
+            || typeof state.rate !== 'number'
+            || !Number.isFinite(state.rate)
+            || state.rate <= 0
+          ) return;
+
+          const deck = state.deck;
+          if (!state.playing) localPauseOverridesRef.current[deck] = false;
+          if (localPauseOverridesRef.current[deck]) return;
+          const receivedAtMs = performance.now();
+          const positionSeconds = state.playing
+            ? extrapolatePosition(state.positionSeconds, event.sentAtServerMs, state.rate)
+            : state.positionSeconds;
+          setTransportCommands((currentCommands) => ({
+            ...currentCommands,
+            [deck]: {
+              id: `transport-${event.seq ?? Date.now()}`,
+              command: RoomTransportCommandType.Sync,
+              playing: state.playing,
+              positionSeconds,
+              rate: state.rate,
+              receivedAtMs,
+              sentAtServerMs: event.sentAtServerMs,
+              platterRevision: currentCommands[deck]?.platterRevision,
+              platterAngleDegrees: currentCommands[deck]?.platterAngleDegrees,
+            },
+          }));
+          return;
+        }
         if (event.type === 'error') {
           setError('The room relay rejected an update.');
           return;
@@ -519,7 +589,11 @@ export function useStudioRoom({
             if (members) setRoom((current) => current ? { ...current, members } : current);
           }
           if (snapshot) {
-            const localSnapshot = { ...snapshot, pointer: studioSnapshotRef.current.pointer };
+            const localSnapshot = {
+              ...snapshot,
+              beatsPerView: studioSnapshotRef.current.beatsPerView,
+              pointer: studioSnapshotRef.current.pointer,
+            };
             studioSnapshotRef.current = localSnapshot;
             dispatchStudio({ action: StudioActionType.Hydrate, value: localSnapshot });
             if (event.type === 'joined') {
@@ -926,6 +1000,7 @@ export function useStudioRoom({
     commitStudio,
     commitMixer,
     sendTransportCommand,
+    sendTransportState,
     sendControlLeaseEvent,
     sendRoomPointer,
     loadTrackAudio,

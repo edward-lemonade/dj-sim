@@ -244,7 +244,7 @@ export function CDJ({
       syncCorrectionTimeoutRef.current = null;
     }
     if (isPeriodicSync && !audio.paused && Number.isFinite(driftSeconds)) {
-      const correction = clamp(1 + driftSeconds * 0.2, 0.98, 1.02);
+      const correction = clamp(1 + driftSeconds * 0.8, 0.98, 1.02);
       engine?.setSyncCorrection(deckId, correction);
       if (correction !== 1) {
         syncCorrectionTimeoutRef.current = window.setTimeout(() => {

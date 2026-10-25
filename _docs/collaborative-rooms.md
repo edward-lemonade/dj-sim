@@ -279,7 +279,9 @@ corrected with brief, pitch-compensated tempo adjustments rather than repeated
 hard seeks. Position extrapolation uses the source deck's playback rate so
 non-unity tempo does not create steadily accumulating phase error. Explicit
 pause and seek commands align every local playhead to the initiating member's
-position.
+position. The room publisher also relays lightweight deck-position reports
+several times per second so drift correction does not depend only on the
+one-second full-state snapshots. Waveform zoom remains local to each member.
 
 To simulate room-relay latency locally, set the backend environment variable
 `ROOM_FAKE_SERVER_DELAY` to a Go duration such as `250ms`. It delays delivery

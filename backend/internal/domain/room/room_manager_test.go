@@ -119,6 +119,7 @@ func TestRoomRelayBroadcastsValidatedPointerUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var received []RoomEvent
 	_, err = manager.Attach("room-a", RoomParticipant{
 		UserID: "guest", Username: "Bob", ConnectionID: "guest-connection",
@@ -153,6 +154,53 @@ func TestRoomRelayBroadcastsValidatedPointerUpdates(t *testing.T) {
 		Type: "pointer", T: 1, Payload: json.RawMessage(`null`),
 	}); err != nil {
 		t.Fatalf("publish pointer leave: %v", err)
+	}
+}
+
+func TestRoomRelayBroadcastsValidatedTransportUpdates(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a")
+	_, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", Username: "Alice", ConnectionID: "owner-connection",
+		Send: func(RoomEvent) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received RoomEvent
+	_, err = manager.Attach("room-a", RoomParticipant{
+		UserID: "guest", Username: "Bob", ConnectionID: "guest-connection",
+		Send: func(event RoomEvent) error {
+			if event.Type == "transport" {
+				received = event
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	payload := json.RawMessage(`{"deck":"A","playing":true,"positionSeconds":12.5,"durationSeconds":180,"rate":1.05}`)
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "transport", T: 1, SentAtServerMs: 1234, Payload: payload,
+	}); err != nil {
+		t.Fatalf("publish transport state: %v", err)
+	}
+	if received.Type != "transport" || received.SentAtServerMs != 1234 || received.UserID != "owner" {
+		t.Fatalf("received transport event = %#v", received)
+	}
+
+	for _, invalid := range []string{
+		`{"deck":"C","playing":true,"positionSeconds":1,"durationSeconds":180,"rate":1}`,
+		`{"deck":"A","playing":true,"positionSeconds":-1,"durationSeconds":180,"rate":1}`,
+		`{"deck":"A","playing":true,"positionSeconds":1,"durationSeconds":180,"rate":0}`,
+	} {
+		if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+			Type: "transport", T: 1, Payload: json.RawMessage(invalid),
+		}); err == nil {
+			t.Errorf("accepted invalid transport state %s", invalid)
+		}
 	}
 }
 
