@@ -44,6 +44,7 @@ export type CDJProps = {
     platterRevision?: string;
     command: RoomTransportCommandType;
     playing?: boolean;
+    initialSync?: boolean;
     positionSeconds?: number;
     platterAngleDegrees?: number;
     receivedAtMs: number;
@@ -212,9 +213,15 @@ export function CDJ({
       ? pendingTransport.positionSeconds + loadDelaySeconds
       : undefined;
     const seekThreshold = pendingTransport.command === RoomTransportCommandType.Seek ? 0.01 : 0.75;
+    const driftSeconds = typeof positionSeconds === 'number'
+      ? positionSeconds - audio.currentTime
+      : 0;
+    const isPeriodicSync = pendingTransport.command === RoomTransportCommandType.Sync
+      && !pendingTransport.initialSync;
     if (
       typeof positionSeconds === 'number' && Number.isFinite(positionSeconds) &&
-      Math.abs(audio.currentTime - positionSeconds) > seekThreshold
+      (!isPeriodicSync || audio.paused) &&
+      Math.abs(driftSeconds) > seekThreshold
     ) {
       player.seek(positionSeconds);
     }

@@ -266,6 +266,13 @@ measurements. Stream viewers buffer sequenced room events and interpolate
 continuous values/playheads against the broadcast audio timeline, following
 the playout-buffer approach in the streaming spec.
 
+For local room playback, the initial join snapshot may align a deck in either
+direction. Periodic snapshots must not hard-seek an already-playing local deck:
+network-delayed snapshots can otherwise repeatedly jolt its playhead. They may
+still initialize or recover a paused deck. A member's explicit pause also
+overrides periodic snapshots that still report playing; a later explicit play
+from any member can resume it. Explicit seek commands remain authoritative.
+
 For v0, publish one room audio mix through LiveKit, not one separate stream per
 member. Select a connected room member as the audio publisher (the creator is
 the initial publisher when present); if that publisher leaves, transfer
