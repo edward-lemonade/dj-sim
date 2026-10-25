@@ -47,20 +47,26 @@ type TrackAccessToken struct {
 }
 
 type RoomEvent struct {
-	RoomID    string          `json:"roomId"`
-	Type      string          `json:"type"`
-	Seq       uint64          `json:"seq,omitempty"`
-	T         float64         `json:"t,omitempty"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
-	UserID    string          `json:"userId,omitempty"`
-	Username  string          `json:"username,omitempty"`
-	AvatarURL string          `json:"avatarUrl,omitempty"`
+	RoomID             string          `json:"roomId"`
+	Type               string          `json:"type"`
+	Seq                uint64          `json:"seq,omitempty"`
+	T                  float64         `json:"t,omitempty"`
+	Payload            json.RawMessage `json:"payload,omitempty"`
+	UserID             string          `json:"userId,omitempty"`
+	Username           string          `json:"username,omitempty"`
+	AvatarURL          string          `json:"avatarUrl,omitempty"`
+	SentAtServerMs     float64         `json:"sentAtServerMs,omitempty"`
+	ClientSentAtMs     float64         `json:"clientSentAtMs,omitempty"`
+	ServerReceivedAtMs float64         `json:"serverReceivedAtMs,omitempty"`
+	ServerSentAtMs     float64         `json:"serverSentAtMs,omitempty"`
 }
 
 type RoomMessage struct {
-	Type    string          `json:"type"`
-	T       float64         `json:"t"`
-	Payload json.RawMessage `json:"payload"`
+	Type           string          `json:"type"`
+	T              float64         `json:"t"`
+	Payload        json.RawMessage `json:"payload"`
+	SentAtServerMs float64         `json:"sentAtServerMs,omitempty"`
+	ClientSentAtMs float64         `json:"clientSentAtMs,omitempty"`
 }
 
 type RoomPresence struct {
@@ -88,17 +94,18 @@ type RoomParticipant struct {
 }
 
 type roomRelay struct {
-	mu           sync.Mutex
-	ownerID      string
-	seq          uint64
-	snapshotSeq  uint64
-	snapshotTime float64
-	snapshot     json.RawMessage
-	recent       []RoomEvent
-	participants map[string]RoomParticipant
-	rates        map[string]rateWindow
-	leases       map[string]ControlLease
-	trackOwners  map[string]string
+	mu                     sync.Mutex
+	ownerID                string
+	seq                    uint64
+	snapshotSeq            uint64
+	snapshotTime           float64
+	snapshot               json.RawMessage
+	snapshotSentAtServerMs float64
+	recent                 []RoomEvent
+	participants           map[string]RoomParticipant
+	rates                  map[string]rateWindow
+	leases                 map[string]ControlLease
+	trackOwners            map[string]string
 }
 
 type rateWindow struct {
@@ -343,7 +350,10 @@ func (m *RoomManager) Attach(roomID string, participant RoomParticipant) (func()
 		live.mu.Unlock()
 		return nil, err
 	}
-	if err := participant.Send(RoomEvent{RoomID: roomID, Type: "joined", Seq: snapshotSeq, T: snapshotTime, Payload: joinedPayload}); err != nil {
+	if err := participant.Send(RoomEvent{
+		RoomID: roomID, Type: "joined", Seq: snapshotSeq, T: snapshotTime,
+		Payload: joinedPayload, SentAtServerMs: live.snapshotSentAtServerMs,
+	}); err != nil {
 		live.mu.Unlock()
 		return nil, err
 	}
@@ -502,7 +512,13 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 	if rate.count > 120 {
 		return errors.New("room event rate exceeded")
 	}
-	if incoming.T < 0 || math.IsNaN(incoming.T) || math.IsInf(incoming.T, 0) || len(incoming.Payload) == 0 || len(incoming.Payload) > 256<<10 || !json.Valid(incoming.Payload) {
+	sentAtServerMs := incoming.SentAtServerMs
+	if sentAtServerMs == 0 {
+		sentAtServerMs = float64(now.UnixNano()) / float64(time.Millisecond)
+	}
+	if incoming.T < 0 || math.IsNaN(incoming.T) || math.IsInf(incoming.T, 0) ||
+		incoming.SentAtServerMs < 0 || math.IsNaN(incoming.SentAtServerMs) || math.IsInf(incoming.SentAtServerMs, 0) ||
+		len(incoming.Payload) == 0 || len(incoming.Payload) > 256<<10 || !json.Valid(incoming.Payload) {
 		return errors.New("invalid room event")
 	}
 	switch incoming.Type {
@@ -563,13 +579,15 @@ func (m *RoomManager) Publish(roomID, connectionID string, incoming RoomMessage)
 
 	live.seq++
 	event := RoomEvent{
-		RoomID: roomID, Type: incoming.Type, Seq: live.seq, T: incoming.T, Payload: append(json.RawMessage(nil), incoming.Payload...),
+		RoomID: roomID, Type: incoming.Type, Seq: live.seq, T: incoming.T,
+		Payload: append(json.RawMessage(nil), incoming.Payload...), SentAtServerMs: sentAtServerMs,
 		UserID: participant.UserID, Username: participant.Username,
 	}
 	if incoming.Type == "snapshot" {
 		live.snapshot = append(live.snapshot[:0], incoming.Payload...)
 		live.snapshotSeq = event.Seq
 		live.snapshotTime = event.T
+		live.snapshotSentAtServerMs = event.SentAtServerMs
 	} else {
 		live.recent = append(live.recent, event)
 		if len(live.recent) > 200 {

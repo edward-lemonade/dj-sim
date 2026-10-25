@@ -35,6 +35,7 @@ export type CDJProps = {
   deckId: DeckId;
   label?: DeckId;
   engine: MixerAudioEngine | null;
+  roomActive?: boolean;
   readOnlyState?: Pick<StreamDeckSnapshot, 'playing' | 'positionSeconds' | 'durationSeconds' | 'rate'> & {
     capturedAt: number;
     currentTime: number;
@@ -42,10 +43,13 @@ export type CDJProps = {
   roomTransportCommand?: {
     id: string;
     platterRevision?: string;
+    initiatedByUserId?: string;
     command: RoomTransportCommandType;
     playing?: boolean;
     initialSync?: boolean;
     positionSeconds?: number;
+    playAtServerMs?: number;
+    playAtPerformanceMs?: number;
     platterAngleDegrees?: number;
     receivedAtMs: number;
   };
@@ -82,6 +86,7 @@ export function CDJ({
   deckId,
   label,
   engine,
+  roomActive = false,
   readOnlyState,
   roomTransportCommand,
   tracks,
@@ -141,11 +146,14 @@ export function CDJ({
   const lastRoomTransportCommandIdRef = useRef<string | undefined>(undefined);
   const pendingRoomTransportCommandRef = useRef<typeof roomTransportCommand>(undefined);
   const lastScratchRoomSentAtRef = useRef(0);
+  const syncCorrectionTimeoutRef = useRef<number | null>(null);
+  const scheduledRoomPlayTimeoutRef = useRef<number | null>(null);
   const [localPlatterOverrideRevision, setLocalPlatterOverrideRevision] = useState<string | undefined>();
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [platterSize, setPlatterSize] = useState(PLATTER_MIN_SIZE);
   const [waveformTarget, setWaveformTarget] = useState<HTMLElement | null>(null);
+  const [roomPlayPending, setRoomPlayPending] = useState(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -195,6 +203,11 @@ export function CDJ({
       pendingRoomTransportCommandRef.current = roomTransportCommand;
     }
     const pendingTransport = pendingRoomTransportCommandRef.current;
+    if (scheduledRoomPlayTimeoutRef.current !== null) {
+      window.clearTimeout(scheduledRoomPlayTimeoutRef.current);
+      scheduledRoomPlayTimeoutRef.current = null;
+      window.setTimeout(() => setRoomPlayPending(false), 0);
+    }
     if (
       !pendingTransport
       || readOnlyState
@@ -204,20 +217,41 @@ export function CDJ({
     ) return;
 
     const audio = player.audioElement;
-    const isAdvancing = pendingTransport.command === RoomTransportCommandType.Play
+    const isAdvancing = (pendingTransport.command === RoomTransportCommandType.Play
+      && pendingTransport.playAtPerformanceMs === undefined)
       || (pendingTransport.command === RoomTransportCommandType.Sync && pendingTransport.playing === true);
-    const loadDelaySeconds = isAdvancing
-      ? Math.max(0, performance.now() - pendingTransport.receivedAtMs) / 1000
-      : 0;
+    const nowMs = performance.now();
+    const elapsedSeconds = pendingTransport.command === RoomTransportCommandType.Play
+      && pendingTransport.playAtPerformanceMs !== undefined
+      ? Math.max(0, nowMs - pendingTransport.playAtPerformanceMs) / 1000
+      : isAdvancing ? Math.max(0, nowMs - pendingTransport.receivedAtMs) / 1000 : 0;
     const positionSeconds = typeof pendingTransport.positionSeconds === 'number'
-      ? pendingTransport.positionSeconds + loadDelaySeconds
+      ? pendingTransport.positionSeconds + elapsedSeconds
       : undefined;
-    const seekThreshold = pendingTransport.command === RoomTransportCommandType.Seek ? 0.01 : 0.75;
+    const seekThreshold = pendingTransport.command === RoomTransportCommandType.Sync && !pendingTransport.initialSync
+      ? 0.02
+      : 0.01;
     const driftSeconds = typeof positionSeconds === 'number'
       ? positionSeconds - audio.currentTime
       : 0;
     const isPeriodicSync = pendingTransport.command === RoomTransportCommandType.Sync
       && !pendingTransport.initialSync;
+    if (syncCorrectionTimeoutRef.current !== null) {
+      window.clearTimeout(syncCorrectionTimeoutRef.current);
+      syncCorrectionTimeoutRef.current = null;
+    }
+    if (isPeriodicSync && !audio.paused && Number.isFinite(driftSeconds)) {
+      const correction = clamp(1 + driftSeconds * 0.2, 0.98, 1.02);
+      engine?.setSyncCorrection(deckId, correction);
+      if (correction !== 1) {
+        syncCorrectionTimeoutRef.current = window.setTimeout(() => {
+          engine?.setSyncCorrection(deckId, 1);
+          syncCorrectionTimeoutRef.current = null;
+        }, 1200);
+      }
+    } else {
+      engine?.setSyncCorrection(deckId, 1);
+    }
     if (
       typeof positionSeconds === 'number' && Number.isFinite(positionSeconds) &&
       (!isPeriodicSync || audio.paused) &&
@@ -230,9 +264,22 @@ export function CDJ({
     const shouldPause = pendingTransport.command === RoomTransportCommandType.Pause
       || (pendingTransport.command === RoomTransportCommandType.Sync && pendingTransport.playing === false);
     if (shouldPlay && audio.paused) {
-      void player.play().catch((cause: unknown) => {
-        console.warn('Could not follow room playback', cause);
-      });
+      const play = () => {
+        scheduledRoomPlayTimeoutRef.current = null;
+        setRoomPlayPending(false);
+        void player.play().catch((cause: unknown) => {
+          console.warn('Could not follow room playback', cause);
+        });
+      };
+      const delayMs = pendingTransport.playAtPerformanceMs === undefined
+        ? 0
+        : Math.max(0, pendingTransport.playAtPerformanceMs - performance.now());
+      if (delayMs > 0) {
+        window.setTimeout(() => setRoomPlayPending(true), 0);
+        scheduledRoomPlayTimeoutRef.current = window.setTimeout(play, delayMs);
+      } else {
+        play();
+      }
     } else if (shouldPause && !audio.paused) {
       player.pause();
     }
@@ -242,6 +289,16 @@ export function CDJ({
   useEffect(() => {
     applyRoomTransport();
   }, [roomTransportCommand?.id, player.status, readOnlyState, track?.id]);
+
+  useEffect(() => () => {
+    if (scheduledRoomPlayTimeoutRef.current !== null) {
+      window.clearTimeout(scheduledRoomPlayTimeoutRef.current);
+    }
+    if (syncCorrectionTimeoutRef.current !== null) {
+      window.clearTimeout(syncCorrectionTimeoutRef.current);
+    }
+    engine?.setSyncCorrection(deckId, 1);
+  }, [deckId, engine]);
 
   useEffect(() => {
     const beatCount = track?.bpm && player.durationSeconds > 0
@@ -345,7 +402,7 @@ export function CDJ({
     }
     if (!readOnlyState && shouldResume) {
       onTransportCommand?.(deckId, RoomTransportCommandType.Play, player.currentTime);
-      void player.play();
+      if (!roomActive) void player.play();
     }
   };
 
@@ -464,6 +521,8 @@ export function CDJ({
         cueDisabled={cueSlotsFull || readOnlyState !== undefined}
         label={label}
         onCue={setCueAtPlayhead}
+        deferRoomPlay={roomActive}
+        roomPlayPending={roomPlayPending}
         onTransportCommand={(command, positionSeconds) => onTransportCommand?.(deckId, command, positionSeconds)}
       />
       </section>

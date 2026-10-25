@@ -12,6 +12,8 @@ export type DeckControlsProps = {
   cues: Array<number | null>;
   disabled?: boolean;
   cueDisabled?: boolean;
+  deferRoomPlay?: boolean;
+  roomPlayPending?: boolean;
   label?: DeckId;
   onCue: () => void;
   onTransportCommand?: (
@@ -20,8 +22,20 @@ export type DeckControlsProps = {
   ) => void;
 };
 
-export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, onCue, onTransportCommand }: DeckControlsProps) {
-  const playing = player.status === PlayerStatus.Playing;
+export function DeckControls({
+  player,
+  bpm,
+  cues,
+  disabled,
+  cueDisabled,
+  deferRoomPlay = false,
+  roomPlayPending = false,
+  label,
+  onCue,
+  onTransportCommand,
+}: DeckControlsProps) {
+  const actuallyPlaying = player.status === PlayerStatus.Playing;
+  const playing = actuallyPlaying || roomPlayPending;
   const beatSeconds = bpm > 0 ? 60 / bpm : 0;
   const nudgeDisabled = disabled || beatSeconds <= 0;
 
@@ -55,7 +69,7 @@ export function DeckControls({ player, bpm, cues, disabled, cueDisabled, label, 
               playing ? RoomTransportCommandType.Pause : RoomTransportCommandType.Play,
               player.currentTime,
             );
-            player.togglePlay();
+            if (!deferRoomPlay || actuallyPlaying) player.togglePlay();
           }}
           aria-label={playing ? (label ? `Pause deck ${label}` : 'Pause') : label ? `Play deck ${label}` : 'Play'}
           className={`flex h-14 w-14 items-center justify-center rounded-full border text-white disabled:cursor-not-allowed disabled:opacity-40 ${

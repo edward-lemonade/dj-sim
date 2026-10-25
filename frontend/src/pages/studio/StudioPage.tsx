@@ -347,6 +347,7 @@ function StudioPage() {
         deckId={id}
         label={id}
         engine={engine}
+        roomActive={Boolean(roomSession.room)}
         loadAudio={roomSession.loadTrackAudio}
         roomTransportCommand={roomSession.room ? roomSession.transportCommands[streamDeckId] ?? undefined : undefined}
         roomTracks={roomSession.room ? roomSession.roomLibrary : undefined}

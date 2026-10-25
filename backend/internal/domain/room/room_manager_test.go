@@ -25,6 +25,40 @@ func TestRoomRelaySequencesEventsAndReplaysSnapshot(t *testing.T) {
 	t.Skip("leases field test expectation needs adjustment")
 }
 
+func TestRoomRelayIncludesSnapshotTimestampWhenJoining(t *testing.T) {
+	manager := NewRoomManager()
+	manager.Ensure("room-a")
+	_, err := manager.Attach("room-a", RoomParticipant{
+		UserID: "owner", Username: "Alice", ConnectionID: "owner-connection",
+		Send: func(RoomEvent) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("attach owner: %v", err)
+	}
+	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
+		Type: "snapshot", T: 1, SentAtServerMs: 1234, Payload: json.RawMessage(relayTestSnapshot),
+	}); err != nil {
+		t.Fatalf("publish snapshot: %v", err)
+	}
+
+	var joined RoomEvent
+	_, err = manager.Attach("room-a", RoomParticipant{
+		UserID: "guest", Username: "Bob", ConnectionID: "guest-connection",
+		Send: func(event RoomEvent) error {
+			if event.Type == "joined" {
+				joined = event
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("attach guest: %v", err)
+	}
+	if joined.SentAtServerMs != 1234 {
+		t.Fatalf("joined snapshot timestamp = %v, want 1234", joined.SentAtServerMs)
+	}
+}
+
 func TestRoomRelayRemembersInviteCodeUntilClose(t *testing.T) {
 	manager := NewRoomManager()
 	manager.RememberInviteCode("room-a", "000042")
@@ -98,13 +132,13 @@ func TestRoomRelayBroadcastsValidatedPointerUpdates(t *testing.T) {
 	}
 
 	if err := manager.Publish("room-a", "owner-connection", RoomMessage{
-		Type: "pointer", T: 1, Payload: json.RawMessage(`{"x":0.25,"y":0.75}`),
+		Type: "pointer", T: 1, SentAtServerMs: 1234, Payload: json.RawMessage(`{"x":0.25,"y":0.75}`),
 	}); err != nil {
 		t.Fatalf("publish pointer: %v", err)
 	}
 	pointerEvent := received[len(received)-1]
 	if pointerEvent.Type != "pointer" || pointerEvent.UserID != "owner" || pointerEvent.Username != "Alice" ||
-		string(pointerEvent.Payload) != `{"x":0.25,"y":0.75}` {
+		string(pointerEvent.Payload) != `{"x":0.25,"y":0.75}` || pointerEvent.SentAtServerMs != 1234 {
 		t.Fatalf("pointer event = %+v", pointerEvent)
 	}
 

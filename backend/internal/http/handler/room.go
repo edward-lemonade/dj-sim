@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -295,6 +296,8 @@ func (h *RoomHandler) Events(c *gin.Context) {
 	}()
 	defer close(done)
 
+	timeSyncWindowStart := time.Now()
+	timeSyncCount := 0
 	for {
 		_, message, err := conn.NextReader()
 		if err != nil {
@@ -311,6 +314,26 @@ func (h *RoomHandler) Events(c *gin.Context) {
 		if err := decoder.Decode(&trailing); err != io.EOF {
 			_ = send(room.RoomEvent{RoomID: roomID, Type: "error", Payload: []byte(`{"message":"invalid room event"}`)})
 			return
+		}
+		if event.Type == "time-sync" {
+			now := time.Now()
+			if now.Sub(timeSyncWindowStart) >= time.Second {
+				timeSyncWindowStart = now
+				timeSyncCount = 0
+			}
+			timeSyncCount++
+			if timeSyncCount > 10 || event.ClientSentAtMs < 0 ||
+				math.IsNaN(event.ClientSentAtMs) || math.IsInf(event.ClientSentAtMs, 0) {
+				_ = send(room.RoomEvent{RoomID: roomID, Type: "error", Payload: []byte(`{"message":"invalid time sync request"}`)})
+				continue
+			}
+			serverReceivedAtMs := float64(now.UnixNano()) / float64(time.Millisecond)
+			serverSentAtMs := float64(time.Now().UnixNano()) / float64(time.Millisecond)
+			_ = send(room.RoomEvent{
+				RoomID: roomID, Type: "time-sync", ClientSentAtMs: event.ClientSentAtMs,
+				ServerReceivedAtMs: serverReceivedAtMs, ServerSentAtMs: serverSentAtMs,
+			})
+			continue
 		}
 		if err := manager.Publish(roomID, connectionID, event); err != nil {
 			if errors.Is(err, room.ErrRoomNotFound) {
