@@ -19,6 +19,8 @@ func WriteError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, recording.ErrNotFound), errors.Is(err, stream.ErrNotFound), errors.Is(err, track.ErrNotFound), errors.Is(err, user.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
+	case errors.Is(err, recording.ErrWaveformNotReady), errors.Is(err, recording.ErrWaveformNotFailed):
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case errors.Is(err, stream.ErrLiveKitNotConfigured):
 		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "live streaming is not configured"})
 	case errors.Is(err, room.ErrCodeConfig), errors.Is(err, room.ErrCodeAllocation):

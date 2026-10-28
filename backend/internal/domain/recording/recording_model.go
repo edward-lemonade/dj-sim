@@ -14,6 +14,7 @@ type Recording struct {
 	ObjectKey       string    `json:"-" gorm:"not null"`
 	ContentType     string    `json:"contentType" gorm:"not null"`
 	DurationSeconds float64   `json:"durationSeconds" gorm:"not null"`
+	WaveformStatus  string    `json:"waveformStatus" gorm:"not null;default:pending"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
 }
@@ -21,6 +22,9 @@ type Recording struct {
 func (r *Recording) BeforeCreate(_ *gorm.DB) error {
 	if r.ID == "" {
 		r.ID = uuid.NewString()
+	}
+	if r.WaveformStatus == "" {
+		r.WaveformStatus = "pending"
 	}
 	return nil
 }

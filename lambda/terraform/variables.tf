@@ -15,6 +15,12 @@ variable "track_prefix" {
   default     = "tracks/"
 }
 
+variable "recordings_prefix" {
+  description = "S3 key prefix for recorded MP3s and their waveform sidecars"
+  type        = string
+  default     = "recordings/"
+}
+
 variable "results_prefix" {
   description = "Key prefix (under bucket_name, or results_bucket_name if set) where result JSON is written"
   type        = string
@@ -31,6 +37,12 @@ variable "function_name" {
   description = "Lambda function name and ECR repository name"
   type        = string
   default     = "track-analyzer"
+}
+
+variable "waveform_function_name" {
+  description = "Name of the recording waveform Lambda"
+  type        = string
+  default     = "recording-waveform"
 }
 
 variable "image_tag" {
@@ -57,8 +69,14 @@ variable "ephemeral_storage_mb" {
   default     = 2048
 }
 
-variable "backend_webhook_url" {
-  description = "Optional: POST each result here in addition to writing it to S3"
+variable "backend_analysis_webhook_url" {
+  description = "Optional backend endpoint for track analysis results"
+  type        = string
+  default     = ""
+}
+
+variable "backend_waveform_webhook_url" {
+  description = "Optional backend endpoint for recording waveform completion/failure results"
   type        = string
   default     = ""
 }
@@ -76,7 +94,14 @@ variable "iam_role_name" {
   default     = ""
 }
 
+variable "waveform_iam_role_name" {
+  description = "Waveform Lambda execution role name; defaults to the waveform function name with -role appended"
+  type        = string
+  default     = ""
+}
+
 locals {
-  results_bucket_name = var.results_bucket_name != "" ? var.results_bucket_name : var.bucket_name
-  iam_role_name       = var.iam_role_name != "" ? var.iam_role_name : "${var.function_name}-role"
+  results_bucket_name    = var.results_bucket_name != "" ? var.results_bucket_name : var.bucket_name
+  iam_role_name          = var.iam_role_name != "" ? var.iam_role_name : "${var.function_name}-role"
+  waveform_iam_role_name = var.waveform_iam_role_name != "" ? var.waveform_iam_role_name : "${var.waveform_function_name}-role"
 }

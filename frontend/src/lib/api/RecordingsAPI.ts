@@ -6,8 +6,15 @@ export type Recording = {
   title: string;
   contentType: string;
   durationSeconds: number;
+  waveformStatus: 'pending' | 'ready' | 'failed';
   createdAt: string;
   updatedAt: string;
+};
+
+export type RecordingWaveform = {
+  version: 1;
+  durationSeconds: number;
+  peaks: [number, number][];
 };
 
 export const RecordingsAPI = {
@@ -35,6 +42,20 @@ export const RecordingsAPI = {
       responseType: 'blob',
     });
     return response.data;
+  },
+
+  async playbackUrl(id: string): Promise<string> {
+    const response = await axiosClient.get<{ url: string }>(API_ROUTES.recording.playbackUrl(id));
+    return response.data.url;
+  },
+
+  async waveform(id: string): Promise<RecordingWaveform> {
+    const response = await axiosClient.get<RecordingWaveform>(API_ROUTES.recording.waveform(id));
+    return response.data;
+  },
+
+  async retryWaveform(id: string): Promise<void> {
+    await axiosClient.post(API_ROUTES.recording.retryWaveform(id));
   },
 
   async download(id: string): Promise<Blob> {

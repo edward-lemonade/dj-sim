@@ -218,7 +218,7 @@ type s3AnalysisResult struct {
 
 // PollPendingAnalyses checks S3 directly for any track still in
 // AnalysisStatusPending, as a fallback to (or replacement for) the
-// Lambda's webhook — useful whenever BACKEND_WEBHOOK_URL can't be
+// Lambda's webhook — useful whenever the analysis webhook can't be
 // reached from AWS (e.g. local dev with nothing tunneled). Safe to call
 // on a fixed interval: once a track leaves "pending" it drops out of the
 // ListPending query, so this never double-applies a result even if the
