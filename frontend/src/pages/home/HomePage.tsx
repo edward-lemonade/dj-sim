@@ -517,17 +517,6 @@ function HomePage() {
               aria-labelledby="recordings-user-group"
               className="min-h-0 max-h-[28rem] flex-1 space-y-2 overflow-y-auto py-6 [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none] md:max-h-none md:pr-28 md:[transform:skewX(-16deg)] [&::-webkit-scrollbar]:hidden"
             >
-              <li className="px-4 md:pl-[25%]">
-                <h2
-                  id="recordings-user-group"
-                  className="text-xs font-semibold uppercase tracking-wider text-cyan-200 md:[transform:skewX(16deg)]"
-                >
-                  {registrationUsername}
-                  <span className="ml-2 font-normal normal-case tracking-normal text-slate-400">
-                    · {recordings.length} {recordings.length === 1 ? 'recording' : 'recordings'}
-                  </span>
-                </h2>
-              </li>
               {recordings.map((recording) => (
                 <li key={recording.id}>
                   <div
@@ -607,7 +596,7 @@ function HomePage() {
                         )}
                       </div>
                     </div>
-                    <div className="mt-2 pl-[3.25rem] md:[transform:skewX(16deg)]">
+                    <div className="mt-2 pl-[3.25rem] pr-[1rem] md:[transform:skewX(16deg)]">
                       <RecordingWaveform
                         recording={recording}
                         audioElement={audioElement}
