@@ -29,7 +29,10 @@ data "aws_iam_policy_document" "ecr_lambda_access" {
     condition {
       test     = "StringEquals"
       variable = "aws:sourceArn"
-      values   = ["arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.function_name}"]
+      values = [
+        "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.function_name}",
+        "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.waveform_function_name}",
+      ]
     }
   }
 }

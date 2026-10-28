@@ -11,6 +11,7 @@ import { RecordingsAPI, type Recording } from '@/lib/api/RecordingsAPI';
 import { ensureCurrentUser } from '@/lib/api/UserAPI';
 import { joinRoomByCode } from '@/lib/api/RoomsAPI';
 import { queryKeys } from '@/lib/queryClient';
+import RecordingWaveform from '@/pages/home/components/RecordingWaveform';
 import {
   PENDING_ROOM_CODE_KEY,
   createdRoomFromJoin,
@@ -47,6 +48,8 @@ function HomePage() {
   const recordingsQuery = useQuery({
     queryKey: queryKeys.recordings(user?.id ?? null),
     enabled: isLoaded && Boolean(isSignedIn && user && registrationUsername),
+    refetchInterval: (query) =>
+      query.state.data?.some((recording) => recording.waveformStatus === 'pending') ? 5000 : false,
     queryFn: async () => {
       if (!registrationUsername) throw new Error('Cannot load recordings without a signed-in user.');
       await ensureCurrentUser(registrationUsername);
@@ -71,9 +74,18 @@ function HomePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loadedPlaybackId, setLoadedPlaybackId] = useState<string | null>(null);
   const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [retryingWaveformId, setRetryingWaveformId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const setAudioRef = useCallback((audio: HTMLAudioElement | null) => {
+    audioRef.current = audio;
+    setAudioElement(audio);
+  }, []);
+  const pendingSeekRef = useRef<{ recordingId: string; seconds: number } | null>(null);
+  const playbackUrlRequestRef = useRef<{ recordingId: string; promise: Promise<string> } | null>(null);
 
   useEffect(() => {
     if (!recordingsError) return;
@@ -93,6 +105,10 @@ function HomePage() {
       },
     );
   }, [recordings.length, recordingsError, refetchRecordings, showToast]);
+
+  useEffect(() => {
+    if (error) showToast(error, ToastVariant.Error, { dedupeKey: 'home-recording-operation' });
+  }, [error, showToast]);
 
   useEffect(() => {
     if (joinError) showToast(joinError, ToastVariant.Error, { dedupeKey: 'home-room-join' });
@@ -182,14 +198,14 @@ function HomePage() {
     if (audio) {
       audio.pause();
       audio.removeAttribute('src');
+      delete audio.dataset.recordingId;
       audio.load();
     }
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
-    }
+    pendingSeekRef.current = null;
     setPlayingId(null);
+    setLoadedPlaybackId(null);
     setLoadingAudioId(null);
+    setCurrentTime(0);
   }, []);
 
   useEffect(() => () => {
@@ -199,8 +215,61 @@ function HomePage() {
       audio.removeAttribute('src');
       audio.load();
     }
-    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
   }, []);
+
+  const loadPlaybackSource = (recordingId: string): Promise<string> => {
+    if (playbackUrlRequestRef.current?.recordingId === recordingId) {
+      return playbackUrlRequestRef.current.promise;
+    }
+    const promise = RecordingsAPI.playbackUrl(recordingId);
+    playbackUrlRequestRef.current = { recordingId, promise };
+    void promise.then(
+      () => {
+        if (playbackUrlRequestRef.current?.promise === promise) {
+          playbackUrlRequestRef.current = null;
+        }
+      },
+      () => {
+        if (playbackUrlRequestRef.current?.promise === promise) {
+          playbackUrlRequestRef.current = null;
+        }
+      },
+    );
+    return promise;
+  };
+
+  const seekRecording = async (recording: Recording, seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const targetTime = Math.min(recording.durationSeconds, Math.max(0, seconds));
+    setCurrentTime(targetTime);
+
+    if (audio.dataset.recordingId === recording.id && audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      audio.currentTime = targetTime;
+      return;
+    }
+
+    pendingSeekRef.current = { recordingId: recording.id, seconds: targetTime };
+    if (audio.dataset.recordingId !== recording.id) {
+      stopPlayback();
+      audio.dataset.recordingId = recording.id;
+      setLoadedPlaybackId(recording.id);
+      pendingSeekRef.current = { recordingId: recording.id, seconds: targetTime };
+      setCurrentTime(targetTime);
+      try {
+        const url = await loadPlaybackSource(recording.id);
+        if (audio.dataset.recordingId !== recording.id) return;
+        audio.src = url;
+        audio.load();
+      } catch (cause) {
+        pendingSeekRef.current = null;
+        setError(cause instanceof Error ? cause.message : 'Could not load this recording.');
+      }
+    } else if (audio.src && audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      audio.currentTime = targetTime;
+      pendingSeekRef.current = null;
+    }
+  };
 
   const togglePlayback = async (recording: Recording) => {
     const audio = audioRef.current;
@@ -208,10 +277,9 @@ function HomePage() {
     setError(null);
     if (playingId === recording.id) {
       audio.pause();
-      setPlayingId(null);
       return;
     }
-    if (audioUrlRef.current && audio.dataset.recordingId === recording.id) {
+    if (audio.dataset.recordingId === recording.id && audio.getAttribute('src')) {
       try {
         await audio.play();
         setPlayingId(recording.id);
@@ -225,17 +293,38 @@ function HomePage() {
     try {
       stopPlayback();
       setLoadingAudioId(recording.id);
-      const blob = await RecordingsAPI.audio(recording.id);
-      const url = URL.createObjectURL(blob);
-      audioUrlRef.current = url;
+      audio.dataset.recordingId = recording.id;
+      setLoadedPlaybackId(recording.id);
+      const url = await loadPlaybackSource(recording.id);
+      if (audio.dataset.recordingId !== recording.id) return;
       audio.dataset.recordingId = recording.id;
       audio.src = url;
+      audio.load();
       await audio.play();
       setPlayingId(recording.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not play this recording.');
     } finally {
       setLoadingAudioId(null);
+    }
+  };
+
+  const retryWaveform = async (recordingId: string) => {
+    setRetryingWaveformId(recordingId);
+    setError(null);
+    try {
+      await RecordingsAPI.retryWaveform(recordingId);
+      queryClient.setQueryData<Recording[]>(
+        queryKeys.recordings(user?.id ?? null),
+        (current) => current?.map((recording) =>
+          recording.id === recordingId ? { ...recording, waveformStatus: 'pending' } : recording,
+        ),
+      );
+      await queryClient.invalidateQueries({ queryKey: ['recording-waveform', recordingId] });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not retry waveform generation.');
+    } finally {
+      setRetryingWaveformId(null);
     }
   };
 
@@ -283,7 +372,7 @@ function HomePage() {
     setError(null);
     try {
       await RecordingsAPI.remove(recording.id);
-      if (playingId === recording.id) stopPlayback();
+      if (audioRef.current?.dataset.recordingId === recording.id) stopPlayback();
       queryClient.setQueryData<Recording[]>(queryKeys.recordings(user?.id ?? null), (current) =>
         (current ?? []).filter((item) => item.id !== recording.id),
       );
@@ -424,80 +513,99 @@ function HomePage() {
               No recordings yet. Recorded sets will appear here.
             </p>
           ) : (
-            <ul className="min-h-0 max-h-[28rem] flex-1 space-y-2 overflow-y-auto py-6 [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none] md:max-h-none md:pr-28 md:[transform:skewX(-16deg)] [&::-webkit-scrollbar]:hidden">
+            <ul
+              aria-labelledby="recordings-user-group"
+              className="min-h-0 max-h-[28rem] flex-1 space-y-2 overflow-y-auto py-6 [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)] [scrollbar-width:none] md:max-h-none md:pr-28 md:[transform:skewX(-16deg)] [&::-webkit-scrollbar]:hidden"
+            >
               {recordings.map((recording) => (
                 <li key={recording.id}>
                   <div
-                    className={`flex flex-wrap items-center gap-3 px-4 py-3 transition-colors md:pl-[25%] [clip-path:polygon(0_0,100%_0,calc(100%-14px)_100%,0_100%)] ${
+                    className={`px-4 py-3 transition-colors md:pl-[25%] [clip-path:polygon(0_0,100%_0,calc(100%-14px)_100%,0_100%)] ${
                       playingId === recording.id
                         ? 'bg-blue-900'
                         : 'bg-white/5 hover:bg-white/10'
                     }`}
                   >
-                    <div className="min-w-0 flex-1 md:[transform:skewX(16deg)]">
-                      {editingId === recording.id ? (
-                        <form
-                          id="rename-form"
-                          className="h-6"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void saveRename(recording);
-                          }}
-                        >
-                          <input
-                            autoFocus
-                            aria-label="Recording title"
-                            className="h-6 w-full rounded border border-white/20 bg-black/30 px-2 text-sm text-white"
-                            maxLength={200}
-                            value={draftTitle}
-                            onChange={(event) => setDraftTitle(event.target.value)}
-                          />
-                        </form>
-                      ) : (
-                        <button
-                          type="button"
-                          className="max-w-full cursor-text truncate text-left text-base font-bold italic text-white hover:underline"
-                          onClick={() => {
-                            setDraftTitle(recording.title);
-                            setEditingId(recording.id);
-                          }}
-                          aria-label={`Rename ${recording.title}`}
-                        >
-                          {recording.title}
-                        </button>
-                      )}
-                      <p className="mt-1 text-xs text-slate-300">
-                        {new Date(recording.createdAt).toLocaleString()} · {formatDuration(recording.durationSeconds)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 md:[transform:skewX(16deg)]">
-                      {editingId === recording.id ? (
-                        <>
-                          <Button type="submit" form="rename-form" size="sm">Save</Button>
-                          <Button type="button" variant="ghost" size="sm" className="text-white" onClick={() => setEditingId(null)}>Cancel</Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-white"
-                            disabled={loadingAudioId === recording.id}
-                            aria-label={playingId === recording.id ? `Pause ${recording.title}` : `Play ${recording.title}`}
-                            onClick={() => void togglePlayback(recording)}
+                    <div className="flex items-center gap-3 md:[transform:skewX(16deg)]">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-10 shrink-0 rounded-full text-white hover:bg-cyan-300/15 hover:text-cyan-200"
+                        disabled={loadingAudioId === recording.id}
+                        aria-label={playingId === recording.id ? `Pause ${recording.title}` : `Play ${recording.title}`}
+                        onClick={() => void togglePlayback(recording)}
+                      >
+                        {loadingAudioId === recording.id
+                          ? <Loader2 className="animate-spin" />
+                          : playingId === recording.id
+                            ? <Pause className="fill-current" />
+                            : <Play className="fill-current" />}
+                      </Button>
+                      <div className="min-w-0 flex-1">
+                        {editingId === recording.id ? (
+                          <form
+                            id={`rename-form-${recording.id}`}
+                            className="h-7"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void saveRename(recording);
+                            }}
                           >
-                            {playingId === recording.id ? <Pause /> : <Play />}
-                            {loadingAudioId === recording.id ? 'Loading...' : playingId === recording.id ? 'Pause' : 'Play'}
-                          </Button>
-                          <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label={`Download ${recording.title}`} onClick={() => void downloadRecording(recording)}>
-                            <Download />
-                          </Button>
-                          <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label={`Delete ${recording.title}`} onClick={() => void deleteRecording(recording)}>
-                            <Trash2 />
-                          </Button>
-                        </>
-                      )}
+                            <input
+                              autoFocus
+                              aria-label="Recording title"
+                              className="h-7 w-full rounded border border-white/20 bg-black/30 px-2 text-sm text-white"
+                              maxLength={200}
+                              value={draftTitle}
+                              onChange={(event) => setDraftTitle(event.target.value)}
+                            />
+                          </form>
+                        ) : (
+                          <button
+                            type="button"
+                            className="max-w-full cursor-text truncate text-left text-base font-bold italic text-white hover:underline"
+                            onClick={() => {
+                              setDraftTitle(recording.title);
+                              setEditingId(recording.id);
+                            }}
+                            aria-label={`Rename ${recording.title}`}
+                          >
+                            {recording.title}
+                          </button>
+                        )}
+                        <p className="mt-1 text-xs text-slate-300">
+                          {new Date(recording.createdAt).toLocaleString()} · {formatDuration(recording.durationSeconds)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {editingId === recording.id ? (
+                          <>
+                            <Button type="submit" form={`rename-form-${recording.id}`} size="sm">Save</Button>
+                            <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label="Cancel rename" onClick={() => setEditingId(null)}>×</Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label={`Download ${recording.title}`} onClick={() => void downloadRecording(recording)}>
+                              <Download />
+                            </Button>
+                            <Button type="button" variant="ghost" size="icon-sm" className="text-white" aria-label={`Delete ${recording.title}`} onClick={() => void deleteRecording(recording)}>
+                              <Trash2 />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2 pl-[3.25rem] pr-[1rem] md:[transform:skewX(16deg)]">
+                      <RecordingWaveform
+                        recording={recording}
+                        audioElement={audioElement}
+                        currentTime={loadedPlaybackId === recording.id ? currentTime : 0}
+                        isActive={playingId === recording.id}
+                        onSeek={(seconds) => void seekRecording(recording, seconds)}
+                        onRetry={() => void retryWaveform(recording.id)}
+                        retrying={retryingWaveformId === recording.id}
+                      />
                     </div>
                   </div>
                 </li>
@@ -505,9 +613,26 @@ function HomePage() {
             </ul>
           )}
           <audio
-            ref={audioRef}
+            ref={setAudioRef}
             className="hidden"
-            onEnded={() => setPlayingId(null)}
+            preload="none"
+            onPlay={() => setPlayingId(audioRef.current?.dataset.recordingId ?? null)}
+            onPause={(event) => {
+              setPlayingId(null);
+              setCurrentTime(event.currentTarget.currentTime);
+            }}
+            onLoadedMetadata={() => {
+              const audio = audioRef.current;
+              const pendingSeek = pendingSeekRef.current;
+              if (!audio || !pendingSeek || pendingSeek.recordingId !== audio.dataset.recordingId) return;
+              audio.currentTime = Math.min(audio.duration, pendingSeek.seconds);
+              pendingSeekRef.current = null;
+              setCurrentTime(audio.currentTime);
+            }}
+            onEnded={() => {
+              setPlayingId(null);
+              setCurrentTime(0);
+            }}
             onError={() => {
               if (audioRef.current?.getAttribute('src')) setError('Could not load this recording.');
             }}

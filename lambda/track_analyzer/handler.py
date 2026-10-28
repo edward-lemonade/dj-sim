@@ -18,7 +18,7 @@ Always returns the analysis dict as the Lambda response payload (useful for
 synchronous manual invokes). Also always writes a copy to
   s3://<RESULTS_BUCKET or source bucket>/<RESULTS_PREFIX>/<key>.json
 so results from S3-triggered (fire-and-forget) runs are discoverable even
-though nothing is waiting on the return value. If BACKEND_WEBHOOK_URL is
+though nothing is waiting on the return value. If BACKEND_ANALYSIS_WEBHOOK_URL is
 set, POSTs the result there too. Drop _notify_webhook / the env var if your
 backend instead polls S3 or a DB table you write from here.
 """
@@ -39,7 +39,7 @@ s3 = boto3.client("s3")
 
 RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")  # defaults to source bucket if unset
 RESULTS_PREFIX = os.environ.get("RESULTS_PREFIX").strip("/")
-BACKEND_WEBHOOK_URL = os.environ.get("BACKEND_WEBHOOK_URL")  # optional
+BACKEND_ANALYSIS_WEBHOOK_URL = os.environ.get("BACKEND_ANALYSIS_WEBHOOK_URL")  # optional
 BACKEND_WEBHOOK_API_KEY = os.environ.get("BACKEND_WEBHOOK_API_KEY")  # optional
 
 # Krumhansl-Schmuckler key profiles (relative pitch-class weights)
@@ -116,7 +116,7 @@ def _persist_result(source_bucket: str, source_key: str, result: dict) -> str:
 
 
 def _notify_webhook(payload: dict) -> None:
-    if not BACKEND_WEBHOOK_URL:
+    if not BACKEND_ANALYSIS_WEBHOOK_URL:
         return
     import requests  # local import: only paid for when the webhook is used
 
@@ -124,7 +124,7 @@ def _notify_webhook(payload: dict) -> None:
     if BACKEND_WEBHOOK_API_KEY:
         headers["Authorization"] = f"Bearer {BACKEND_WEBHOOK_API_KEY}"
     try:
-        requests.post(BACKEND_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
+        requests.post(BACKEND_ANALYSIS_WEBHOOK_URL, json=payload, headers=headers, timeout=10)
     except Exception:
         logger.exception("Webhook notify failed for %s", payload.get("key"))
 

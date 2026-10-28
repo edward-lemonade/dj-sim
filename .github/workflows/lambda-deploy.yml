@@ -32,11 +32,15 @@ jobs:
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-west-2' }}
       TF_VAR_bucket_name: ${{ vars.LAMBDA_BUCKET_NAME }}
       TF_VAR_track_prefix: ${{ vars.LAMBDA_TRACK_PREFIX || 'tracks/' }}
+      TF_VAR_recordings_prefix: ${{ vars.LAMBDA_RECORDINGS_PREFIX || 'recordings/' }}
       TF_VAR_results_prefix: ${{ vars.LAMBDA_RESULTS_PREFIX || 'analysis' }}
       TF_VAR_results_bucket_name: ${{ vars.LAMBDA_RESULTS_BUCKET_NAME }}
       TF_VAR_function_name: ${{ vars.LAMBDA_FUNCTION_NAME || 'track-analyzer' }}
+      TF_VAR_waveform_function_name: ${{ vars.LAMBDA_WAVEFORM_FUNCTION_NAME || 'recording-waveform' }}
+      TF_VAR_waveform_iam_role_name: ${{ vars.LAMBDA_WAVEFORM_IAM_ROLE_NAME || 'recording-waveform-prod-role' }}
       TF_VAR_iam_role_name: ${{ vars.LAMBDA_IAM_ROLE_NAME || 'track-analyzer-prod-role' }}
-      TF_VAR_backend_webhook_url: ${{ vars.BACKEND_WEBHOOK_URL }}
+      TF_VAR_backend_analysis_webhook_url: ${{ vars.BACKEND_ANALYSIS_WEBHOOK_URL }}
+      TF_VAR_backend_waveform_webhook_url: ${{ vars.BACKEND_WAVEFORM_WEBHOOK_URL }}
       TF_VAR_backend_webhook_api_key: ${{ secrets.BACKEND_WEBHOOK_API_KEY }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -68,11 +72,15 @@ jobs:
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-west-2' }}
       TF_VAR_bucket_name: ${{ vars.LAMBDA_BUCKET_NAME }}
       TF_VAR_track_prefix: ${{ vars.LAMBDA_TRACK_PREFIX || 'tracks/' }}
+      TF_VAR_recordings_prefix: ${{ vars.LAMBDA_RECORDINGS_PREFIX || 'recordings/' }}
       TF_VAR_results_prefix: ${{ vars.LAMBDA_RESULTS_PREFIX || 'analysis' }}
       TF_VAR_results_bucket_name: ${{ vars.LAMBDA_RESULTS_BUCKET_NAME }}
       TF_VAR_function_name: ${{ vars.LAMBDA_FUNCTION_NAME || 'track-analyzer' }}
+      TF_VAR_waveform_function_name: ${{ vars.LAMBDA_WAVEFORM_FUNCTION_NAME || 'recording-waveform' }}
+      TF_VAR_waveform_iam_role_name: ${{ vars.LAMBDA_WAVEFORM_IAM_ROLE_NAME || 'recording-waveform-prod-role' }}
       TF_VAR_iam_role_name: ${{ vars.LAMBDA_IAM_ROLE_NAME || 'track-analyzer-prod-role' }}
-      TF_VAR_backend_webhook_url: ${{ vars.BACKEND_WEBHOOK_URL }}
+      TF_VAR_backend_analysis_webhook_url: ${{ vars.BACKEND_ANALYSIS_WEBHOOK_URL }}
+      TF_VAR_backend_waveform_webhook_url: ${{ vars.BACKEND_WAVEFORM_WEBHOOK_URL }}
       TF_VAR_backend_webhook_api_key: ${{ secrets.BACKEND_WEBHOOK_API_KEY }}
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

@@ -1,16 +1,24 @@
-# track-analyzer Lambda
+# Track analyzer and recording waveform Lambdas
 
-Container-image Lambda that computes a single BPM, beat-grid offset, and key
-for a track. Callable two ways against the same code path:
+Container-image Lambdas that share one image and ECR repository:
 
-1. **S3 upload trigger** — fires automatically on `ObjectCreated`.
-2. **Manual invoke** — your backend calls it directly via `lambda:Invoke`
-   with `{"bucket": "...", "key": "..."}`.
+- `track-analyzer` computes a single BPM, beat-grid offset, and key for a
+  track. It supports the existing S3 upload and manual invocation paths.
+- `recording-waveform` generates a versioned, fixed-size waveform sidecar for
+  MP3 recordings under `recordings/`. It is invoked by S3 and may also be
+  invoked directly for backfill.
 
 ## Layout
 
 ```
-handler.py                       # Lambda code
+track_analyzer/                  # track analysis Lambda package
+  __init__.py
+  handler.py
+recording_waveform/              # recording peak generation Lambda package
+  __init__.py
+  handler.py
+scripts/
+  backfill_waveforms.py          # rate-limited backfill for old recordings
 Dockerfile / requirements.txt    # container image
 build_and_push.sh                # builds & pushes the image to ECR
 .env.example                     # copy to .env — region, bucket, function name
@@ -19,9 +27,8 @@ terraform/
   variables.tf                   # all inputs, incl. bucket_name
   ecr.tf                         # image repository
   ecr_policy.tf                  # grants the Lambda *service* (not your IAM user) pull access
-  iam.tf                         # execution role, least-privilege policy
-  lambda.tf                      # the function itself
-  s3.tf                          # permission + bucket notification (trigger)
+  iam.tf / lambda.tf             # separate execution roles and functions
+  s3.tf                          # permissions + combined bucket notifications
   outputs.tf
   terraform.tfvars.example       # copy to terraform.tfvars — NOT committed
 ```
@@ -63,6 +70,84 @@ role-scoped `PassRole` statement non-restrictive once both are attached —
 the user can pass any role to Lambda, not just `track-analyzer-role`. Skip
 `AWSLambda_FullAccess` and use a function-scoped `lambda:*` statement in
 the custom policy instead if that distinction matters to you.
+
+## Backfill existing recordings
+
+After deploying the waveform Lambda and configuring the backend waveform
+webhook, the script can first list MP3s missing sidecars without changing
+anything:
+
+```bash
+python scripts/backfill_waveforms.py \
+  --bucket YOUR_BUCKET \
+  --function recording-waveform
+```
+
+Run the backfill explicitly with `--execute`. It invokes one object at a time,
+skips recordings with an existing `.waveform.json` sidecar, and waits one
+second between jobs by default:
+
+```bash
+python scripts/backfill_waveforms.py \
+  --bucket YOUR_BUCKET \
+  --function recording-waveform \
+  --execute
+```
+
+If a sidecar was written but its backend state callback failed, reprocess
+existing sidecars to replay the callback:
+
+```bash
+python scripts/backfill_waveforms.py \
+  --bucket YOUR_BUCKET \
+  --function recording-waveform \
+  --execute \
+  --force
+```
+
+Use the Lambda function's deployed name if it differs from the default. The
+AWS identity running the script needs permission to list and inspect objects
+under the recordings prefix and synchronously invoke that Lambda.
+
+## Backend webhook URLs
+
+Both callback URLs point to the backend's internal webhook routes and use the
+same `BACKEND_WEBHOOK_API_KEY` bearer secret when configured:
+
+- `BACKEND_ANALYSIS_WEBHOOK_URL`: `{backend-origin}/internal/tracks/analysis`
+- `BACKEND_WAVEFORM_WEBHOOK_URL`: `{backend-origin}/internal/recordings/waveform`
+
+For example, if the deployed backend is reachable at
+`https://api.example.com`, set:
+
+```hcl
+backend_analysis_webhook_url = "https://api.example.com/internal/tracks/analysis"
+backend_waveform_webhook_url = "https://api.example.com/internal/recordings/waveform"
+backend_webhook_api_key      = "the-same-value-as-backend-BACKEND_WEBHOOK_API_KEY"
+```
+
+The backend reads `BACKEND_WEBHOOK_API_KEY` from its environment (see
+`backend/.env.example`). Set the same secret in Terraform if either URL is enabled so the Lambdas send
+the expected `Authorization: Bearer ...` header. The URLs are optional:
+without them, the backend polls S3 for the analysis results and waveform
+sidecars, so the shared key alone does not require public webhook URLs. Keep
+the secret out of committed files.
+
+An AWS Lambda cannot reach a backend at `localhost` on your development
+machine. To send callbacks to a locally running backend, start the backend on
+port 8080 and expose that port through an HTTPS tunnel, then use the tunnel's
+public origin with the same route paths. For example, with Cloudflare Tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:8080
+```
+
+Use the HTTPS URL printed by the tunnel, such as
+`https://random-name.trycloudflare.com/internal/recordings/waveform`, as the
+waveform URL. Set the analysis URL similarly if track analysis callbacks
+should also reach the local backend. Keep the tunnel running while testing;
+its URL may change when restarted. Do not use a public tunnel for sensitive
+production traffic.
 
 ## Bootstrap order
 
@@ -115,11 +200,15 @@ Configure these GitHub repository variables:
 - `AWS_REGION` (Lambda/ECR deployment region; defaults to `us-west-2`)
 - `LAMBDA_BUCKET_NAME` (required)
 - `LAMBDA_TRACK_PREFIX` (optional; defaults to `tracks/`)
+- `LAMBDA_RECORDINGS_PREFIX` (optional; defaults to `recordings/`)
 - `LAMBDA_RESULTS_PREFIX` (optional; defaults to `analysis`)
 - `LAMBDA_RESULTS_BUCKET_NAME` (optional; defaults to the track bucket)
 - `LAMBDA_FUNCTION_NAME` (optional; defaults to `track-analyzer`)
+- `LAMBDA_WAVEFORM_FUNCTION_NAME` (optional; defaults to `recording-waveform`)
 - `LAMBDA_IAM_ROLE_NAME` (optional; defaults to `track-analyzer-prod-role`)
-- `BACKEND_WEBHOOK_URL` (optional)
+- `LAMBDA_WAVEFORM_IAM_ROLE_NAME` (optional; defaults to `recording-waveform-prod-role`)
+- `BACKEND_ANALYSIS_WEBHOOK_URL` (optional; `{backend-origin}/internal/tracks/analysis`)
+- `BACKEND_WAVEFORM_WEBHOOK_URL` (optional; `{backend-origin}/internal/recordings/waveform`)
 
 The Terraform state backend is fixed to `us-west-1` in `terraform/backend.tf`,
 so the credentials also need access to that region's state bucket.
@@ -128,8 +217,9 @@ only by the `main` deployment job. IAM role names are account-wide, so
 production uses its own role name to coexist with the development role even
 though both deployments use `track-analyzer` as the Lambda function name.
 
-`build_and_push.sh` builds with `--provenance=false --sbom=false`. Without
-those, current Docker/BuildKit attaches attestation manifests on push,
+`build_and_push.sh` builds both handlers into one image with
+`--provenance=false --sbom=false`. Terraform selects the handler using each
+function's `image_config.command`. Without those flags, current Docker/BuildKit attaches attestation manifests on push,
 which turns the image into a multi-manifest OCI index that Lambda's
 `CreateFunction` can't resolve — it fails with "the image manifest, config
 or layer media type ... is not supported." Don't drop those flags if you
@@ -159,7 +249,7 @@ print(result)
 Use `InvocationType="Event"` if the backend shouldn't block — then read the
 result back from
 `s3://YOUR_BUCKET/analysis/tracks/YOUR_USER_ID/song-UUID.mp3.json` (or via
-`backend_webhook_url` in tfvars), same as the S3-triggered path does. The
+`backend_analysis_webhook_url` in tfvars), same as the S3-triggered path does. The
 Lambda treats the source key as opaque, so user-scoped track keys require no
 Lambda environment-variable or notification-filter changes.
 

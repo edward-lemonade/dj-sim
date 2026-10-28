@@ -52,6 +52,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	recordingRepo := recording.NewRepository(db)
 	recordingSvc := recording.NewService(recordingRepo, store, recordingsPrefix)
 	recordingHandler := &handler.RecordingHandler{Recordings: recordingSvc}
+	recordingWaveformHandler := &handler.RecordingWaveformHandler{Recordings: recordingSvc}
 	streamRepo := stream.NewInMemoryRepository()
 	streamManager := stream.NewManager()
 	streamSvc := stream.NewService(streamRepo, streamManager, liveKitURL, liveKitAPIKey, liveKitSecret)
@@ -82,7 +83,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 		log.Printf("stream cleanup completed with errors: %v", err)
 	}
 
-	// Fallback (and, for local dev with no reachable BACKEND_WEBHOOK_URL,
+	// Fallback (and, for local dev with no reachable analysis webhook,
 	// the only) path to pick up analysis results: poll S3 directly for
 	// any track still pending. Safe to run alongside the webhook — see
 	// PollPendingAnalyses' doc comment on why they can't double-apply.
@@ -97,6 +98,21 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 			}
 			if applied > 0 {
 				log.Printf("analysis poll: applied %d result(s)", applied)
+			}
+		}
+	}()
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			applied, err := recordingSvc.PollPendingWaveforms(context.Background())
+			if err != nil {
+				log.Printf("recording waveform poll failed: %v", err)
+				continue
+			}
+			if applied > 0 {
+				log.Printf("recording waveform poll: applied %d result(s)", applied)
 			}
 		}
 	}()
@@ -126,6 +142,7 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 
 	internal := r.Group("/internal", middleware.WebhookAuth(analysisWebhookSecret))
 	internal.POST("/tracks/analysis", trackHandler.AnalysisWebhook)
+	internal.POST("/recordings/waveform", recordingWaveformHandler.Complete)
 
 	auth := r.Group("/", middleware.Auth(userRepo, sessions))
 
@@ -151,6 +168,9 @@ func New(db *gorm.DB, corsOrigin string, clerkSecretKey string, clerkWebhookSecr
 	recordings.POST("/upload", recordingHandler.Upload)
 	recordings.PATCH("/:id", recordingHandler.Update)
 	recordings.GET("/:id/audio", recordingHandler.Audio)
+	recordings.GET("/:id/playback-url", recordingHandler.PlaybackURL)
+	recordings.GET("/:id/waveform", recordingHandler.Waveform)
+	recordings.POST("/:id/waveform/retry", recordingHandler.RetryWaveform)
 	recordings.GET("/:id/download", recordingHandler.Download)
 	recordings.DELETE("/:id", recordingHandler.Delete)
 

@@ -28,6 +28,14 @@ func (r *Repository) ListByUserID(ctx context.Context, userID string) ([]Recordi
 	return recordings, err
 }
 
+func (r *Repository) ListPendingWaveforms(ctx context.Context) ([]Recording, error) {
+	var recordings []Recording
+	err := r.db.WithContext(ctx).
+		Where("waveform_status = ?", "pending").
+		Find(&recordings).Error
+	return recordings, err
+}
+
 func (r *Repository) FindByIDForUser(ctx context.Context, id, userID string) (*Recording, error) {
 	var item Recording
 	err := r.db.WithContext(ctx).Where("id = ? AND user_id = ?", id, userID).First(&item).Error
@@ -38,6 +46,41 @@ func (r *Repository) FindByIDForUser(ctx context.Context, id, userID string) (*R
 		return nil, err
 	}
 	return &item, nil
+}
+
+func (r *Repository) FindByObjectKey(ctx context.Context, objectKey string) (*Recording, error) {
+	var item Recording
+	err := r.db.WithContext(ctx).Where("object_key = ?", objectKey).First(&item).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repository) UpdateWaveformStatus(ctx context.Context, objectKey, status string) error {
+	result := r.db.WithContext(ctx).Model(&Recording{}).
+		Where("object_key = ?", objectKey).
+		Update("waveform_status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) TransitionWaveformStatus(ctx context.Context, objectKey, from, to string) (bool, error) {
+	result := r.db.WithContext(ctx).Model(&Recording{}).
+		Where("object_key = ? AND waveform_status = ?", objectKey, from).
+		Update("waveform_status", to)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 func (r *Repository) Create(ctx context.Context, item *Recording) error {

@@ -17,6 +17,7 @@ ENV PATH="/usr/local/bin:${PATH}"
 COPY requirements.txt ${LAMBDA_TASK_ROOT}/
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 
-COPY handler.py ${LAMBDA_TASK_ROOT}/
+COPY track_analyzer/ ${LAMBDA_TASK_ROOT}/track_analyzer/
+COPY recording_waveform/ ${LAMBDA_TASK_ROOT}/recording_waveform/
 
-CMD ["handler.handler"]
+CMD ["track_analyzer.handler.handler"]

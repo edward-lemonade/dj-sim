@@ -26,6 +26,9 @@ type RecordingService interface {
 	Upload(ctx context.Context, userID string, input recording.UploadInput) (*recording.Recording, error)
 	UpdateTitle(ctx context.Context, id, userID, title string) (*recording.Recording, error)
 	GetAudioForUser(ctx context.Context, id, userID string) (*storage.S3Object, *recording.Recording, error)
+	GetPlaybackURLForUser(ctx context.Context, id, userID string) (string, error)
+	GetWaveformForUser(ctx context.Context, id, userID string) (*recording.Waveform, error)
+	RetryWaveformForUser(ctx context.Context, id, userID string) error
 	Delete(ctx context.Context, id, userID string) error
 }
 
@@ -124,6 +127,36 @@ func (h *RecordingHandler) Download(c *gin.Context) {
 	h.serveAudio(c, true)
 }
 
+func (h *RecordingHandler) PlaybackURL(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	url, err := h.Recordings.GetPlaybackURLForUser(c.Request.Context(), c.Param("id"), u.ID)
+	if err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.JSON(http.StatusOK, gin.H{"url": url})
+}
+
+func (h *RecordingHandler) Waveform(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	waveform, err := h.Recordings.GetWaveformForUser(c.Request.Context(), c.Param("id"), u.ID)
+	if err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, waveform)
+}
+
+func (h *RecordingHandler) RetryWaveform(c *gin.Context) {
+	u := middleware.CurrentUser(c)
+	if err := h.Recordings.RetryWaveformForUser(c.Request.Context(), c.Param("id"), u.ID); err != nil {
+		app_error.WriteError(c, err)
+		return
+	}
+	c.Status(http.StatusAccepted)
+}
+
 func (h *RecordingHandler) serveAudio(c *gin.Context, download bool) {
 	u := middleware.CurrentUser(c)
 	object, item, err := h.Recordings.GetAudioForUser(c.Request.Context(), c.Param("id"), u.ID)
@@ -149,6 +182,40 @@ func (h *RecordingHandler) serveAudio(c *gin.Context, download bool) {
 		}))
 	}
 	c.DataFromReader(http.StatusOK, object.ContentLength, "audio/mpeg", object.Body, nil)
+}
+
+type waveformWebhookPayload struct {
+	ObjectKey string `json:"s3_key" binding:"required"`
+	Status    string `json:"status" binding:"required"`
+}
+
+type RecordingWaveformService interface {
+	ApplyWaveformResult(ctx context.Context, objectKey, status string) error
+}
+
+type RecordingWaveformHandler struct {
+	Recordings RecordingWaveformService
+}
+
+func (h *RecordingWaveformHandler) Complete(c *gin.Context) {
+	var payload waveformWebhookPayload
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+		return
+	}
+	if err := h.Recordings.ApplyWaveformResult(c.Request.Context(), payload.ObjectKey, payload.Status); err != nil {
+		if errors.Is(err, recording.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "no recording found for that object key"})
+			return
+		}
+		if errors.Is(err, recording.ErrInvalidWaveformResult) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid waveform result"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to apply waveform result"})
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *RecordingHandler) Delete(c *gin.Context) {

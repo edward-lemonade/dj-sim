@@ -1,7 +1,14 @@
-aws_region   = ""
-bucket_name  = ""
-track_prefix = ""
+aws_region       = ""
+bucket_name      = ""
+track_prefix     = ""
+recordings_prefix = "recordings/"
 
-# results_bucket_name     = ""
-# backend_webhook_url     = ""
-backend_webhook_api_key = ""
+# URLs must be reachable from AWS Lambda. For a local backend, use a temporary
+# HTTPS tunnel URL; localhost is not reachable from Lambda.
+backend_analysis_webhook_url = ""
+backend_waveform_webhook_url = ""
+backend_webhook_api_key      = ""
+
+waveform_function_name = "recording-waveform"
+
+# results_bucket_name = ""
